@@ -6,6 +6,10 @@
  * which indicates what it's allowed to ask for.  We're entirely driven
  * by request, response.
  */
+
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+
 #include <bitcoin/address.h>
 #include <bitcoin/privkey.h>
 #include <bitcoin/pubkey.h>
@@ -106,6 +110,12 @@ struct client {
 	/* Params to apply to all transactions for this client */
 	const struct chainparams *chainparams;
 };
+
+/*~ Python function objects. */
+static struct {
+    PyObject *setup;
+    PyObject *init_hsm;
+} pyfunc;
 
 /*~ We keep a map of nonzero dbid -> clients, mainly for leak detection.
  * This is ccan/uintmap, which maps u64 to some (non-NULL) pointer.
@@ -669,6 +679,158 @@ static void load_hsm(const struct secret *encryption_key)
 	populate_secretstuff();
 }
 
+static PyObject *py_bip32_key_version(struct bip32_key_version *vp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "bip32_pubkey_version",
+                         PyLong_FromLong(vp->bip32_pubkey_version));
+    PyDict_SetItemString(pdict, "bip32_privkey_version",
+                         PyLong_FromLong(vp->bip32_privkey_version));
+    return pdict;
+}
+
+static PyObject *py_sha256_or_none(struct sha256 const *sp)
+{
+    if (sp == NULL)
+        Py_RETURN_NONE;
+
+    return PyBytes_FromStringAndSize((char const *) sp->u.u8, 32);
+}
+
+static PyObject *py_sha256_double_or_none(struct sha256_double const *sp)
+{
+    if (sp == NULL)
+        Py_RETURN_NONE;
+
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "sha", py_sha256_or_none(&(sp->sha)));
+    return pdict;
+}
+
+static PyObject *py_bitcoin_blkid(struct bitcoin_blkid const *bp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "shad", py_sha256_double_or_none(&(bp->shad)));
+    return pdict;
+}
+
+static PyObject *py_amount_sat(struct amount_sat const *ap)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "satoshis",
+                         PyLong_FromUnsignedLongLong(ap->satoshis));
+    return pdict;
+}
+
+static PyObject *py_amount_msat(struct amount_msat const *ap)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "millisatoshis",
+                         PyLong_FromUnsignedLongLong(ap->millisatoshis));
+    return pdict;
+}
+
+static PyObject *py_chainparams(struct chainparams const *cp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "network_name",
+                         PyUnicode_FromString(cp->network_name));
+    PyDict_SetItemString(pdict, "bip173_name",
+                         PyUnicode_FromString(cp->bip173_name));
+    PyDict_SetItemString(pdict, "bip70_name",
+                         PyUnicode_FromString(cp->bip70_name));
+    PyDict_SetItemString(pdict, "genesis_blockhash",
+                         py_bitcoin_blkid(&(cp->genesis_blockhash)));
+    PyDict_SetItemString(pdict, "rpc_port",
+                         PyLong_FromLong(cp->rpc_port));
+    PyDict_SetItemString(pdict, "cli",
+                         PyUnicode_FromString(cp->cli));
+    PyDict_SetItemString(pdict, "cli_args",
+                         PyUnicode_FromString(cp->cli_args));
+    PyDict_SetItemString(pdict, "cli_min_supported_version",
+                         PyLong_FromUnsignedLongLong(
+                             cp->cli_min_supported_version));
+    PyDict_SetItemString(pdict, "dust_limit",
+                         py_amount_sat(&(cp->dust_limit)));
+    PyDict_SetItemString(pdict, "max_funding",
+                         py_amount_sat(&(cp->max_funding)));
+    PyDict_SetItemString(pdict, "max_payment",
+                         py_amount_msat(&(cp->max_payment)));
+    PyDict_SetItemString(pdict, "when_lightning_became_cool",
+                         PyLong_FromUnsignedLong(
+                             cp->when_lightning_became_cool));
+    PyDict_SetItemString(pdict, "p2pkh_version",
+                         PyLong_FromUnsignedLong(cp->p2pkh_version));
+    PyDict_SetItemString(pdict, "p2sh_version",
+                         PyLong_FromUnsignedLong(cp->p2sh_version));
+    return pdict;
+}
+
+static PyObject *py_secret_or_none(struct secret *sp)
+{
+    if (sp == NULL)
+        Py_RETURN_NONE;
+
+    return PyBytes_FromStringAndSize((char const *) sp->data, 32);
+}
+
+static PyObject *py_privkey_or_none(struct privkey *kp)
+{
+    if (kp == NULL)
+        Py_RETURN_NONE;
+
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "secret", py_secret_or_none(&(kp->secret)));
+    return pdict;
+}
+
+static PyObject *py_secrets_or_none(struct secrets *sp)
+{
+    if (sp == NULL)
+        Py_RETURN_NONE;
+
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "funding_privkey",
+                         py_privkey_or_none(&(sp->funding_privkey)));
+    PyDict_SetItemString(pdict, "revocation_basepoint_secret",
+                         py_secret_or_none(&(sp->revocation_basepoint_secret)));
+    PyDict_SetItemString(pdict, "payment_basepoint_secret",
+                         py_secret_or_none(&(sp->payment_basepoint_secret)));
+    PyDict_SetItemString(pdict, "htlc_basepoint_secret",
+                         py_secret_or_none(&(sp->htlc_basepoint_secret)));
+    PyDict_SetItemString(pdict, "delayed_payment_basepoint_secret",
+                         py_secret_or_none(&(sp->delayed_payment_basepoint_secret)));
+    return pdict;
+}
+
+static void py_init_hsm(struct bip32_key_version *bip32_key_version,
+                        struct chainparams const *chainparams,
+                        struct secret *hsm_encryption_key,
+                        struct privkey *privkey,
+                        struct secret *seed,
+                        struct secrets *secrets,
+                        struct sha256 *shaseed)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(7);
+    PyTuple_SetItem(pargs, ndx++, py_bip32_key_version(bip32_key_version));
+    PyTuple_SetItem(pargs, ndx++, py_chainparams(chainparams));
+    PyTuple_SetItem(pargs, ndx++, py_secret_or_none(hsm_encryption_key));
+    PyTuple_SetItem(pargs, ndx++, py_privkey_or_none(privkey));
+    PyTuple_SetItem(pargs, ndx++, py_secret_or_none(seed));
+    PyTuple_SetItem(pargs, ndx++, py_secrets_or_none(secrets));
+    PyTuple_SetItem(pargs, ndx++, py_sha256_or_none(shaseed));
+    PyObject *pretval = PyObject_CallObject(pyfunc.init_hsm, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"init_hsm\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+
+    /* FIXME - Need to return something here */
+}
+
 /*~ This is the response to lightningd's HSM_INIT request, which is the first
  * thing it sends. */
 static struct io_plan *init_hsm(struct io_conn *conn,
@@ -710,6 +872,9 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	dev_force_channel_secrets_shaseed = shaseed;
 #endif
 
+    py_init_hsm(&bip32_key_version, chainparams, hsm_encryption_key,
+                privkey, seed, secrets, shaseed);
+    
 	/* Once we have read the init message we know which params the master
 	 * will use */
 	c->chainparams = chainparams;
@@ -2032,6 +2197,37 @@ static void master_gone(struct io_conn *unused UNUSED, struct client *c UNUSED)
 	exit(2);
 }
 
+static PyObject *python_function(PyObject *pmodule, char *funcname)
+{
+    PyObject *pfunc = PyObject_GetAttrString(pmodule, funcname);
+    if (pfunc == NULL || !PyCallable_Check(pfunc)) {
+        if (PyErr_Occurred())
+            PyErr_Print();
+        fprintf(stderr, "Cannot find function \"%s\"\n", funcname);
+        exit(3);
+    }
+    return pfunc;
+}
+
+static void setup_python_functions(void)
+{
+    Py_Initialize();
+    PyObject *pname = PyUnicode_DecodeFSDefault("hsmd");
+    PyObject *pmodule = PyImport_Import(pname);
+    Py_DECREF(pname);
+    if (pmodule == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Failed to load \"hsmd\"\n");
+        exit(3);
+    }
+    
+    pyfunc.setup = python_function(pmodule, "setup");
+    pyfunc.init_hsm = python_function(pmodule, "init_hsm");
+
+    /* Guess we don't need the module around anymore? */
+    Py_DECREF(pmodule);
+}
+
 int main(int argc, char *argv[])
 {
 	struct client *master;
@@ -2041,7 +2237,19 @@ int main(int argc, char *argv[])
 	/* This sets up tmpctx, various DEVELOPER options, backtraces, etc. */
 	subdaemon_setup(argc, argv);
 
-	/* A trivial daemon_conn just for writing. */
+    /* Setup the python function objects. */
+    setup_python_functions();
+
+    /* Call the python setup function. */
+    PyObject *pretval = PyObject_CallObject(pyfunc.setup, NULL);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"setup\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+    
+    /* A trivial daemon_conn just for writing. */
 	status_conn = daemon_conn_new(NULL, STDIN_FILENO, NULL, NULL, NULL);
 	status_setup_async(status_conn);
 	uintmap_init(&clients);
