@@ -679,6 +679,11 @@ static void load_hsm(const struct secret *encryption_key)
 	populate_secretstuff();
 }
 
+static PyObject *py_none(void)
+{
+    Py_RETURN_NONE;
+}
+
 static PyObject *py_bip32_key_version(struct bip32_key_version *vp)
 {
     PyObject *pdict = PyDict_New();
@@ -689,28 +694,22 @@ static PyObject *py_bip32_key_version(struct bip32_key_version *vp)
     return pdict;
 }
 
-static PyObject *py_sha256_or_none(struct sha256 const *sp)
+static PyObject *py_sha256(struct sha256 const *sp)
 {
-    if (sp == NULL)
-        Py_RETURN_NONE;
-
     return PyBytes_FromStringAndSize((char const *) sp->u.u8, 32);
 }
 
-static PyObject *py_sha256_double_or_none(struct sha256_double const *sp)
+static PyObject *py_sha256_double(struct sha256_double const *sp)
 {
-    if (sp == NULL)
-        Py_RETURN_NONE;
-
     PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "sha", py_sha256_or_none(&(sp->sha)));
+    PyDict_SetItemString(pdict, "sha", py_sha256(&(sp->sha)));
     return pdict;
 }
 
 static PyObject *py_bitcoin_blkid(struct bitcoin_blkid const *bp)
 {
     PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "shad", py_sha256_double_or_none(&(bp->shad)));
+    PyDict_SetItemString(pdict, "shad", py_sha256_double(&(bp->shad)));
     return pdict;
 }
 
@@ -766,40 +765,31 @@ static PyObject *py_chainparams(struct chainparams const *cp)
     return pdict;
 }
 
-static PyObject *py_secret_or_none(struct secret *sp)
+static PyObject *py_secret(struct secret *sp)
 {
-    if (sp == NULL)
-        Py_RETURN_NONE;
-
     return PyBytes_FromStringAndSize((char const *) sp->data, 32);
 }
 
-static PyObject *py_privkey_or_none(struct privkey *kp)
+static PyObject *py_privkey(struct privkey *kp)
 {
-    if (kp == NULL)
-        Py_RETURN_NONE;
-
     PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "secret", py_secret_or_none(&(kp->secret)));
+    PyDict_SetItemString(pdict, "secret", py_secret(&(kp->secret)));
     return pdict;
 }
 
-static PyObject *py_secrets_or_none(struct secrets *sp)
+static PyObject *py_secrets(struct secrets *sp)
 {
-    if (sp == NULL)
-        Py_RETURN_NONE;
-
     PyObject *pdict = PyDict_New();
     PyDict_SetItemString(pdict, "funding_privkey",
-                         py_privkey_or_none(&(sp->funding_privkey)));
+                         py_privkey(&(sp->funding_privkey)));
     PyDict_SetItemString(pdict, "revocation_basepoint_secret",
-                         py_secret_or_none(&(sp->revocation_basepoint_secret)));
+                         py_secret(&(sp->revocation_basepoint_secret)));
     PyDict_SetItemString(pdict, "payment_basepoint_secret",
-                         py_secret_or_none(&(sp->payment_basepoint_secret)));
+                         py_secret(&(sp->payment_basepoint_secret)));
     PyDict_SetItemString(pdict, "htlc_basepoint_secret",
-                         py_secret_or_none(&(sp->htlc_basepoint_secret)));
+                         py_secret(&(sp->htlc_basepoint_secret)));
     PyDict_SetItemString(pdict, "delayed_payment_basepoint_secret",
-                         py_secret_or_none(&(sp->delayed_payment_basepoint_secret)));
+                         py_secret(&(sp->delayed_payment_basepoint_secret)));
     return pdict;
 }
 
@@ -815,11 +805,12 @@ static void py_init_hsm(struct bip32_key_version *bip32_key_version,
     PyObject *pargs = PyTuple_New(7);
     PyTuple_SetItem(pargs, ndx++, py_bip32_key_version(bip32_key_version));
     PyTuple_SetItem(pargs, ndx++, py_chainparams(chainparams));
-    PyTuple_SetItem(pargs, ndx++, py_secret_or_none(hsm_encryption_key));
-    PyTuple_SetItem(pargs, ndx++, py_privkey_or_none(privkey));
-    PyTuple_SetItem(pargs, ndx++, py_secret_or_none(seed));
-    PyTuple_SetItem(pargs, ndx++, py_secrets_or_none(secrets));
-    PyTuple_SetItem(pargs, ndx++, py_sha256_or_none(shaseed));
+    PyTuple_SetItem(pargs, ndx++, hsm_encryption_key ?
+                    py_secret(hsm_encryption_key): py_none());
+    PyTuple_SetItem(pargs, ndx++, privkey ? py_privkey(privkey) : py_none());
+    PyTuple_SetItem(pargs, ndx++, seed ? py_secret(seed) : py_none());
+    PyTuple_SetItem(pargs, ndx++, secrets ? py_secrets(secrets) : py_none());
+    PyTuple_SetItem(pargs, ndx++, shaseed ? py_sha256(shaseed) : py_none());
     PyObject *pretval = PyObject_CallObject(pyfunc.init_hsm, pargs);
     if (pretval == NULL) {
         PyErr_Print();
