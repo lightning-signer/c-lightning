@@ -6,6 +6,9 @@
  * which indicates what it's allowed to ask for.  We're entirely driven
  * by request, response.
  */
+
+#include <hsmd/py_types.h>
+#include <hsmd/py_hsmd.h>
 #include <bitcoin/address.h>
 #include <bitcoin/privkey.h>
 #include <bitcoin/pubkey.h>
@@ -716,6 +719,10 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	maybe_create_new_hsm(hsm_encryption_key, true);
 	load_hsm(hsm_encryption_key);
 
+	py_init_hsm(&bip32_key_version, chainparams, hsm_encryption_key,
+		    privkey, seed, secrets, shaseed,
+		    &secretstuff.hsm_secret);
+
 	/*~ We don't need the hsm_secret encryption key anymore.
 	 * Note that sodium_munlock() also zeroes the memory. */
 	if (hsm_encryption_key) {
@@ -726,6 +733,9 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	/*~ We tell lightning our node id and (public) bip32 seed. */
 	node_key(NULL, &key);
 	node_id_from_pubkey(&node_id, &key);
+
+	/* Save the node_id in a global for the py_hsmd interface. */
+	memcpy(&self_node_id, &node_id, sizeof(self_node_id));
 
 	/*~ Note: marshalling a bip32 tree only marshals the public side,
 	 * not the secrets!  So we're not actually handing them out here!
@@ -743,7 +753,6 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 				   struct client *c,
 				   const u8 *msg_in)
 {
-	struct privkey privkey;
 	struct pubkey point;
 	struct secret ss;
 
@@ -752,9 +761,16 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 
 	/*~ We simply use the secp256k1_ecdh function: if ss.data is invalid,
 	 * we kill them for bad randomness (~1 in 2^127 if ss.data is random) */
+	/*
+	struct privkey privkey;
 	node_key(&privkey, NULL);
 	if (secp256k1_ecdh(secp256k1_ctx, ss.data, &point.pubkey,
 			   privkey.secret.data, NULL, NULL) != 1) {
+		return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
+	}
+	*/
+
+	if (!py_handle_ecdh(&point, &ss)) {
 		return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
 	}
 
@@ -823,6 +839,8 @@ static struct io_plan *handle_cannouncement_sig(struct io_conn *conn,
 	if (fromwire_peektype(ca) != WIRE_CHANNEL_ANNOUNCEMENT)
 		return bad_req_fmt(conn, c, msg_in,
 				   "Invalid channel announcement");
+
+	py_handle_cannouncement_sig(ca, tal_count(ca), &c->id, c->dbid);
 
 	node_key(&node_pkey, NULL);
 	sha256_double(&hash, ca + offset, tal_count(ca) - offset);
@@ -904,6 +922,8 @@ static struct io_plan *handle_get_channel_basepoints(struct io_conn *conn,
 
 	if (!fromwire_hsm_get_channel_basepoints(msg_in, &peer_id, &dbid))
 		return bad_req(conn, c, msg_in);
+
+	py_handle_get_channel_basepoints(&peer_id, dbid);
 
 	get_channel_seed(&peer_id, dbid, &seed);
 	derive_basepoints(&seed, &funding_pubkey, &basepoints, NULL, NULL);
@@ -995,12 +1015,18 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
 	struct secrets secrets;
-	const u8 *funding_wscript;
+	// const u8 *funding_wscript;
+	struct witscript **output_witscripts;
+	struct pubkey remote_per_commit;
+	bool option_static_remotekey;
 
 	if (!fromwire_hsm_sign_remote_commitment_tx(tmpctx, msg_in,
 						    &tx,
 						    &remote_funding_pubkey,
-						    &funding))
+						    &funding,
+						    &output_witscripts,
+						    &remote_per_commit,
+						    &option_static_remotekey))
 		bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
@@ -1014,17 +1040,62 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	derive_basepoints(&channel_seed,
 			  &local_funding_pubkey, NULL, &secrets, NULL);
 
+	status_debug("%s:%d %s: funding_privkey: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct privkey,
+				    &secrets.funding_privkey));
+	status_debug("%s:%d %s: revocation_basepoint_secret: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct secret,
+				    &secrets.revocation_basepoint_secret));
+	status_debug("%s:%d %s: payment_basepoint_secret: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct secret,
+				    &secrets.payment_basepoint_secret));
+	status_debug("%s:%d %s: htlc_basepoint_secret: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct secret,
+				    &secrets.htlc_basepoint_secret));
+	status_debug("%s:%d %s: delayed_payment_basepoint_secret: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct secret,
+				    &secrets.delayed_payment_basepoint_secret));
+
+	/* Need input amount for signing */
+	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
+
+	/*
 	funding_wscript = bitcoin_redeem_2of2(tmpctx,
 					      &local_funding_pubkey,
 					      &remote_funding_pubkey);
-	/* Need input amount for signing */
-	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
+
+	log_bytes("funding_wscript",
+		  funding_wscript, tal_count(funding_wscript));
+
+	struct bitcoin_signature sig2;
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,
 		      SIGHASH_ALL,
-		      &sig);
+		      &sig2);
+	*/
 
+	u8 *** sigs;
+	py_handle_sign_remote_commitment_tx(
+		tx, &remote_funding_pubkey, &funding,
+		&c->id, c->dbid,
+		(const struct witscript **) output_witscripts,
+		&remote_per_commit,
+		option_static_remotekey,
+		&sigs);
+	assert(tal_count(sigs) == 1);
+
+	bool ok = signature_from_der(sigs[0][0], tal_count(sigs[0][0]), &sig);
+	assert(ok);
+
+	status_debug("%s:%d %s: signature: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct bitcoin_signature, &sig));
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
 
@@ -1068,6 +1139,10 @@ static struct io_plan *handle_sign_remote_htlc_tx(struct io_conn *conn,
 
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &amount);
+
+	py_handle_sign_remote_htlc_tx(tx, wscript, &remote_per_commit_point,
+				      &c->id, c->dbid);
+
 	sign_tx_input(tx, 0, NULL, wscript, &htlc_privkey, &htlc_pubkey,
 		      SIGHASH_ALL, &sig);
 
@@ -1321,6 +1396,8 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 	if (!fromwire_hsm_get_per_commitment_point(msg_in, &n))
 		return bad_req(conn, c, msg_in);
 
+	py_handle_get_per_commitment_point(&c->id, c->dbid, n);
+
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	if (!derive_shaseed(&channel_seed, &shaseed))
 		return bad_req_fmt(conn, c, msg_in, "bad derive_shaseed");
@@ -1338,6 +1415,16 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 		}
 	} else
 		old_secret = NULL;
+
+	status_debug("%s:%d %s: channel_seed: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct secret, &channel_seed));
+	status_debug("%s:%d %s: shaseed: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct sha256, &shaseed));
+	status_debug("%s:%d %s: per_commitment_point: %s",
+		     __FILE__, __LINE__, __FUNCTION__, type_to_string(
+			     tmpctx, struct pubkey, &per_commitment_point));
 
 	/*~ hsm_client_wire.csv marks the secret field here optional, so it only
 	 * gets included if the parameter is non-NULL.  We violate 80 columns
@@ -1413,6 +1500,10 @@ static struct io_plan *handle_sign_mutual_close_tx(struct io_conn *conn,
 					      &remote_funding_pubkey);
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
+
+	py_handle_sign_mutual_close_tx(tx, &remote_funding_pubkey, &funding,
+				       &c->id, c->dbid);
+
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,
@@ -1474,6 +1565,8 @@ static struct io_plan *pass_client_hsmfd(struct io_conn *conn,
 
 	status_debug("new_client: %"PRIu64, dbid);
 	new_client(c, c->chainparams, &id, dbid, capabilities, fds[0]);
+
+	py_handle_pass_client_hsmfd(&id, dbid, capabilities);
 
 	/*~ We stash this in a global, because we need to get both the fd and
 	 * the client pointer to the callback.  The other way would be to
@@ -1657,7 +1750,24 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			 cast_const2(const struct utxo **, utxos), outputs,
 			 &changekey, change_out, NULL, NULL);
 
-	sign_all_inputs(tx, utxos);
+	u8 *** sigs;
+	py_handle_sign_withdrawal_tx(&c->id, c->dbid, &satoshi_out,
+				     &change_out, change_keyindex,
+				     outputs, utxos, tx, &sigs);
+
+	// sign_all_inputs(tx, utxos);
+
+	assert(tal_count(sigs) == tal_count(utxos));
+	for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
+		assert(tal_count(sigs[ii]) == 2);
+
+		u8 **witness = tal_arr(tx, u8 *, 2);
+		witness[0] = tal_dup_arr(witness, u8, sigs[ii][0],
+					 tal_count(sigs[ii][0]), 0);
+		witness[1] = tal_dup_arr(witness, u8, sigs[ii][1],
+					 tal_count(sigs[ii][1]), 0);
+		bitcoin_tx_input_set_witness(tx, ii, take(witness));
+	}
 
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_withdrawal_reply(NULL, tx)));
@@ -2040,6 +2150,9 @@ int main(int argc, char *argv[])
 
 	/* This sets up tmpctx, various DEVELOPER options, backtraces, etc. */
 	subdaemon_setup(argc, argv);
+
+	/* Setup the python function objects. */
+	setup_python_functions();
 
 	/* A trivial daemon_conn just for writing. */
 	status_conn = daemon_conn_new(NULL, STDIN_FILENO, NULL, NULL, NULL);
