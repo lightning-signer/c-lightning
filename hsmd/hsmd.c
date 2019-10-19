@@ -115,6 +115,10 @@ struct client {
 static struct {
     PyObject *setup;
     PyObject *init_hsm;
+    PyObject *handle_ecdh;
+    PyObject *handle_get_channel_basepoints;
+    PyObject *handle_get_per_commitment_point;
+    PyObject *handle_cannouncement_sig;
 } pyfunc;
 
 /*~ We keep a map of nonzero dbid -> clients, mainly for leak detection.
@@ -765,6 +769,19 @@ static PyObject *py_chainparams(struct chainparams const *cp)
     return pdict;
 }
 
+static PyObject *py_node_id(struct node_id *pp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "k",
+        PyBytes_FromStringAndSize((char const *) pp->k, PUBKEY_CMPR_LEN));
+    return pdict;
+}
+
+static PyObject *py_secp256k1_pubkey(secp256k1_pubkey *kp)
+{
+    return PyBytes_FromStringAndSize((char const *) kp->data, 64);
+}
+
 static PyObject *py_secret(struct secret *sp)
 {
     return PyBytes_FromStringAndSize((char const *) sp->data, 32);
@@ -774,6 +791,13 @@ static PyObject *py_privkey(struct privkey *kp)
 {
     PyObject *pdict = PyDict_New();
     PyDict_SetItemString(pdict, "secret", py_secret(&(kp->secret)));
+    return pdict;
+}
+
+static PyObject *py_pubkey(struct pubkey *kp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "pubkey", py_secp256k1_pubkey(&(kp->pubkey)));
     return pdict;
 }
 
@@ -891,6 +915,22 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 						    &secretstuff.bip32)));
 }
 
+static void py_handle_ecdh(struct pubkey *point)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(1);
+    PyTuple_SetItem(pargs, ndx++, py_pubkey(point));
+    PyObject *pretval = PyObject_CallObject(pyfunc.handle_ecdh, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"handle_ecdh\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+
+    /* FIXME - Need to return something here */
+}
+
 /*~ The client has asked us to extract the shared secret from an EC Diffie
  * Hellman token.  This doesn't leak any information, but requires the private
  * key, so the hsmd performs it.  It's used to set up an encryption key for the
@@ -906,6 +946,8 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 	if (!fromwire_hsm_ecdh_req(msg_in, &point))
 		return bad_req(conn, c, msg_in);
 
+    py_handle_ecdh(&point);
+    
 	/*~ We simply use the secp256k1_ecdh function: if ss.data is invalid,
 	 * we kill them for bad randomness (~1 in 2^127 if ss.data is random) */
 	node_key(&privkey, NULL);
@@ -917,6 +959,27 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 	/*~ In the normal case, we return the shared secret, and then read
 	 * the next msg. */
 	return req_reply(conn, c, take(towire_hsm_ecdh_resp(NULL, &ss)));
+}
+
+static void py_handle_cannouncement_sig(u8 *ca, size_t calen,
+                                        struct node_id *node_id,
+                                        u64 dbid)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(3);
+    PyTuple_SetItem(pargs, ndx++,
+                    PyBytes_FromStringAndSize((char const *) ca, calen));
+    PyTuple_SetItem(pargs, ndx++, py_node_id(node_id));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+    PyObject *pretval = PyObject_CallObject(pyfunc.handle_cannouncement_sig, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"handle_cannouncement_sig\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+
+    /* FIXME - Need to return something here */
 }
 
 /*~ The specific routine to sign the channel_announcement message.  This is
@@ -980,6 +1043,8 @@ static struct io_plan *handle_cannouncement_sig(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in,
 				   "Invalid channel announcement");
 
+    py_handle_cannouncement_sig(ca, tal_count(ca), &c->id, c->dbid);
+    
 	node_key(&node_pkey, NULL);
 	sha256_double(&hash, ca + offset, tal_count(ca) - offset);
 
@@ -1042,6 +1107,23 @@ static struct io_plan *handle_channel_update_sig(struct io_conn *conn,
 	return req_reply(conn, c, take(towire_hsm_cupdate_sig_reply(NULL, cu)));
 }
 
+static void py_handle_get_channel_basepoints(struct node_id *peer_id, u64 dbid)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(2);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+    PyObject *pretval = PyObject_CallObject(pyfunc.handle_get_channel_basepoints, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"handle_get_channel_basepoints\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+
+    /* FIXME - Need to return something here */
+}
+
 /*~ This gets the basepoints for a channel; it's not private information really
  * (we tell the peer this to establish a channel, as it sets up the keys used
  * for each transaction).
@@ -1061,6 +1143,8 @@ static struct io_plan *handle_get_channel_basepoints(struct io_conn *conn,
 	if (!fromwire_hsm_get_channel_basepoints(msg_in, &peer_id, &dbid))
 		return bad_req(conn, c, msg_in);
 
+    py_handle_get_channel_basepoints(&peer_id, dbid);
+    
 	get_channel_seed(&peer_id, dbid, &seed);
 	derive_basepoints(&seed, &funding_pubkey, &basepoints, NULL, NULL);
 
@@ -1459,6 +1543,23 @@ static struct io_plan *handle_sign_local_htlc_tx(struct io_conn *conn,
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
 
+static void py_handle_get_per_commitment_point(u64 n, u64 dbid)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(2);
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(n));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+    PyObject *pretval = PyObject_CallObject(pyfunc.handle_get_per_commitment_point, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"handle_get_per_commitment_point\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+
+    /* FIXME - Need to return something here */
+}
+
 /*~ This get the Nth a per-commitment point, and for N > 2, returns the
  * grandparent per-commitment secret.  This pattern is because after
  * negotiating commitment N-1, we send them the next per-commitment point,
@@ -1476,6 +1577,8 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 
 	if (!fromwire_hsm_get_per_commitment_point(msg_in, &n))
 		return bad_req(conn, c, msg_in);
+
+    py_handle_get_per_commitment_point(n, c->dbid);
 
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	if (!derive_shaseed(&channel_seed, &shaseed))
@@ -2214,6 +2317,13 @@ static void setup_python_functions(void)
     
     pyfunc.setup = python_function(pmodule, "setup");
     pyfunc.init_hsm = python_function(pmodule, "init_hsm");
+    pyfunc.handle_ecdh = python_function(pmodule, "handle_ecdh");
+    pyfunc.handle_get_channel_basepoints =
+        python_function(pmodule, "handle_get_channel_basepoints");
+    pyfunc.handle_get_per_commitment_point =
+        python_function(pmodule, "handle_get_per_commitment_point");
+    pyfunc.handle_cannouncement_sig =
+        python_function(pmodule, "handle_cannouncement_sig");
 
     /* Guess we don't need the module around anymore? */
     Py_DECREF(pmodule);
