@@ -115,6 +115,7 @@ struct client {
 static struct {
     PyObject *setup;
     PyObject *init_hsm;
+    PyObject *handle_pass_client_hsmfd;
     PyObject *handle_ecdh;
     PyObject *handle_get_channel_basepoints;
     PyObject *handle_get_per_commitment_point;
@@ -1710,6 +1711,24 @@ static struct io_plan *send_pending_client_fd(struct io_conn *conn,
 	return io_send_fd(conn, fd, true, client_read_next, master);
 }
 
+static void py_handle_pass_client_hsmfd(struct node_id *id,
+                                        u64 dbid,
+                                        u64 capabilities)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(3);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(id));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(capabilities));
+    PyObject *pretval = PyObject_CallObject(pyfunc.handle_pass_client_hsmfd, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"handle_pass_client_hsmfd\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+}
+
 /*~ This is used by the master to create a new client connection (which
  * becomes the HSM_FD for the subdaemon after forking). */
 static struct io_plan *pass_client_hsmfd(struct io_conn *conn,
@@ -1734,6 +1753,8 @@ static struct io_plan *pass_client_hsmfd(struct io_conn *conn,
 	status_debug("new_client: %"PRIu64, dbid);
 	new_client(c, c->chainparams, &id, dbid, capabilities, fds[0]);
 
+    py_handle_pass_client_hsmfd(&id, dbid, capabilities);
+    
 	/*~ We stash this in a global, because we need to get both the fd and
 	 * the client pointer to the callback.  The other way would be to
 	 * create a boutique structure and hand that, but we don't need to. */
@@ -2317,6 +2338,8 @@ static void setup_python_functions(void)
     
     pyfunc.setup = python_function(pmodule, "setup");
     pyfunc.init_hsm = python_function(pmodule, "init_hsm");
+    pyfunc.handle_pass_client_hsmfd =
+        python_function(pmodule, "handle_pass_client_hsmfd");
     pyfunc.handle_ecdh = python_function(pmodule, "handle_ecdh");
     pyfunc.handle_get_channel_basepoints =
         python_function(pmodule, "handle_get_channel_basepoints");
