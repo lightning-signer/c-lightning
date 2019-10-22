@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
 import sys
+import coincurve
 
-def debug(msg, lcls):
-    print(msg, lcls)
+import EXFILT
+
+def debug(*objs):
+    print(*objs)
     sys.stdout.flush()
 
 def setup():
@@ -26,6 +29,13 @@ def handle_get_channel_basepoints(peer_id, dbid):
 # message 1
 def handle_ecdh(point):
     debug("PYHSMD handle_ecdh", locals())
+    local_priv = coincurve.PrivateKey.from_hex(EXFILT.privkey_hex)
+    xx = int.from_bytes(point['pubkey'][:32], byteorder='little')
+    yy = int.from_bytes(point['pubkey'][32:], byteorder='little')
+    remote_pub = coincurve.PublicKey.from_point(xx, yy)
+    ss = local_priv.ecdh(remote_pub.format())
+    debug("PYHSMD handle_ecdh ->", ss.hex())
+    return ss
 
 # message 9
 def handle_pass_client_hsmfd(id, dbid, capabilities):

@@ -916,7 +916,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 						    &secretstuff.bip32)));
 }
 
-static void py_handle_ecdh(struct pubkey *point)
+static void py_handle_ecdh(struct pubkey *point, struct secret *o_ss)
 {
     size_t ndx = 0;
     PyObject *pargs = PyTuple_New(1);
@@ -927,9 +927,16 @@ static void py_handle_ecdh(struct pubkey *point)
         fprintf(stderr, "Python call \"handle_ecdh\" failed\n");
         exit(3);
     }
+    if (!PyBytes_Check(pretval)) {
+        fprintf(stderr, "Python call \"handle_ecdh\" bad return type\n");
+        exit(3);
+    }
+    if (PyBytes_Size(pretval) != sizeof(o_ss->data)) {
+        fprintf(stderr, "Python call \"handle_ecdh\" bad return size\n");
+        exit(3);
+    }
+    memcpy(o_ss->data, PyBytes_AsString(pretval), sizeof(o_ss->data));
     Py_DECREF(pretval);
-
-    /* FIXME - Need to return something here */
 }
 
 /*~ The client has asked us to extract the shared secret from an EC Diffie
@@ -947,8 +954,6 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 	if (!fromwire_hsm_ecdh_req(msg_in, &point))
 		return bad_req(conn, c, msg_in);
 
-    py_handle_ecdh(&point);
-    
 	/*~ We simply use the secp256k1_ecdh function: if ss.data is invalid,
 	 * we kill them for bad randomness (~1 in 2^127 if ss.data is random) */
 	node_key(&privkey, NULL);
@@ -957,6 +962,13 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
 	}
 
+    struct secret ss2;
+    py_handle_ecdh(&point, &ss2);
+    if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
+        fprintf(stderr, "secrets don't match");
+        exit(3);
+    }
+    
 	/*~ In the normal case, we return the shared secret, and then read
 	 * the next msg. */
 	return req_reply(conn, c, take(towire_hsm_ecdh_resp(NULL, &ss)));
