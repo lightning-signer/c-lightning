@@ -32,10 +32,14 @@ def handle_ecdh(point):
     local_priv = coincurve.PrivateKey.from_hex(EXFILT.privkey_hex)
     xx = int.from_bytes(point['pubkey'][:32], byteorder='little')
     yy = int.from_bytes(point['pubkey'][32:], byteorder='little')
-    remote_pub = coincurve.PublicKey.from_point(xx, yy)
-    ss = local_priv.ecdh(remote_pub.format())
-    debug("PYHSMD handle_ecdh ->", ss.hex())
-    return ss
+    try:
+        remote_pub = coincurve.PublicKey.from_point(xx, yy)
+        ss = local_priv.ecdh(remote_pub.format())
+        debug("PYHSMD handle_ecdh ->", ss.hex())
+        return ss
+    except ValueError as ex:
+        debug("PYHSMD handle_ecdh: bad point")
+        return None
 
 # message 9
 def handle_pass_client_hsmfd(id, dbid, capabilities):

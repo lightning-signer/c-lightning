@@ -916,7 +916,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 						    &secretstuff.bip32)));
 }
 
-static void py_handle_ecdh(struct pubkey *point, struct secret *o_ss)
+static bool py_handle_ecdh(struct pubkey *point, struct secret *o_ss)
 {
     size_t ndx = 0;
     PyObject *pargs = PyTuple_New(1);
@@ -925,18 +925,19 @@ static void py_handle_ecdh(struct pubkey *point, struct secret *o_ss)
     if (pretval == NULL) {
         PyErr_Print();
         fprintf(stderr, "Python call \"handle_ecdh\" failed\n");
-        exit(3);
+        return false;
     }
     if (!PyBytes_Check(pretval)) {
         fprintf(stderr, "Python call \"handle_ecdh\" bad return type\n");
-        exit(3);
+        return false;
     }
     if (PyBytes_Size(pretval) != sizeof(o_ss->data)) {
         fprintf(stderr, "Python call \"handle_ecdh\" bad return size\n");
-        exit(3);
+        return false;
     }
     memcpy(o_ss->data, PyBytes_AsString(pretval), sizeof(o_ss->data));
     Py_DECREF(pretval);
+    return true;
 }
 
 /*~ The client has asked us to extract the shared secret from an EC Diffie
@@ -963,7 +964,11 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 	}
 
     struct secret ss2;
-    py_handle_ecdh(&point, &ss2);
+    if (!py_handle_ecdh(&point, &ss2)) {
+        return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
+    }
+
+    /* FIXME - remove this check when we replace existing logic */
     if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
         fprintf(stderr, "secrets don't match");
         exit(3);
