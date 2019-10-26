@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 
 import sys
+import grpc
 import coincurve
+import api_pb2_grpc
+
+from api_pb2 import ECDHRequest, ECDHResponse
 
 import EXFILT
 
@@ -9,8 +13,11 @@ def debug(*objs):
     print(*objs)
     sys.stdout.flush()
 
+stub = None
 def setup():
-    pass
+    global stub
+    channel = grpc.insecure_channel('localhost:50051')
+    stub = api_pb2_grpc.SignerStub(channel)
 
 # message 11
 def init_hsm(bip32_key_version,
@@ -28,7 +35,15 @@ def handle_get_channel_basepoints(peer_id, dbid):
 
 # message 1
 def handle_ecdh(point):
+    global stub
     debug("PYHSMD handle_ecdh", locals())
+
+    req = ECDHRequest()
+    req.point = point['pubkey']
+    rsp = stub.ECDH(req)
+    ss = rsp.shared_secret
+    debug("PYHSMD handle_ecdh =>", ss.hex())
+    
     local_priv = coincurve.PrivateKey.from_hex(EXFILT.privkey_hex)
     xx = int.from_bytes(point['pubkey'][:32], byteorder='little')
     yy = int.from_bytes(point['pubkey'][32:], byteorder='little')
