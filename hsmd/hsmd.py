@@ -38,12 +38,15 @@ def handle_ecdh(point):
     global stub
     debug("PYHSMD handle_ecdh", locals())
 
-    req = ECDHRequest()
-    req.point = point['pubkey']
-    rsp = stub.ECDH(req)
-    ss = rsp.shared_secret
-    debug("PYHSMD handle_ecdh =>", ss.hex())
-    
+    # ECDH is not best joint (c-lightning/lnd) candidate.
+    #
+    # req = ECDHRequest()
+    # req.point = point['pubkey']
+    # rsp = stub.ECDH(req)
+    # ss = rsp.shared_secret
+    # debug("PYHSMD handle_ecdh =>", ss.hex())
+
+    # FIXME - move this computation into the liposig server.
     local_priv = coincurve.PrivateKey.from_hex(EXFILT.privkey_hex)
     xx = int.from_bytes(point['pubkey'][:32], byteorder='little')
     yy = int.from_bytes(point['pubkey'][32:], byteorder='little')
