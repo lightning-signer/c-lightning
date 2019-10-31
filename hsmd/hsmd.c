@@ -120,6 +120,7 @@ static struct {
     PyObject *handle_get_channel_basepoints;
     PyObject *handle_get_per_commitment_point;
     PyObject *handle_cannouncement_sig;
+    PyObject *handle_sign_withdrawal_tx;
 } pyfunc;
 
 /*~ We keep a map of nonzero dbid -> clients, mainly for leak detection.
@@ -718,6 +719,13 @@ static PyObject *py_bitcoin_blkid(struct bitcoin_blkid const *bp)
     return pdict;
 }
 
+static PyObject *py_bitcoin_txid(struct bitcoin_txid const *bp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "shad", py_sha256_double(&(bp->shad)));
+    return pdict;
+}
+
 static PyObject *py_amount_sat(struct amount_sat const *ap)
 {
     PyObject *pdict = PyDict_New();
@@ -816,6 +824,68 @@ static PyObject *py_secrets(struct secrets *sp)
     PyDict_SetItemString(pdict, "delayed_payment_basepoint_secret",
                          py_secret(&(sp->delayed_payment_basepoint_secret)));
     return pdict;
+}
+
+static PyObject *py_unilateral_close_info(struct unilateral_close_info *ip)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "channel_id",
+                         PyLong_FromUnsignedLongLong(ip->channel_id));
+    PyDict_SetItemString(pdict, "node_id", py_node_id(&(ip->peer_id)));
+    PyDict_SetItemString(pdict, "commitment_point",
+                         ip->commitment_point ?
+                         py_pubkey(ip->commitment_point) :
+                         py_none());
+    return pdict;
+}
+
+static PyObject *py_bitcoin_tx_output(struct bitcoin_tx_output *output)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "amount", py_amount_sat(&(output->amount)));
+    PyDict_SetItemString(pdict, "script",
+        PyBytes_FromStringAndSize((char const *) output->script,
+                                  tal_count(output->script)));
+
+    return pdict;
+}
+
+static PyObject *py_bitcoin_tx_outputs(struct bitcoin_tx_output **outputs)
+{
+    size_t len = tal_count(outputs);
+    PyObject *plist = PyList_New(len);
+    for (size_t ii = 0; ii < len; ++ii)
+        PyList_SetItem(plist, ii, py_bitcoin_tx_output(outputs[ii]));
+    return plist;
+}
+
+static PyObject *py_utxo(struct utxo *utxo)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "txid", py_bitcoin_txid(&(utxo->txid)));
+    PyDict_SetItemString(pdict, "outnum",
+                         PyLong_FromUnsignedLong(utxo->outnum));
+    PyDict_SetItemString(pdict, "amount", py_amount_sat(&(utxo->amount)));
+    PyDict_SetItemString(pdict, "keyindex",
+                         PyLong_FromUnsignedLong(utxo->keyindex));
+    PyDict_SetItemString(pdict, "is_p2sh",
+                         PyBool_FromLong(utxo->is_p2sh ? 1 : 0));
+    PyDict_SetItemString(pdict, "close_info",
+                         utxo->close_info ?
+                         py_unilateral_close_info(utxo->close_info) :
+                         py_none());
+    /* status, blockheight, spendheight and scriptPubkey are not set in this
+       context */
+    return pdict;
+}
+
+static PyObject *py_utxos(struct utxo **utxos)
+{
+    size_t len = tal_count(utxos);
+    PyObject *plist = PyList_New(len);
+    for (size_t ii = 0; ii < len; ++ii)
+        PyList_SetItem(plist, ii, py_utxo(utxos[ii]));
+    return plist;
 }
 
 static void py_init_hsm(struct bip32_key_version *bip32_key_version,
@@ -1928,6 +1998,30 @@ static struct io_plan *handle_sign_funding_tx(struct io_conn *conn,
 	return req_reply(conn, c, take(towire_hsm_sign_funding_reply(NULL, tx)));
 }
 
+static void py_handle_sign_withdrawal_tx(struct amount_sat *satoshi_out,
+                                         struct amount_sat *change_out,
+                                         u32 change_keyindex,
+                                         struct bitcoin_tx_output **outputs,
+                                         struct utxo **utxos)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(5);
+    PyTuple_SetItem(pargs, ndx++, py_amount_sat(satoshi_out));
+    PyTuple_SetItem(pargs, ndx++, py_amount_sat(change_out));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLong(change_keyindex));
+    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx_outputs(outputs));
+    PyTuple_SetItem(pargs, ndx++, py_utxos(utxos));
+    PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_withdrawal_tx, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"handle_sign_withdrawal_tx\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+
+    /* FIXME - Need to return something here */
+}
+
 /*~ lightningd asks us to sign a withdrawal; same as above but in theory
  * we can do more to check the previous case is valid. */
 static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
@@ -1945,6 +2039,9 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 					  &change_out, &change_keyindex,
 					  &outputs, &utxos))
 		return bad_req(conn, c, msg_in);
+
+    py_handle_sign_withdrawal_tx(&satoshi_out, &change_out, change_keyindex,
+                                 outputs, utxos);
 
 	if (!bip32_pubkey(&secretstuff.bip32, &changekey, change_keyindex))
 		return bad_req_fmt(conn, c, msg_in,
@@ -2364,6 +2461,8 @@ static void setup_python_functions(void)
         python_function(pmodule, "handle_get_per_commitment_point");
     pyfunc.handle_cannouncement_sig =
         python_function(pmodule, "handle_cannouncement_sig");
+    pyfunc.handle_sign_withdrawal_tx =
+        python_function(pmodule, "handle_sign_withdrawal_tx");
 
     /* Guess we don't need the module around anymore? */
     Py_DECREF(pmodule);

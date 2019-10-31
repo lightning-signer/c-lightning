@@ -70,3 +70,16 @@ def handle_get_per_commitment_point(n, dbid):
 # message 2
 def handle_cannouncement_sig(ca, node_id, dbid):
     debug("PYHSMD handle_cannouncement_sig", locals())
+
+# message 7
+def handle_sign_withdrawal_tx(satoshi_out,
+                              change_out,
+                              change_keyindex,
+			      outputs,
+                              utxos):
+    debug("PYHSMD handle_sign_withdrawal_tx", locals())
+
+# message 3
+# FIXME - fill in signature
+def handle_channel_update_sig():
+    debug("PYHSMD handle_channel_update_sig", locals())
