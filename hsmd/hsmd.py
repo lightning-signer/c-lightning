@@ -5,7 +5,7 @@ import grpc
 import coincurve
 import api_pb2_grpc
 
-from api_pb2 import ECDHRequest, ECDHResponse
+from api_pb2 import ECDHReq, ECDHRsp
 
 import EXFILT
 
@@ -38,26 +38,26 @@ def handle_ecdh(point):
     global stub
     debug("PYHSMD handle_ecdh", locals())
 
-    # ECDH is not best joint (c-lightning/lnd) candidate.
-    #
-    # req = ECDHRequest()
-    # req.point = point['pubkey']
-    # rsp = stub.ECDH(req)
-    # ss = rsp.shared_secret
-    # debug("PYHSMD handle_ecdh =>", ss.hex())
+    req = ECDHReq()
+    req.point = point['pubkey']
+    rsp = stub.ECDH(req)
+    ss = rsp.shared_secret
+    debug("PYHSMD handle_ecdh =>", ss.hex())
 
-    # FIXME - move this computation into the liposig server.
-    local_priv = coincurve.PrivateKey.from_hex(EXFILT.privkey_hex)
-    xx = int.from_bytes(point['pubkey'][:32], byteorder='little')
-    yy = int.from_bytes(point['pubkey'][32:], byteorder='little')
-    try:
-        remote_pub = coincurve.PublicKey.from_point(xx, yy)
-        ss = local_priv.ecdh(remote_pub.format())
-        debug("PYHSMD handle_ecdh ->", ss.hex())
-        return ss
-    except ValueError as ex:
-        debug("PYHSMD handle_ecdh: bad point")
-        return None
+    ## # FIXME - move this computation into the liposig server.
+    ## local_priv = coincurve.PrivateKey.from_hex(EXFILT.privkey_hex)
+    ## xx = int.from_bytes(point['pubkey'][:32], byteorder='little')
+    ## yy = int.from_bytes(point['pubkey'][32:], byteorder='little')
+    ## try:
+    ##     remote_pub = coincurve.PublicKey.from_point(xx, yy)
+    ##     ss = local_priv.ecdh(remote_pub.format())
+    ##     debug("PYHSMD handle_ecdh ->", ss.hex())
+    ##     return ss
+    ## except ValueError as ex:
+    ##     debug("PYHSMD handle_ecdh: bad point")
+    ##     return None
+
+    return None
 
 # message 9
 def handle_pass_client_hsmfd(id, dbid, capabilities):
@@ -76,7 +76,8 @@ def handle_sign_withdrawal_tx(satoshi_out,
                               change_out,
                               change_keyindex,
 			      outputs,
-                              utxos):
+                              utxos,
+                              tx):
     debug("PYHSMD handle_sign_withdrawal_tx", locals())
 
 # message 3

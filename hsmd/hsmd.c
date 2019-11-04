@@ -888,6 +888,118 @@ static PyObject *py_utxos(struct utxo **utxos)
     return plist;
 }
 
+static PyObject *py_amount_sats(struct amount_sat **input_amounts)
+{
+    size_t len = tal_count(input_amounts);
+    PyObject *plist = PyList_New(len);
+    for (size_t ii = 0; ii < len; ++ii)
+        PyList_SetItem(plist, ii, py_amount_sat(input_amounts[ii]));
+    return plist;
+}
+
+static PyObject *py_wally_tx_witness_items(struct wally_tx_witness_item *items,
+                                           size_t num_items)
+{
+    PyObject *plist = PyList_New(num_items);
+    for (size_t ii = 0; ii < num_items; ++ii)
+        PyList_SetItem(plist, ii,
+                       PyBytes_FromStringAndSize(
+                           (char const *) items[ii].witness,
+                           items[ii].witness_len));
+    return plist;
+}
+
+static PyObject *py_wally_tx_witness_stack(struct wally_tx_witness_stack *pp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "items",
+                         py_wally_tx_witness_items(pp->items, pp->num_items));
+    PyDict_SetItemString(pdict, "items_allocation_len",
+                         PyLong_FromSize_t(pp->items_allocation_len));
+    return pdict;
+}
+
+static PyObject *py_wally_tx_input(struct wally_tx_input const *pp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "txhash",
+                         PyBytes_FromStringAndSize((char const *) pp->txhash,
+                                                   WALLY_TXHASH_LEN));
+    PyDict_SetItemString(pdict, "index",
+                         PyLong_FromUnsignedLong(pp->index));
+    PyDict_SetItemString(pdict, "sequence",
+                         PyLong_FromUnsignedLong(pp->sequence));
+    PyDict_SetItemString(pdict, "script",
+                         PyBytes_FromStringAndSize((char const *) pp->script,
+                                                   pp->script_len));
+    PyDict_SetItemString(pdict, "witness",
+                         pp->witness
+                         ? py_wally_tx_witness_stack(pp->witness)
+                         : py_none());
+    PyDict_SetItemString(pdict, "features",
+                         PyLong_FromUnsignedLong(pp->features));
+    return pdict;
+}
+
+static PyObject *py_wally_tx_inputs(struct wally_tx_input *inputs,
+                                    size_t num_inputs)
+{
+    PyObject *plist = PyList_New(num_inputs);
+    for (size_t ii = 0; ii < num_inputs; ++ii)
+        PyList_SetItem(plist, ii, py_wally_tx_input(&(inputs[ii])));
+    return plist;
+}
+
+static PyObject *py_wally_tx_output(struct wally_tx_output const *pp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "satoshi",
+                         PyLong_FromUnsignedLongLong(pp->satoshi));
+    PyDict_SetItemString(pdict, "script",
+                         PyBytes_FromStringAndSize((char const *) pp->script,
+                                                   pp->script_len));
+    PyDict_SetItemString(pdict, "features",
+                         PyLong_FromUnsignedLong(pp->features));
+    return pdict;
+}
+
+static PyObject *py_wally_tx_outputs(struct wally_tx_output *outputs,
+                                     size_t num_outputs)
+{
+    PyObject *plist = PyList_New(num_outputs);
+    for (size_t ii = 0; ii < num_outputs; ++ii)
+        PyList_SetItem(plist, ii, py_wally_tx_output(&(outputs[ii])));
+    return plist;
+}
+
+static PyObject *py_wally_tx(struct wally_tx const *pp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "version",
+                         PyLong_FromUnsignedLong(pp->version));
+    PyDict_SetItemString(pdict, "locktime",
+                         PyLong_FromUnsignedLong(pp->locktime));
+    PyDict_SetItemString(pdict, "inputs",
+                         py_wally_tx_inputs(pp->inputs, pp->num_inputs));
+    PyDict_SetItemString(pdict, "inputs_allocation_len",
+                         PyLong_FromSize_t(pp->inputs_allocation_len));
+    PyDict_SetItemString(pdict, "outputs",
+                         py_wally_tx_outputs(pp->outputs, pp->num_outputs));
+    PyDict_SetItemString(pdict, "outputs_allocation_len",
+                         PyLong_FromSize_t(pp->outputs_allocation_len));
+    return pdict;
+}
+
+static PyObject *py_bitcoin_tx(struct bitcoin_tx const *pp)
+{
+    PyObject *pdict = PyDict_New();
+    PyDict_SetItemString(pdict, "input_amounts",
+                         py_amount_sats(pp->input_amounts));
+    PyDict_SetItemString(pdict, "wally_tx", py_wally_tx(pp->wtx));
+    PyDict_SetItemString(pdict, "chainparams", py_chainparams(pp->chainparams));
+    return pdict;
+}
+
 static void py_init_hsm(struct bip32_key_version *bip32_key_version,
                         struct chainparams const *chainparams,
                         struct secret *hsm_encryption_key,
@@ -993,7 +1105,9 @@ static bool py_handle_ecdh(struct pubkey *point, struct secret *o_ss)
     PyTuple_SetItem(pargs, ndx++, py_pubkey(point));
     PyObject *pretval = PyObject_CallObject(pyfunc.handle_ecdh, pargs);
     if (pretval == NULL) {
-        PyErr_Print();
+        // FIXME - uncomment this when this call is supported
+        // PyErr_Print();
+        PyErr_Clear(); // needed if we don't print above
         fprintf(stderr, "Python call \"handle_ecdh\" failed\n");
         return false;
     }
@@ -1033,15 +1147,14 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
 	}
 
+    // FIXME - for now it's ok for the py_handle_ecdh call to fail.
+    // Eventually return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
     struct secret ss2;
-    if (!py_handle_ecdh(&point, &ss2)) {
-        return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
-    }
-
-    /* FIXME - remove this check when we replace existing logic */
-    if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
-        fprintf(stderr, "secrets don't match");
-        // exit(3);
+    if (py_handle_ecdh(&point, &ss2)) {
+        if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
+            fprintf(stderr, "secrets don't match");
+            // exit(3);
+        }
     }
     
 	/*~ In the normal case, we return the shared secret, and then read
@@ -2002,15 +2115,17 @@ static void py_handle_sign_withdrawal_tx(struct amount_sat *satoshi_out,
                                          struct amount_sat *change_out,
                                          u32 change_keyindex,
                                          struct bitcoin_tx_output **outputs,
-                                         struct utxo **utxos)
+                                         struct utxo **utxos,
+                                         struct bitcoin_tx *tx)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(5);
+    PyObject *pargs = PyTuple_New(6);
     PyTuple_SetItem(pargs, ndx++, py_amount_sat(satoshi_out));
     PyTuple_SetItem(pargs, ndx++, py_amount_sat(change_out));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLong(change_keyindex));
     PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx_outputs(outputs));
     PyTuple_SetItem(pargs, ndx++, py_utxos(utxos));
+    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
     PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_withdrawal_tx, pargs);
     if (pretval == NULL) {
         PyErr_Print();
@@ -2040,9 +2155,6 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 					  &outputs, &utxos))
 		return bad_req(conn, c, msg_in);
 
-    py_handle_sign_withdrawal_tx(&satoshi_out, &change_out, change_keyindex,
-                                 outputs, utxos);
-
 	if (!bip32_pubkey(&secretstuff.bip32, &changekey, change_keyindex))
 		return bad_req_fmt(conn, c, msg_in,
 				   "Failed to get key %u", change_keyindex);
@@ -2050,6 +2162,9 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 	tx = withdraw_tx(tmpctx, c->chainparams,
 			 cast_const2(const struct utxo **, utxos), outputs,
 			 &changekey, change_out, NULL, NULL);
+
+    py_handle_sign_withdrawal_tx(&satoshi_out, &change_out, change_keyindex,
+                                 outputs, utxos, tx);
 
 	sign_all_inputs(tx, utxos);
 
