@@ -6,14 +6,19 @@ import coincurve
 import pycoin
 import api_pb2_grpc
 
+# Needed because pytest loses stderr from the hsmd process.
+import functools
+import traceback
+
 from api_pb2 import (
     ECDHReq,
-    SignWithdrawalTxReq,
+    SignWithdrawalTxReq, SignDescriptor
 )
 
 from pycoin.symbols.btc import network
 
 import EXFILT
+
 
 Tx = network.tx
 
@@ -21,6 +26,22 @@ def debug(*objs):
     ff = sys.stdout
     print(*objs, file=ff)
     ff.flush()
+
+# Needed because pytest loses stderr from the hsmd process.
+def stdout_exceptions(function):
+    """
+    A decorator that wraps the passed in function and logs
+    exceptions to the debug stream.
+    """
+    @functools.wraps(function)
+    def wrapper(*args, **kwargs):
+        try:
+            return function(*args, **kwargs)
+        except:
+            traceback.print_exc()
+            sys.stdout.flush()
+            raise
+    return wrapper
 
 stub = None
 def setup():
@@ -43,6 +64,7 @@ def handle_get_channel_basepoints(peer_id, dbid):
     debug("PYHSMD handle_get_channel_basepoints", locals())
 
 # message 1
+@stdout_exceptions
 def handle_ecdh(point):
     global stub
     debug("PYHSMD handle_ecdh", locals())
@@ -81,6 +103,7 @@ def handle_cannouncement_sig(ca, node_id, dbid):
     debug("PYHSMD handle_cannouncement_sig", locals())
 
 # message 7
+@stdout_exceptions
 def handle_sign_withdrawal_tx(satoshi_out,
                               change_out,
                               change_keyindex,
@@ -89,23 +112,39 @@ def handle_sign_withdrawal_tx(satoshi_out,
                               tx):
     debug("PYHSMD handle_sign_withdrawal_tx", locals())
 
+    req = SignWithdrawalTxReq()
+    
     version = tx['wally_tx']['version']
 
+    isds = []
     txs_in = []
     for inp in tx['wally_tx']['inputs']:
         txs_in.append(Tx.TxIn(inp['txhash'],
                               inp['index'],
                               inp['script'],
                               inp['sequence']))
+        isds.append(SignDescriptor())
 
+    osds = []
     txs_out = []
     for out in tx['wally_tx']['outputs']:
         txs_out.append(Tx.TxOut(out['satoshi'],
                                 out['script']))
-    
+        osds.append(SignDescriptor())
+   
     tx = Tx(version, txs_in, txs_out)
+    debug("PYHSMD handle_sign_withdrawal_tx TX", tx.as_hex())
 
-    debug("PYHSMD tx hex", tx.as_hex())
+    req.raw_tx_bytes = tx.as_bin()
+    req.input_descs.extend(isds)
+    req.output_descs.extend(osds)
+
+    debug("PYHSMD handle_sign_withdrawal_tx calling server")
+    rsp = stub.SignWithdrawalTx(req)
+    sigs = rsp.raw_sigs
+
+    for ndx, sig in sigs:
+        debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.as_hex())
 
 # message 3
 # FIXME - fill in signature
