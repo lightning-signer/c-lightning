@@ -3,15 +3,24 @@
 import sys
 import grpc
 import coincurve
+import pycoin
 import api_pb2_grpc
 
-from api_pb2 import ECDHReq, ECDHRsp
+from api_pb2 import (
+    ECDHReq,
+    SignWithdrawalTxReq,
+)
+
+from pycoin.symbols.btc import network
 
 import EXFILT
 
+Tx = network.tx
+
 def debug(*objs):
-    print(*objs)
-    sys.stdout.flush()
+    ff = sys.stdout
+    print(*objs, file=ff)
+    ff.flush()
 
 stub = None
 def setup():
@@ -79,6 +88,24 @@ def handle_sign_withdrawal_tx(satoshi_out,
                               utxos,
                               tx):
     debug("PYHSMD handle_sign_withdrawal_tx", locals())
+
+    version = tx['wally_tx']['version']
+
+    txs_in = []
+    for inp in tx['wally_tx']['inputs']:
+        txs_in.append(Tx.TxIn(inp['txhash'],
+                              inp['index'],
+                              inp['script'],
+                              inp['sequence']))
+
+    txs_out = []
+    for out in tx['wally_tx']['outputs']:
+        txs_out.append(Tx.TxOut(out['satoshi'],
+                                out['script']))
+    
+    tx = Tx(version, txs_in, txs_out)
+
+    debug("PYHSMD tx hex", tx.as_hex())
 
 # message 3
 # FIXME - fill in signature
