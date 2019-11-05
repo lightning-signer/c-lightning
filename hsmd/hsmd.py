@@ -38,7 +38,7 @@ def stdout_exceptions(function):
         try:
             return function(*args, **kwargs)
         except:
-            traceback.print_exc()
+            traceback.print_exc(file=sys.stdout)
             sys.stdout.flush()
             raise
     return wrapper
