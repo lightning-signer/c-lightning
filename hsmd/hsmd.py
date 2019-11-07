@@ -12,13 +12,12 @@ import traceback
 
 from api_pb2 import (
     ECDHReq,
-    SignWithdrawalTxReq, SignDescriptor
+    SignWithdrawalTxReq, SignDescriptor, KeyLocator
 )
 
 from pycoin.symbols.btc import network
 
 import EXFILT
-
 
 Tx = network.tx
 
@@ -107,37 +106,13 @@ def handle_cannouncement_sig(ca, node_id, dbid):
 def handle_sign_withdrawal_tx(satoshi_out,
                               change_out,
                               change_keyindex,
-			      outputs,
+                              outputs,
                               utxos,
                               tx):
     debug("PYHSMD handle_sign_withdrawal_tx", locals())
 
-    req = SignWithdrawalTxReq()
-    
-    version = tx['wally_tx']['version']
-
-    isds = []
-    txs_in = []
-    for inp in tx['wally_tx']['inputs']:
-        txs_in.append(Tx.TxIn(inp['txhash'],
-                              inp['index'],
-                              inp['script'],
-                              inp['sequence']))
-        isds.append(SignDescriptor())
-
-    osds = []
-    txs_out = []
-    for out in tx['wally_tx']['outputs']:
-        txs_out.append(Tx.TxOut(out['satoshi'],
-                                out['script']))
-        osds.append(SignDescriptor())
-   
-    tx = Tx(version, txs_in, txs_out)
-    debug("PYHSMD handle_sign_withdrawal_tx TX", tx.as_hex())
-
-    req.raw_tx_bytes = tx.as_bin()
-    req.input_descs.extend(isds)
-    req.output_descs.extend(osds)
+    assert len(outputs) == 1, "expected a single output"
+    req = create_withdrawal_tx(tx, utxos, change_keyindex, outputs[0], change_out)
 
     debug("PYHSMD handle_sign_withdrawal_tx calling server")
     rsp = stub.SignWithdrawalTx(req)
@@ -145,6 +120,44 @@ def handle_sign_withdrawal_tx(satoshi_out,
 
     for ndx, sig in sigs:
         debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.as_hex())
+
+
+def create_withdrawal_tx(tx, utxos, change_keyindex, output, change_output):
+    req = SignWithdrawalTxReq()
+    version = tx['wally_tx']['version']
+    isds = []
+    txs_in = []
+    for i, inp in enumerate(tx['wally_tx']['inputs']):
+        txs_in.append(Tx.TxIn(inp['txhash'],
+                              inp['index'],
+                              inp['script'],
+                              inp['sequence']))
+        utxo = utxos[i]
+        assert not utxo['is_p2sh']
+        desc = SignDescriptor()
+        desc.key_loc.key_index = utxo['keyindex']
+        desc.key_loc.key_family = KeyLocator.layer_one
+        isds.append(desc)
+    osds = []
+    txs_out = []
+    for out in tx['wally_tx']['outputs']:
+        txs_out.append(Tx.TxOut(out['satoshi'],
+                                out['script']))
+        desc = SignDescriptor()
+        if out['script'] != output['script']:
+            assert out['satoshi'] == change_output['satoshis']
+            desc.key_loc.key_index = change_keyindex
+            desc.key_loc.key_family = KeyLocator.layer_one
+        else:
+            desc.key_loc.key_family = KeyLocator.unknown
+        osds.append(desc)
+    tx = Tx(version, txs_in, txs_out)
+    debug("PYHSMD handle_sign_withdrawal_tx TX", tx.as_hex())
+    req.raw_tx_bytes = tx.as_bin()
+    req.input_descs.extend(isds)
+    req.output_descs.extend(osds)
+    return req
+
 
 # message 3
 # FIXME - fill in signature
