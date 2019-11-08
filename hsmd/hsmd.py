@@ -12,7 +12,7 @@ import traceback
 
 from api_pb2 import (
     ECDHReq,
-    SignWithdrawalTxReq, SignDescriptor, KeyLocator
+    SignWithdrawalTxReq, SignDescriptor, KeyLocator, TxOut
 )
 
 from pycoin.symbols.btc import network
@@ -137,6 +137,7 @@ def create_withdrawal_tx(tx, utxos, change_keyindex, output, change_output):
         desc = SignDescriptor()
         desc.key_loc.key_index = utxo['keyindex']
         desc.key_loc.key_family = KeyLocator.layer_one
+        desc.output.value = utxo['amount']['satoshis']
         isds.append(desc)
     osds = []
     txs_out = []
