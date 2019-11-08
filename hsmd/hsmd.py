@@ -118,8 +118,8 @@ def handle_sign_withdrawal_tx(satoshi_out,
     rsp = stub.SignWithdrawalTx(req)
     sigs = rsp.raw_sigs
 
-    for ndx, sig in sigs:
-        debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.as_hex())
+    for ndx, sig in enumerate(sigs):
+        debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.hex())
 
 
 def create_withdrawal_tx(tx, utxos, change_keyindex, output, change_output):
