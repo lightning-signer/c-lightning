@@ -76,6 +76,9 @@ static struct {
  * so set it static.*/
 static struct  bip32_key_version  bip32_key_version;
 
+/* Used by the py_hsmd interface. */
+static struct node_id self_node_id;
+
 #if DEVELOPER
 /* If they specify --dev-force-privkey it ends up in here. */
 static struct privkey *dev_force_privkey;
@@ -1090,6 +1093,9 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	node_key(NULL, &key);
 	node_id_from_pubkey(&node_id, &key);
 
+    /* Save the node_id in a global for the py_hsmd interface. */
+    memcpy(&self_node_id, &node_id, sizeof(self_node_id));
+
 	/*~ Note: marshalling a bip32 tree only marshals the public side,
 	 * not the secrets!  So we're not actually handing them out here!
 	 */
@@ -1101,7 +1107,8 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 static bool py_handle_ecdh(struct pubkey *point, struct secret *o_ss)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(1);
+    PyObject *pargs = PyTuple_New(2);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
     PyTuple_SetItem(pargs, ndx++, py_pubkey(point));
     PyObject *pretval = PyObject_CallObject(pyfunc.handle_ecdh, pargs);
     if (pretval == NULL) {
@@ -1167,7 +1174,8 @@ static void py_handle_cannouncement_sig(u8 *ca, size_t calen,
                                         u64 dbid)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(3);
+    PyObject *pargs = PyTuple_New(4);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
     PyTuple_SetItem(pargs, ndx++,
                     PyBytes_FromStringAndSize((char const *) ca, calen));
     PyTuple_SetItem(pargs, ndx++, py_node_id(node_id));
@@ -1243,9 +1251,9 @@ static struct io_plan *handle_cannouncement_sig(struct io_conn *conn,
 	if (fromwire_peektype(ca) != WIRE_CHANNEL_ANNOUNCEMENT)
 		return bad_req_fmt(conn, c, msg_in,
 				   "Invalid channel announcement");
-
-    py_handle_cannouncement_sig(ca, tal_count(ca), &c->id, c->dbid);
     
+    py_handle_cannouncement_sig(ca, tal_count(ca), &c->id, c->dbid);
+
 	node_key(&node_pkey, NULL);
 	sha256_double(&hash, ca + offset, tal_count(ca) - offset);
 
@@ -1311,7 +1319,8 @@ static struct io_plan *handle_channel_update_sig(struct io_conn *conn,
 static void py_handle_get_channel_basepoints(struct node_id *peer_id, u64 dbid)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(2);
+    PyObject *pargs = PyTuple_New(3);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
     PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
     PyObject *pretval = PyObject_CallObject(pyfunc.handle_get_channel_basepoints, pargs);
@@ -1747,7 +1756,8 @@ static struct io_plan *handle_sign_local_htlc_tx(struct io_conn *conn,
 static void py_handle_get_per_commitment_point(u64 n, u64 dbid)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(2);
+    PyObject *pargs = PyTuple_New(3);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(n));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
     PyObject *pretval = PyObject_CallObject(pyfunc.handle_get_per_commitment_point, pargs);
@@ -1916,7 +1926,8 @@ static void py_handle_pass_client_hsmfd(struct node_id *id,
                                         u64 capabilities)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(3);
+    PyObject *pargs = PyTuple_New(4);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
     PyTuple_SetItem(pargs, ndx++, py_node_id(id));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(capabilities));
@@ -2119,7 +2130,8 @@ static void py_handle_sign_withdrawal_tx(struct amount_sat *satoshi_out,
                                          struct bitcoin_tx *tx)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(6);
+    PyObject *pargs = PyTuple_New(7);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
     PyTuple_SetItem(pargs, ndx++, py_amount_sat(satoshi_out));
     PyTuple_SetItem(pargs, ndx++, py_amount_sat(change_out));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLong(change_keyindex));

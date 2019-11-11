@@ -59,16 +59,17 @@ def init_hsm(bip32_key_version,
     debug("PYHSMD init_hsm", locals())
 
 # message 10
-def handle_get_channel_basepoints(peer_id, dbid):
+def handle_get_channel_basepoints(self_id, peer_id, dbid):
     debug("PYHSMD handle_get_channel_basepoints", locals())
 
 # message 1
 @stdout_exceptions
-def handle_ecdh(point):
+def handle_ecdh(self_id, point):
     global stub
     debug("PYHSMD handle_ecdh", locals())
 
     req = ECDHReq()
+    req.self_node_id = self_id['k']
     req.point = point['pubkey']
     rsp = stub.ECDH(req)
     ss = rsp.shared_secret
@@ -90,20 +91,21 @@ def handle_ecdh(point):
     return None
 
 # message 9
-def handle_pass_client_hsmfd(id, dbid, capabilities):
+def handle_pass_client_hsmfd(self_id, id, dbid, capabilities):
     debug("PYHSMD handle_pass_client_hsmfd", locals())
     
 # message 18
-def handle_get_per_commitment_point(n, dbid):
+def handle_get_per_commitment_point(self_id, n, dbid):
     debug("PYHSMD handle_get_per_commitment_point", locals())
 
 # message 2
-def handle_cannouncement_sig(ca, node_id, dbid):
+def handle_cannouncement_sig(self_id, ca, node_id, dbid):
     debug("PYHSMD handle_cannouncement_sig", locals())
 
 # message 7
 @stdout_exceptions
-def handle_sign_withdrawal_tx(satoshi_out,
+def handle_sign_withdrawal_tx(self_id,
+                              satoshi_out,
                               change_out,
                               change_keyindex,
                               outputs,
@@ -112,7 +114,7 @@ def handle_sign_withdrawal_tx(satoshi_out,
     debug("PYHSMD handle_sign_withdrawal_tx", locals())
 
     assert len(outputs) == 1, "expected a single output"
-    req = create_withdrawal_tx(tx, utxos, change_keyindex, outputs[0], change_out)
+    req = create_withdrawal_tx(self_id, tx, utxos, change_keyindex, outputs[0], change_out)
 
     debug("PYHSMD handle_sign_withdrawal_tx calling server")
     rsp = stub.SignWithdrawalTx(req)
@@ -122,8 +124,10 @@ def handle_sign_withdrawal_tx(satoshi_out,
         debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.hex())
 
 
-def create_withdrawal_tx(tx, utxos, change_keyindex, output, change_output):
+def create_withdrawal_tx(self_id, tx, utxos, change_keyindex,
+                         output, change_output):
     req = SignWithdrawalTxReq()
+    req.self_node_id = self_id['k']
     version = tx['wally_tx']['version']
     isds = []
     txs_in = []
