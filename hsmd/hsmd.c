@@ -1027,7 +1027,7 @@ static void py_init_hsm(struct bip32_key_version *bip32_key_version,
     if (pretval == NULL) {
         PyErr_Print();
         fprintf(stderr, "Python call \"init_hsm\" failed\n");
-        exit(3);
+        // exit(3);
     }
     Py_DECREF(pretval);
 

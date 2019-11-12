@@ -51,6 +51,7 @@ def setup():
     stub = api_pb2_grpc.SignerStub(channel)
 
 # message 11
+@stdout_exceptions
 def init_hsm(bip32_key_version,
              chainparams,
              hsm_encryption_key,
