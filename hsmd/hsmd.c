@@ -124,6 +124,7 @@ static struct {
     PyObject *handle_get_per_commitment_point;
     PyObject *handle_cannouncement_sig;
     PyObject *handle_sign_withdrawal_tx;
+    PyObject *handle_sign_remote_commitment_tx;
 } pyfunc;
 
 /*~ We keep a map of nonzero dbid -> clients, mainly for leak detection.
@@ -891,12 +892,13 @@ static PyObject *py_utxos(struct utxo **utxos)
     return plist;
 }
 
-static PyObject *py_amount_sats(struct amount_sat **input_amounts)
+static PyObject *py_amounts_sat(struct amount_sat **input_amounts)
 {
     size_t len = tal_count(input_amounts);
     PyObject *plist = PyList_New(len);
     for (size_t ii = 0; ii < len; ++ii)
-        PyList_SetItem(plist, ii, py_amount_sat(input_amounts[ii]));
+        PyList_SetItem(plist, ii, input_amounts[ii] ?
+                       py_amount_sat(input_amounts[ii]) : py_none());
     return plist;
 }
 
@@ -997,7 +999,7 @@ static PyObject *py_bitcoin_tx(struct bitcoin_tx const *pp)
 {
     PyObject *pdict = PyDict_New();
     PyDict_SetItemString(pdict, "input_amounts",
-                         py_amount_sats(pp->input_amounts));
+                         py_amounts_sat(pp->input_amounts));
     PyDict_SetItemString(pdict, "wally_tx", py_wally_tx(pp->wtx));
     PyDict_SetItemString(pdict, "chainparams", py_chainparams(pp->chainparams));
     return pdict;
@@ -1427,6 +1429,28 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 			 take(towire_hsm_sign_commitment_tx_reply(NULL, &sig)));
 }
 
+static void py_handle_sign_remote_commitment_tx(
+                struct bitcoin_tx *tx,
+                struct pubkey *remote_funding_pubkey,
+                struct amount_sat *funding)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(4);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
+    PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_funding_pubkey));
+    PyTuple_SetItem(pargs, ndx++, py_amount_sat(funding));
+    PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_remote_commitment_tx, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"handle_sign_remote_commitment_tx\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+
+    /* FIXME - Need to return something here */
+}
+
 /*~ This is used by channeld to create signatures for the remote peer's
  * commitment transaction.  It's functionally identical to signing our own,
  * but we expect to do this repeatedly as commitment transactions are
@@ -1469,6 +1493,9 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 					      &remote_funding_pubkey);
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
+
+    py_handle_sign_remote_commitment_tx(tx, &remote_funding_pubkey, &funding);
+    
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,
@@ -2590,6 +2617,8 @@ static void setup_python_functions(void)
         python_function(pmodule, "handle_cannouncement_sig");
     pyfunc.handle_sign_withdrawal_tx =
         python_function(pmodule, "handle_sign_withdrawal_tx");
+    pyfunc.handle_sign_remote_commitment_tx =
+        python_function(pmodule, "handle_sign_remote_commitment_tx");
 
     /* Guess we don't need the module around anymore? */
     Py_DECREF(pmodule);

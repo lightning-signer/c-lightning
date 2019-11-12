@@ -11,8 +11,10 @@ import functools
 import traceback
 
 from api_pb2 import (
+    SignDescriptor, KeyLocator, TxOut,
     ECDHReq,
-    SignWithdrawalTxReq, SignDescriptor, KeyLocator, TxOut
+    SignWithdrawalTxReq, 
+    SignRemoteCommitmentTxReq,
 )
 
 from pycoin.symbols.btc import network
@@ -123,7 +125,6 @@ def handle_sign_withdrawal_tx(self_id,
     for ndx, sig in enumerate(sigs):
         debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.hex())
 
-
 def create_withdrawal_tx(self_id, tx, utxos, change_keyindex,
                          output, change_output):
     req = SignWithdrawalTxReq()
@@ -163,6 +164,44 @@ def create_withdrawal_tx(self_id, tx, utxos, change_keyindex,
     req.output_descs.extend(osds)
     return req
 
+# message 19
+@stdout_exceptions
+def handle_sign_remote_commitment_tx(self_id, tx,
+                                     remote_funding_pubkey, funding):
+    debug("PYHSMD handle_sign_remote_commitment_tx", locals())
+
+    req = SignRemoteCommitmentTxReq()
+    req.self_node_id = self_id['k']
+    version = tx['wally_tx']['version']
+    isds = []
+    txs_in = []
+    for i, inp in enumerate(tx['wally_tx']['inputs']):
+        txs_in.append(Tx.TxIn(inp['txhash'],
+                              inp['index'],
+                              inp['script'],
+                              inp['sequence']))
+        # FIXME - figure out the input SignDescriptor.
+        desc = SignDescriptor()
+        isds.append(desc)
+    osds = []
+    txs_out = []
+    for out in tx['wally_tx']['outputs']:
+        txs_out.append(Tx.TxOut(out['satoshi'],
+                                out['script']))
+        # FIXME - figure out the output SignDescriptor.
+        desc = SignDescriptor()
+        osds.append(desc)
+    tx = Tx(version, txs_in, txs_out)
+    debug("PYHSMD handle_sign_remote_commitment_tx TX", tx.as_hex())
+    req.raw_tx_bytes = tx.as_bin()
+    req.input_descs.extend(isds)
+    req.output_descs.extend(osds)
+
+    rsp = stub.SignRemoteCommitmentTx(req)
+    sigs = rsp.raw_sigs
+
+    for ndx, sig in enumerate(sigs):
+        debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.hex())
 
 # message 3
 # FIXME - fill in signature
