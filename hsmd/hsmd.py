@@ -103,14 +103,14 @@ def init_hsm(bip32_key_version,
 # message 10
 def handle_get_channel_basepoints(self_id, peer_id, dbid):
     global stub
-    debug("PYHSMD handle_get_channel_basepoints", locals())
+    debug("PYHSMD handle_get_channel_basepoints", self_id['k'].hex(), locals())
     
     
 # message 1
 @stdout_exceptions
 def handle_ecdh(self_id, point):
     global stub
-    debug("PYHSMD handle_ecdh", locals())
+    debug("PYHSMD handle_ecdh", self_id['k'].hex(), locals())
 
     req = ECDHReq()
     req.self_node_id = self_id['k']
@@ -136,15 +136,15 @@ def handle_ecdh(self_id, point):
 
 # message 9
 def handle_pass_client_hsmfd(self_id, id, dbid, capabilities):
-    debug("PYHSMD handle_pass_client_hsmfd", locals())
+    debug("PYHSMD handle_pass_client_hsmfd", self_id['k'].hex(), locals())
     
 # message 18
 def handle_get_per_commitment_point(self_id, n, dbid):
-    debug("PYHSMD handle_get_per_commitment_point", locals())
+    debug("PYHSMD handle_get_per_commitment_point", self_id['k'].hex(), locals())
 
 # message 2
 def handle_cannouncement_sig(self_id, ca, node_id, dbid):
-    debug("PYHSMD handle_cannouncement_sig", locals())
+    debug("PYHSMD handle_cannouncement_sig", self_id['k'].hex(), locals())
 
 # message 7
 @stdout_exceptions
@@ -155,7 +155,7 @@ def handle_sign_withdrawal_tx(self_id,
                               outputs,
                               utxos,
                               tx):
-    debug("PYHSMD handle_sign_withdrawal_tx", locals())
+    debug("PYHSMD handle_sign_withdrawal_tx", self_id['k'].hex(), locals())
 
     assert len(outputs) == 1, "expected a single output"
     req = create_withdrawal_tx(self_id, tx, utxos, change_keyindex, outputs[0], change_out)
@@ -210,7 +210,7 @@ def create_withdrawal_tx(self_id, tx, utxos, change_keyindex,
 @stdout_exceptions
 def handle_sign_remote_commitment_tx(self_id, tx,
                                      remote_funding_pubkey, funding):
-    debug("PYHSMD handle_sign_remote_commitment_tx", locals())
+    debug("PYHSMD handle_sign_remote_commitment_tx", self_id['k'].hex(), locals())
 
     req = SignRemoteCommitmentTxReq()
     req.self_node_id = self_id['k']
