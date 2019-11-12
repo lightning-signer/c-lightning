@@ -694,7 +694,7 @@ static PyObject *py_none(void)
     Py_RETURN_NONE;
 }
 
-static PyObject *py_bip32_key_version(struct bip32_key_version *vp)
+static PyObject *py_bip32_key_version(struct bip32_key_version const *vp)
 {
     PyObject *pdict = PyDict_New();
     PyDict_SetItemString(pdict, "bip32_pubkey_version",
@@ -779,6 +779,17 @@ static PyObject *py_chainparams(struct chainparams const *cp)
                          PyLong_FromUnsignedLong(cp->p2pkh_version));
     PyDict_SetItemString(pdict, "p2sh_version",
                          PyLong_FromUnsignedLong(cp->p2sh_version));
+    PyDict_SetItemString(pdict, "testnet",
+                         PyBool_FromLong(cp->testnet));
+    PyDict_SetItemString(pdict, "bip32_key_version",
+                         py_bip32_key_version(&(cp->bip32_key_version)));
+    PyDict_SetItemString(pdict, "is_elements",
+                         PyBool_FromLong(cp->is_elements));
+    PyDict_SetItemString(pdict, "fee_asset_tag",
+                         cp->fee_asset_tag ?
+                         PyBytes_FromStringAndSize
+                         ((char const *) cp->fee_asset_tag, 33) :
+                         py_none());
     return pdict;
 }
 
@@ -1011,10 +1022,11 @@ static void py_init_hsm(struct bip32_key_version *bip32_key_version,
                         struct privkey *privkey,
                         struct secret *seed,
                         struct secrets *secrets,
-                        struct sha256 *shaseed)
+                        struct sha256 *shaseed,
+                        struct secret *hsm_secret)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(7);
+    PyObject *pargs = PyTuple_New(8);
     PyTuple_SetItem(pargs, ndx++, py_bip32_key_version(bip32_key_version));
     PyTuple_SetItem(pargs, ndx++, py_chainparams(chainparams));
     PyTuple_SetItem(pargs, ndx++, hsm_encryption_key ?
@@ -1023,6 +1035,7 @@ static void py_init_hsm(struct bip32_key_version *bip32_key_version,
     PyTuple_SetItem(pargs, ndx++, seed ? py_secret(seed) : py_none());
     PyTuple_SetItem(pargs, ndx++, secrets ? py_secrets(secrets) : py_none());
     PyTuple_SetItem(pargs, ndx++, shaseed ? py_sha256(shaseed) : py_none());
+    PyTuple_SetItem(pargs, ndx++, py_secret(hsm_secret));
     PyObject *pretval = PyObject_CallObject(pyfunc.init_hsm, pargs);
     if (pretval == NULL) {
         PyErr_Print();
@@ -1075,15 +1088,16 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	dev_force_channel_secrets_shaseed = shaseed;
 #endif
 
-    py_init_hsm(&bip32_key_version, chainparams, hsm_encryption_key,
-                privkey, seed, secrets, shaseed);
-    
 	/* Once we have read the init message we know which params the master
 	 * will use */
 	c->chainparams = chainparams;
 	maybe_create_new_hsm(hsm_encryption_key, true);
 	load_hsm(hsm_encryption_key);
 
+    py_init_hsm(&bip32_key_version, chainparams, hsm_encryption_key,
+                privkey, seed, secrets, shaseed,
+                &secretstuff.hsm_secret);
+    
 	/*~ We don't need the hsm_secret encryption key anymore.
 	 * Note that sodium_munlock() also zeroes the memory. */
 	if (hsm_encryption_key) {
