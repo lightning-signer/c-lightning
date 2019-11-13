@@ -118,21 +118,7 @@ def handle_ecdh(self_id, point):
     rsp = stub.ECDH(req)
     ss = rsp.shared_secret
     debug("PYHSMD handle_ecdh =>", ss.hex())
-
-    ## # FIXME - move this computation into the liposig server.
-    ## local_priv = coincurve.PrivateKey.from_hex(EXFILT.privkey_hex)
-    ## xx = int.from_bytes(point['pubkey'][:32], byteorder='little')
-    ## yy = int.from_bytes(point['pubkey'][32:], byteorder='little')
-    ## try:
-    ##     remote_pub = coincurve.PublicKey.from_point(xx, yy)
-    ##     ss = local_priv.ecdh(remote_pub.format())
-    ##     debug("PYHSMD handle_ecdh ->", ss.hex())
-    ##     return ss
-    ## except ValueError as ex:
-    ##     debug("PYHSMD handle_ecdh: bad point")
-    ##     return None
-
-    return None
+    return ss
 
 # message 9
 def handle_pass_client_hsmfd(self_id, id, dbid, capabilities):

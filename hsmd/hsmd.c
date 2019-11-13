@@ -1176,9 +1176,13 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
     if (py_handle_ecdh(&point, &ss2)) {
         if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
             fprintf(stderr, "secrets don't match");
-            // exit(3);
+            exit(3);
         }
     }
+    fprintf(stderr, "ECDH ");
+    for (size_t ii = 0; ii < 32; ++ii)
+        fprintf(stderr, "%02x", ss.data[ii]);
+    fprintf(stderr, "\n");
     
 	/*~ In the normal case, we return the shared secret, and then read
 	 * the next msg. */
