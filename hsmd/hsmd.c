@@ -125,6 +125,8 @@ static struct {
     PyObject *handle_cannouncement_sig;
     PyObject *handle_sign_withdrawal_tx;
     PyObject *handle_sign_remote_commitment_tx;
+    PyObject *handle_sign_remote_htlc_tx;
+    PyObject *handle_sign_mutual_close_tx;
 } pyfunc;
 
 /*~ We keep a map of nonzero dbid -> clients, mainly for leak detection.
@@ -1450,14 +1452,18 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 static void py_handle_sign_remote_commitment_tx(
                 struct bitcoin_tx *tx,
                 struct pubkey *remote_funding_pubkey,
-                struct amount_sat *funding)
+                struct amount_sat *funding,
+                struct node_id *peer_id,
+                u64 dbid)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(4);
+    PyObject *pargs = PyTuple_New(6);
     PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
     PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
     PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_funding_pubkey));
     PyTuple_SetItem(pargs, ndx++, py_amount_sat(funding));
+    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
     PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_remote_commitment_tx, pargs);
     if (pretval == NULL) {
         PyErr_Print();
@@ -1512,7 +1518,8 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
-    py_handle_sign_remote_commitment_tx(tx, &remote_funding_pubkey, &funding);
+    py_handle_sign_remote_commitment_tx(tx, &remote_funding_pubkey, &funding,
+                                        &c->id, c->dbid);
     
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
@@ -1521,6 +1528,35 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 		      &sig);
 
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
+}
+
+static void py_handle_sign_remote_htlc_tx(
+                struct bitcoin_tx *tx,
+                u8 *wscript,
+                struct pubkey *remote_per_commit_point,
+                struct node_id *peer_id,
+                u64 dbid)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(6);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
+    PyTuple_SetItem(pargs, ndx++, wscript ?
+                    PyBytes_FromStringAndSize((char const *) wscript,
+                                              tal_bytelen(wscript)) :
+                    py_none());
+    PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_per_commit_point));
+    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+    PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_remote_htlc_tx, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"handle_sign_remote_htlc_tx\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+
+    /* FIXME - Need to return something here */
 }
 
 /*~ This is used by channeld to create signatures for the remote peer's
@@ -1563,6 +1599,10 @@ static struct io_plan *handle_sign_remote_htlc_tx(struct io_conn *conn,
 
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &amount);
+
+    py_handle_sign_remote_htlc_tx(tx, wscript, &remote_per_commit_point,
+                                  &c->id, c->dbid);
+
 	sign_tx_input(tx, 0, NULL, wscript, &htlc_privkey, &htlc_pubkey,
 		      SIGHASH_ALL, &sig);
 
@@ -1896,6 +1936,32 @@ static struct io_plan *handle_check_future_secret(struct io_conn *conn,
 				   secret_eq_consttime(&secret, &suggested))));
 }
 
+static void py_handle_sign_mutual_close_tx(
+                struct bitcoin_tx *tx,
+                struct pubkey *remote_funding_pubkey,
+                struct amount_sat *funding,
+                struct node_id *peer_id,
+                u64 dbid)
+{
+    size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(6);
+    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
+    PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_funding_pubkey));
+    PyTuple_SetItem(pargs, ndx++, py_amount_sat(funding));
+    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+    PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_mutual_close_tx, pargs);
+    if (pretval == NULL) {
+        PyErr_Print();
+        fprintf(stderr, "Python call \"handle_sign_mutual_close_tx\" failed\n");
+        exit(3);
+    }
+    Py_DECREF(pretval);
+
+    /* FIXME - Need to return something here */
+}
+
 /* This is used by closingd to sign off on a mutual close tx. */
 static struct io_plan *handle_sign_mutual_close_tx(struct io_conn *conn,
 						   struct client *c,
@@ -1928,7 +1994,11 @@ static struct io_plan *handle_sign_mutual_close_tx(struct io_conn *conn,
 					      &remote_funding_pubkey);
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
-	sign_tx_input(tx, 0, NULL, funding_wscript,
+
+    py_handle_sign_mutual_close_tx(tx, &remote_funding_pubkey, &funding,
+                                   &c->id, c->dbid);
+    
+    sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,
 		      SIGHASH_ALL, &sig);
@@ -2637,6 +2707,10 @@ static void setup_python_functions(void)
         python_function(pmodule, "handle_sign_withdrawal_tx");
     pyfunc.handle_sign_remote_commitment_tx =
         python_function(pmodule, "handle_sign_remote_commitment_tx");
+    pyfunc.handle_sign_remote_htlc_tx =
+        python_function(pmodule, "handle_sign_remote_htlc_tx");
+    pyfunc.handle_sign_mutual_close_tx =
+        python_function(pmodule, "handle_sign_mutual_close_tx");
 
     /* Guess we don't need the module around anymore? */
     Py_DECREF(pmodule);

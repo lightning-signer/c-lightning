@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-import sys
-import grpc
-import coincurve
-import pycoin
 import api_pb2_grpc
+import coincurve
+import grpc
+import pycoin
+import struct
+import sys
 
 # Needed because pytest loses stderr from the hsmd process.
 import functools
@@ -16,6 +17,7 @@ from api_pb2 import (
     ECDHReq,
     SignWithdrawalTxReq, 
     SignRemoteCommitmentTxReq,
+    SignMutualCloseTxReq,
 )
 
 from pycoin.symbols.btc import network
@@ -195,11 +197,14 @@ def create_withdrawal_tx(self_id, tx, utxos, change_keyindex,
 # message 19
 @stdout_exceptions
 def handle_sign_remote_commitment_tx(self_id, tx,
-                                     remote_funding_pubkey, funding):
+                                     remote_funding_pubkey,
+                                     funding, peer_id, dbid):
     debug("PYHSMD handle_sign_remote_commitment_tx", self_id['k'].hex(), locals())
 
     req = SignRemoteCommitmentTxReq()
     req.self_node_id = self_id['k']
+    req.channel_nonce = peer_id['k'] + struct.pack("<Q", dbid)
+    req.remote_funding_pubkey = remote_funding_pubkey['pubkey']
     version = tx['wally_tx']['version']
     isds = []
     txs_in = []
@@ -229,7 +234,93 @@ def handle_sign_remote_commitment_tx(self_id, tx,
     sigs = rsp.raw_sigs
 
     for ndx, sig in enumerate(sigs):
-        debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.hex())
+        debug("PYHSMD handle_sign_remote_commitment_tx sig", ndx, sig.hex())
+
+# message 20
+@stdout_exceptions
+def handle_sign_remote_htlc_tx(self_id, tx, wscript,
+                               remote_per_commit_point,
+                               peer_id, dbid):
+    debug("PYHSMD handle_sign_remote_htlc_tx", self_id['k'].hex(), locals())
+
+    req = SignRemoteHTLCTxReq()
+    req.self_node_id = self_id['k']
+    if wscript:
+        req.wscript = wscript
+    req.channel_nonce = peer_id['k'] + struct.pack("<Q", dbid)
+    req.remote_per_commit_point = remote_per_commit_point['pubkey']
+    version = tx['wally_tx']['version']
+    isds = []
+    txs_in = []
+    for i, inp in enumerate(tx['wally_tx']['inputs']):
+        txs_in.append(Tx.TxIn(inp['txhash'],
+                              inp['index'],
+                              inp['script'],
+                              inp['sequence']))
+        # FIXME - figure out the input SignDescriptor.
+        desc = SignDescriptor()
+        isds.append(desc)
+    osds = []
+    txs_out = []
+    for out in tx['wally_tx']['outputs']:
+        txs_out.append(Tx.TxOut(out['satoshi'],
+                                out['script']))
+        # FIXME - figure out the output SignDescriptor.
+        desc = SignDescriptor()
+        osds.append(desc)
+    tx = Tx(version, txs_in, txs_out)
+    debug("PYHSMD handle_sign_remote_commitment_tx TX", tx.as_hex())
+    req.raw_tx_bytes = tx.as_bin()
+    req.input_descs.extend(isds)
+    req.output_descs.extend(osds)
+
+    rsp = stub.SignRemoteHTLCTx(req)
+    sigs = rsp.raw_sigs
+
+    for ndx, sig in enumerate(sigs):
+        debug("PYHSMD handle_sign_remote_htlc_tx sig", ndx, sig.hex())
+
+# message 21
+@stdout_exceptions
+def handle_sign_mutual_close_tx(self_id, tx,
+                                remote_funding_pubkey,
+                                funding, peer_id, dbid):
+    debug("PYHSMD handle_sign_mutual_close_tx", self_id['k'].hex(), locals())
+
+    req = SignMutualCloseTxReq()
+    req.self_node_id = self_id['k']
+    req.channel_nonce = peer_id['k'] + struct.pack("<Q", dbid)
+    req.remote_funding_pubkey = remote_funding_pubkey['pubkey']
+    version = tx['wally_tx']['version']
+    isds = []
+    txs_in = []
+    for i, inp in enumerate(tx['wally_tx']['inputs']):
+        txs_in.append(Tx.TxIn(inp['txhash'],
+                              inp['index'],
+                              inp['script'],
+                              inp['sequence']))
+        # FIXME - figure out the input SignDescriptor.
+        desc = SignDescriptor()
+        isds.append(desc)
+    osds = []
+    txs_out = []
+    for out in tx['wally_tx']['outputs']:
+        txs_out.append(Tx.TxOut(out['satoshi'],
+                                out['script']))
+        # FIXME - figure out the output SignDescriptor.
+        desc = SignDescriptor()
+        osds.append(desc)
+    tx = Tx(version, txs_in, txs_out)
+    debug("PYHSMD handle_sign_mutual_close_tx TX", tx.as_hex())
+    req.raw_tx_bytes = tx.as_bin()
+    req.input_descs.extend(isds)
+    req.output_descs.extend(osds)
+
+    rsp = stub.SignMutualCloseTx(req)
+    sigs = rsp.raw_sigs
+
+    for ndx, sig in enumerate(sigs):
+        debug("PYHSMD handle_sign_mutual_close_tx sig", ndx, sig.hex())
 
 # message 3
 # FIXME - fill in signature
