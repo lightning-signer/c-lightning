@@ -15,8 +15,11 @@ from api_pb2 import (
     BIP32KeyVersion, ChainParams, SignDescriptor, KeyLocator, TxOut,
     InitHSMReq,
     ECDHReq,
+    PassClientHSMFdReq,
+    GetPerCommitmentPointReq,
     SignWithdrawalTxReq, 
     SignRemoteCommitmentTxReq,
+    SignRemoteHTLCTxReq,
     SignMutualCloseTxReq,
 )
 
@@ -63,6 +66,7 @@ def init_hsm(bip32_key_version,
              secrets,
              shaseed,
              hsm_secret):
+    global stub
     debug("PYHSMD init_hsm", locals())
 
     req = InitHSMReq()
@@ -103,6 +107,7 @@ def init_hsm(bip32_key_version,
     debug("PYHSMD init_hsm =>", node_id.hex())
 
 # message 10
+@stdout_exceptions
 def handle_get_channel_basepoints(self_id, peer_id, dbid):
     global stub
     debug("PYHSMD handle_get_channel_basepoints", self_id['k'].hex(), locals())
@@ -123,15 +128,40 @@ def handle_ecdh(self_id, point):
     return ss
 
 # message 9
-def handle_pass_client_hsmfd(self_id, id, dbid, capabilities):
+@stdout_exceptions
+def handle_pass_client_hsmfd(self_id, peer_id, dbid, capabilities):
+    global stub
     debug("PYHSMD handle_pass_client_hsmfd", self_id['k'].hex(), locals())
     
+    req = PassClientHSMFdReq()
+    req.self_node_id = self_id['k']
+    req.peer_node_id = peer_id['k']
+    req.dbid = dbid
+    req.capabilities = capabilities
+    rsp = stub.PassClientHSMFd(req)
+
+    debug("PYHSMD handle_pass_client_hsmfd after")
+    
+    return None
+    
 # message 18
-def handle_get_per_commitment_point(self_id, n, dbid):
+@stdout_exceptions
+def handle_get_per_commitment_point(self_id, peer_id, dbid, n):
+    global stub
     debug("PYHSMD handle_get_per_commitment_point", self_id['k'].hex(), locals())
+    
+    req = GetPerCommitmentPointReq()
+    req.self_node_id = self_id['k']
+    req.peer_node_id = peer_id['k']
+    req.dbid = dbid
+    req.n = n
+    rsp = stub.GetPerCommitmentPoint(req)
+    return rsp.per_commitment_point, rsp.old_secret
 
 # message 2
+@stdout_exceptions
 def handle_cannouncement_sig(self_id, ca, node_id, dbid):
+    global stub
     debug("PYHSMD handle_cannouncement_sig", self_id['k'].hex(), locals())
 
 # message 7
@@ -143,6 +173,7 @@ def handle_sign_withdrawal_tx(self_id,
                               outputs,
                               utxos,
                               tx):
+    global stub
     debug("PYHSMD handle_sign_withdrawal_tx", self_id['k'].hex(), locals())
 
     assert len(outputs) == 1, "expected a single output"
@@ -199,6 +230,7 @@ def create_withdrawal_tx(self_id, tx, utxos, change_keyindex,
 def handle_sign_remote_commitment_tx(self_id, tx,
                                      remote_funding_pubkey,
                                      funding, peer_id, dbid):
+    global stub
     debug("PYHSMD handle_sign_remote_commitment_tx", self_id['k'].hex(), locals())
 
     req = SignRemoteCommitmentTxReq()
@@ -241,6 +273,7 @@ def handle_sign_remote_commitment_tx(self_id, tx,
 def handle_sign_remote_htlc_tx(self_id, tx, wscript,
                                remote_per_commit_point,
                                peer_id, dbid):
+    global stub
     debug("PYHSMD handle_sign_remote_htlc_tx", self_id['k'].hex(), locals())
 
     req = SignRemoteHTLCTxReq()
@@ -285,6 +318,7 @@ def handle_sign_remote_htlc_tx(self_id, tx, wscript,
 def handle_sign_mutual_close_tx(self_id, tx,
                                 remote_funding_pubkey,
                                 funding, peer_id, dbid):
+    global stub
     debug("PYHSMD handle_sign_mutual_close_tx", self_id['k'].hex(), locals())
 
     req = SignMutualCloseTxReq()
@@ -324,5 +358,7 @@ def handle_sign_mutual_close_tx(self_id, tx,
 
 # message 3
 # FIXME - fill in signature
+@stdout_exceptions
 def handle_channel_update_sig():
+    global stub
     debug("PYHSMD handle_channel_update_sig", locals())

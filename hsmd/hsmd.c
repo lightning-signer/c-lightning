@@ -1861,20 +1861,23 @@ static struct io_plan *handle_sign_local_htlc_tx(struct io_conn *conn,
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
 
-static void py_handle_get_per_commitment_point(u64 n, u64 dbid)
+static void py_handle_get_per_commitment_point(struct node_id *peer_id,
+                                               u64 dbid,
+                                               u64 n)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(3);
+    PyObject *pargs = PyTuple_New(4);
     PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(n));
+    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(n));
     PyObject *pretval = PyObject_CallObject(pyfunc.handle_get_per_commitment_point, pargs);
     if (pretval == NULL) {
         PyErr_Print();
         fprintf(stderr, "Python call \"handle_get_per_commitment_point\" failed\n");
-        exit(3);
+        // exit(3);
     }
-    Py_DECREF(pretval);
+    Py_XDECREF(pretval);
 
     /* FIXME - Need to return something here */
 }
@@ -1897,7 +1900,7 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 	if (!fromwire_hsm_get_per_commitment_point(msg_in, &n))
 		return bad_req(conn, c, msg_in);
 
-    py_handle_get_per_commitment_point(n, c->dbid);
+    py_handle_get_per_commitment_point(&c->id, c->dbid, n);
 
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	if (!derive_shaseed(&channel_seed, &shaseed))
@@ -2059,23 +2062,23 @@ static struct io_plan *send_pending_client_fd(struct io_conn *conn,
 	return io_send_fd(conn, fd, true, client_read_next, master);
 }
 
-static void py_handle_pass_client_hsmfd(struct node_id *id,
+static void py_handle_pass_client_hsmfd(struct node_id *peer_id,
                                         u64 dbid,
                                         u64 capabilities)
 {
     size_t ndx = 0;
     PyObject *pargs = PyTuple_New(4);
     PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, py_node_id(id));
+    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(capabilities));
     PyObject *pretval = PyObject_CallObject(pyfunc.handle_pass_client_hsmfd, pargs);
     if (pretval == NULL) {
         PyErr_Print();
         fprintf(stderr, "Python call \"handle_pass_client_hsmfd\" failed\n");
-        exit(3);
+        // exit(3);
     }
-    Py_DECREF(pretval);
+    Py_XDECREF(pretval);
 }
 
 /*~ This is used by the master to create a new client connection (which
