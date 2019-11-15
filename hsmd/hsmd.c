@@ -2263,7 +2263,8 @@ static struct io_plan *handle_sign_funding_tx(struct io_conn *conn,
 	return req_reply(conn, c, take(towire_hsm_sign_funding_reply(NULL, tx)));
 }
 
-static void py_handle_sign_withdrawal_tx(struct amount_sat *satoshi_out,
+static void py_handle_sign_withdrawal_tx(struct node_id *peer_id, u64 dbid,
+                                         struct amount_sat *satoshi_out,
                                          struct amount_sat *change_out,
                                          u32 change_keyindex,
                                          struct bitcoin_tx_output **outputs,
@@ -2271,8 +2272,10 @@ static void py_handle_sign_withdrawal_tx(struct amount_sat *satoshi_out,
                                          struct bitcoin_tx *tx)
 {
     size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(7);
+    PyObject *pargs = PyTuple_New(9);
     PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
     PyTuple_SetItem(pargs, ndx++, py_amount_sat(satoshi_out));
     PyTuple_SetItem(pargs, ndx++, py_amount_sat(change_out));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLong(change_keyindex));
@@ -2316,7 +2319,8 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			 cast_const2(const struct utxo **, utxos), outputs,
 			 &changekey, change_out, NULL, NULL);
 
-    py_handle_sign_withdrawal_tx(&satoshi_out, &change_out, change_keyindex,
+    py_handle_sign_withdrawal_tx(&c->id, c->dbid,
+                                 &satoshi_out, &change_out, change_keyindex,
                                  outputs, utxos, tx);
 
 	sign_all_inputs(tx, utxos);

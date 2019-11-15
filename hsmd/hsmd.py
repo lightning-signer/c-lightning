@@ -135,13 +135,10 @@ def handle_pass_client_hsmfd(self_id, peer_id, dbid, capabilities):
     
     req = PassClientHSMFdReq()
     req.self_node_id = self_id['k']
-    req.peer_node_id = peer_id['k']
-    req.dbid = dbid
+    req.channel_nonce = peer_id['k'] + struct.pack("<Q", dbid)
     req.capabilities = capabilities
     rsp = stub.PassClientHSMFd(req)
 
-    debug("PYHSMD handle_pass_client_hsmfd after")
-    
     return None
     
 # message 18
@@ -152,8 +149,7 @@ def handle_get_per_commitment_point(self_id, peer_id, dbid, n):
     
     req = GetPerCommitmentPointReq()
     req.self_node_id = self_id['k']
-    req.peer_node_id = peer_id['k']
-    req.dbid = dbid
+    req.channel_nonce = peer_id['k'] + struct.pack("<Q", dbid)
     req.n = n
     rsp = stub.GetPerCommitmentPoint(req)
     return rsp.per_commitment_point, rsp.old_secret
@@ -166,7 +162,7 @@ def handle_cannouncement_sig(self_id, ca, node_id, dbid):
 
 # message 7
 @stdout_exceptions
-def handle_sign_withdrawal_tx(self_id,
+def handle_sign_withdrawal_tx(self_id, peer_id, dbid,
                               satoshi_out,
                               change_out,
                               change_keyindex,
@@ -178,6 +174,7 @@ def handle_sign_withdrawal_tx(self_id,
 
     assert len(outputs) == 1, "expected a single output"
     req = create_withdrawal_tx(self_id, tx, utxos, change_keyindex, outputs[0], change_out)
+    req.channel_nonce = peer_id['k'] + struct.pack("<Q", dbid)
 
     debug("PYHSMD handle_sign_withdrawal_tx calling server")
     rsp = stub.SignWithdrawalTx(req)
@@ -278,10 +275,10 @@ def handle_sign_remote_htlc_tx(self_id, tx, wscript,
 
     req = SignRemoteHTLCTxReq()
     req.self_node_id = self_id['k']
-    if wscript:
-        req.wscript = wscript
     req.channel_nonce = peer_id['k'] + struct.pack("<Q", dbid)
     req.remote_per_commit_point = remote_per_commit_point['pubkey']
+    if wscript:
+        req.wscript = wscript
     version = tx['wally_tx']['version']
     isds = []
     txs_in = []
