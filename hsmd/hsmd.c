@@ -129,6 +129,14 @@ static struct {
     PyObject *handle_sign_mutual_close_tx;
 } pyfunc;
 
+static void log_bytes(char const * tag, void const * vptr, size_t sz) {
+    uint8_t const * ptr = (uint8_t const *) vptr;
+    fprintf(stdout, "%s: ", tag);
+    for (size_t ii = 0; ii < sz; ++ii)
+        fprintf(stdout, "%02x", ptr[ii]);
+    fprintf(stdout, "\n");
+}
+
 /*~ We keep a map of nonzero dbid -> clients, mainly for leak detection.
  * This is ccan/uintmap, which maps u64 to some (non-NULL) pointer.
  * I really dislike these kinds of declaration-via-magic macro things, as
@@ -1511,6 +1519,21 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	derive_basepoints(&channel_seed,
 			  &local_funding_pubkey, NULL, &secrets, NULL);
+    
+    log_bytes("handle_sign_remote_commitment_tx:funding_privkey",
+              &secrets.funding_privkey, sizeof(secrets.funding_privkey));
+    log_bytes("handle_sign_remote_commitment_tx:revocation_basepoint_secret",
+              &secrets.revocation_basepoint_secret,
+              sizeof(secrets.revocation_basepoint_secret));
+    log_bytes("handle_sign_remote_commitment_tx:payment_basepoint_secret",
+              &secrets.payment_basepoint_secret,
+              sizeof(secrets.payment_basepoint_secret));
+    log_bytes("handle_sign_remote_commitment_tx:htlc_basepoint_secret",
+              &secrets.htlc_basepoint_secret,
+              sizeof(secrets.htlc_basepoint_secret));
+    log_bytes("handle_sign_remote_commitment_tx:delayed_payment_basepoint_secret",
+              &secrets.delayed_payment_basepoint_secret,
+              sizeof(secrets.delayed_payment_basepoint_secret));
 
 	funding_wscript = bitcoin_redeem_2of2(tmpctx,
 					      &local_funding_pubkey,
