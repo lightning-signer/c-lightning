@@ -135,6 +135,7 @@ static void log_bytes(char const * tag, void const * vptr, size_t sz) {
     for (size_t ii = 0; ii < sz; ++ii)
         fprintf(stdout, "%02x", ptr[ii]);
     fprintf(stdout, "\n");
+    fflush(stdout);
 }
 
 /*~ We keep a map of nonzero dbid -> clients, mainly for leak detection.
@@ -1920,6 +1921,11 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 	} else
 		old_secret = NULL;
 
+    log_bytes("channel_seed", &channel_seed, sizeof(channel_seed));
+    log_bytes("shaseed", &shaseed, sizeof(shaseed));
+    log_bytes("handle_get_per_commitment_point",
+              &per_commitment_point, sizeof(per_commitment_point));
+    
 	/*~ hsm_client_wire.csv marks the secret field here optional, so it only
 	 * gets included if the parameter is non-NULL.  We violate 80 columns
 	 * pretty badly here, but it's a recommendation not a religion. */
