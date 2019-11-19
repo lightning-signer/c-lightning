@@ -292,7 +292,7 @@ struct bitcoin_tx **channel_txs(const tal_t *ctx,
 
     /* Check the size of the output_witscripts array. */
     size_t nwtx = txs[0]->wtx->num_outputs;
-    size_t nows = tal_count(*txs[0]->output_witscripts);
+    size_t nows = tal_count(txs[0]->output_witscripts);
     if (nwtx != nows) {
         fprintf(stdout, "OUTPUT MISMATCH #6 wtx %lu, witscripts %lu\n",
                 nwtx, nows);
