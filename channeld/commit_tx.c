@@ -210,9 +210,11 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 		SUPERVERBOSE("# to-local amount %s wscript %s\n",
 			     type_to_string(tmpctx, struct amount_sat, &amount),
 			     tal_hex(tmpctx, wscript));
-		tx->output_wscripts[n] =
-			tal_dup_arr(tx->output_wscripts, u8,
-						wscript, tal_count(wscript), 0);
+        tx->output_witscripts[n] =
+            tal(tx->output_witscripts, struct witscript);
+		tx->output_witscripts[n]->ptr =
+            tal_dup_arr(tx->output_witscripts[n], u8,
+                        wscript, tal_count(wscript), 0);
 		n++;
 	}
 
@@ -256,9 +258,9 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 
 	assert(n <= tx->wtx->outputs_allocation_len);
 	tal_resize(htlcmap, n);
-
-	/* FIXME - attempting to trim the tx->output_wscripts crashes, why? */
-	/* tal_resize(tx->output_wscripts, n); */
+    
+	/* FIXME - attempting to trim the tx->output_witscripts crashes, why? */
+	/* tal_resize(tx->output_witscripts, n); */
 	
 	/* BOLT #3:
 	 *

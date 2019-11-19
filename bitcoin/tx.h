@@ -12,6 +12,10 @@
 
 #define BITCOIN_TX_DEFAULT_SEQUENCE 0xFFFFFFFF
 
+struct witscript {
+    u8 *ptr;
+};
+
 struct bitcoin_txid {
 	struct sha256_double shad;
 };
@@ -25,7 +29,7 @@ struct bitcoin_tx {
 	struct wally_tx *wtx;
 
     /* Need the output wscripts in the HSM to validate transaction */
-    u8 **output_wscripts;
+    struct witscript **output_witscripts;
 
 	/* Keep a reference to the ruleset we have to abide by */
 	const struct chainparams *chainparams;

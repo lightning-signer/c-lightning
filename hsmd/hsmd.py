@@ -226,7 +226,8 @@ def create_withdrawal_tx(self_id, tx, utxos, change_keyindex,
 @stdout_exceptions
 def handle_sign_remote_commitment_tx(self_id, tx,
                                      remote_funding_pubkey,
-                                     funding, peer_id, dbid):
+                                     funding, peer_id, dbid,
+                                     output_witscripts):
     global stub
     debug("PYHSMD handle_sign_remote_commitment_tx", self_id['k'].hex(), locals())
 
@@ -234,6 +235,11 @@ def handle_sign_remote_commitment_tx(self_id, tx,
     req.self_node_id = self_id['k']
     req.channel_nonce = peer_id['k'] + struct.pack("<Q", dbid)
     req.remote_funding_pubkey = remote_funding_pubkey['pubkey']
+    for witscript in output_witscripts:
+        if witscript:
+            req.output_witscripts.append(witscript)
+        else:
+            req.output_witscripts.append(b'')
     version = tx['wally_tx']['version']
     isds = []
     txs_in = []
