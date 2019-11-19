@@ -699,16 +699,6 @@ static bool funder_finalize_channel_setup(struct state *state,
 		goto fail;
 	}
 
-    /* Check the size of the output_witscripts array. */
-    size_t nwtx = (*tx)->wtx->num_outputs;
-    size_t nows = tal_count((*tx)->output_witscripts);
-    if (nwtx != nows) {
-        fprintf(stdout, "OUTPUT MISMATCH #3 wtx %lu, witscripts %lu\n",
-                nwtx, nows);
-        fflush(stdout);
-        exit(3);
-    }
-    
 	/* We ask the HSM to sign their commitment transaction for us: it knows
 	 * our funding key, it just needs the remote funding key to create the
 	 * witness script.  It also needs the amount of the funding output,
@@ -1228,16 +1218,6 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 		return NULL;
 	}
 
-    /* Check the size of the output_witscripts array. */
-    size_t nwtx = remote_commit->wtx->num_outputs;
-    size_t nows = tal_count(remote_commit->output_witscripts);
-    if (nwtx != nows) {
-        fprintf(stdout, "OUTPUT MISMATCH #4 wtx %lu, witscripts %lu\n",
-                nwtx, nows);
-        fflush(stdout);
-        exit(3);
-    }
-    
 	/* Make HSM sign it */
 	msg = towire_hsm_sign_remote_commitment_tx(NULL,
 						   remote_commit,

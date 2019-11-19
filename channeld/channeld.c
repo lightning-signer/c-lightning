@@ -991,16 +991,6 @@ static secp256k1_ecdsa_signature *calc_commitsigs(const tal_t *ctx,
 			  &wscripts, peer->channel, &peer->remote_per_commit,
 			  commit_index, REMOTE);
 
-    /* Check the size of the output_witscripts array. */
-    size_t nwtx = txs[0]->wtx->num_outputs;
-    size_t nows = tal_count(*txs[0]->output_witscripts);
-    if (nwtx != nows) {
-        fprintf(stdout, "OUTPUT MISMATCH #2 wtx %lu, witscripts %lu\n",
-                nwtx, nows);
-        fflush(stdout);
-        exit(3);
-    }
-    
     msg = towire_hsm_sign_remote_commitment_tx(NULL, txs[0],
 						   &peer->channel->funding_pubkey[REMOTE],
 						   *txs[0]->input_amounts[0],

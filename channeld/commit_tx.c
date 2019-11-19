@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 #include <bitcoin/script.h>
 #include <bitcoin/tx.h>
 #include <ccan/endian/endian.h>
@@ -262,16 +260,6 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 	tal_resize(htlcmap, n);
     tal_resize(&(tx->output_witscripts), n);
 	
-    /* Check the size of the output_witscripts array. */
-    size_t nwtx = tx->wtx->num_outputs;
-    size_t nows = tal_count(tx->output_witscripts);
-    if (nwtx != nows) {
-        fprintf(stdout, "OUTPUT MISMATCH #7 wtx %lu, witscripts %lu\n",
-                nwtx, nows);
-        fflush(stdout);
-        exit(3);
-    }
-    
 	/* BOLT #3:
 	 *
 	 * 7. Sort the outputs into [BIP 69+CLTV
@@ -309,17 +297,5 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 
 	elements_tx_add_fee_output(tx);
 
-    {
-        /* Check the size of the output_witscripts array. */
-        size_t nwtx = tx->wtx->num_outputs;
-        size_t nows = tal_count(tx->output_witscripts);
-        if (nwtx != nows) {
-            fprintf(stdout, "OUTPUT MISMATCH #8 wtx %lu, witscripts %lu\n",
-                    nwtx, nows);
-            fflush(stdout);
-            exit(3);
-        }
-    }
-    
 	return tx;
 }

@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 #include <bitcoin/preimage.h>
 #include <bitcoin/script.h>
 #include <bitcoin/tx.h>
@@ -69,16 +67,6 @@ static struct bitcoin_tx *htlc_tx(const tal_t *ctx,
 
 	tal_free(wscript);
 
-    /* Check the size of the output_witscripts array. */
-    size_t nwtx = tx->wtx->num_outputs;
-    size_t nows = tal_count(tx->output_witscripts);
-    if (nwtx != nows) {
-        fprintf(stdout, "OUTPUT MISMATCH #5 wtx %lu, witscripts %lu\n",
-                nwtx, nows);
-        fflush(stdout);
-        exit(3);
-    }
-    
 	return tx;
 }
 
