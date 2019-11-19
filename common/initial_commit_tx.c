@@ -208,8 +208,7 @@ struct bitcoin_tx *initial_commit_tx(const tal_t *ctx,
 
 	assert(n <= tx->wtx->num_outputs);
 
-	/* FIXME - attempting to trim the tx->output_witscripts crashes, why? */
-	/* tal_resize(tx->output_witscripts, n); */
+    tal_resize(&(tx->output_witscripts), n);
 	
 	/* BOLT #3:
 	 *

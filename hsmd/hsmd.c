@@ -1531,6 +1531,16 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 		bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
+    /* Check the size of the output_witscripts array. */
+    size_t nwtx = tx->wtx->num_outputs;
+    size_t nows = tal_count(output_witscripts);
+    if (nwtx != nows) {
+        fprintf(stdout, "OUTPUT MISMATCH wtx %lu, witscripts %lu\n",
+                nwtx, nows);
+        fflush(stdout);
+        exit(3);
+    }
+    
 	/* Basic sanity checks. */
 	if (tx->wtx->num_inputs != 1)
 		return bad_req_fmt(conn, c, msg_in, "tx must have 1 input");

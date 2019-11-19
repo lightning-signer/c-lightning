@@ -290,6 +290,16 @@ struct bitcoin_tx **channel_txs(const tal_t *ctx,
 	    channel->view[side].owed[!side], committed, htlcmap,
 	    commitment_number ^ channel->commitment_number_obscurer, side);
 
+    /* Check the size of the output_witscripts array. */
+    size_t nwtx = txs[0]->wtx->num_outputs;
+    size_t nows = tal_count(*txs[0]->output_witscripts);
+    if (nwtx != nows) {
+        fprintf(stdout, "OUTPUT MISMATCH #6 wtx %lu, witscripts %lu\n",
+                nwtx, nows);
+        fflush(stdout);
+        exit(3);
+    }
+    
 	*wscripts = tal_arr(ctx, const u8 *, 1);
 	(*wscripts)[0] = bitcoin_redeem_2of2(*wscripts,
 					     &channel->funding_pubkey[side],
