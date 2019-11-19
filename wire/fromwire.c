@@ -392,6 +392,15 @@ struct bitcoin_tx_output *fromwire_bitcoin_tx_output(const tal_t *ctx,
 	return output;
 }
 
+struct wscript *fromwire_wscript(const tal_t *ctx, const u8 **cursor, size_t *max)
+{
+    struct wscript *retval = tal(ctx, struct wscript);
+    u16 len = fromwire_u16(cursor, max);
+    retval->ptr = tal_arr(retval, u8, len);
+    fromwire_u8_array(cursor, max, retval->ptr, len);
+    return retval;
+}
+
 void fromwire_chainparams(const u8 **cursor, size_t *max,
 			  const struct chainparams **chainparams)
 {

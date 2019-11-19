@@ -24,6 +24,9 @@ struct bitcoin_tx {
 	struct amount_sat **input_amounts;
 	struct wally_tx *wtx;
 
+    /* Need the output wscripts in the HSM to validate transaction */
+    u8 **output_wscripts;
+
 	/* Keep a reference to the ruleset we have to abide by */
 	const struct chainparams *chainparams;
 };

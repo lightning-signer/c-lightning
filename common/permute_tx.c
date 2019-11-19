@@ -174,5 +174,12 @@ void permute_outputs(struct bitcoin_tx *tx, u32 *cltvs, const void **map)
 
 		/* Swap best into first place. */
 		swap_wally_outputs(tx->wtx->outputs, map, cltvs, i, best_pos);
+
+		/* If output_wscripts are present, swap them too. */
+		if (tx->output_wscripts) {
+			u8 * tmp = tx->output_wscripts[i];
+			tx->output_wscripts[i] = tx->output_wscripts[best_pos];
+			tx->output_wscripts[best_pos] = tmp;
+		}
 	}
 }

@@ -1503,11 +1503,13 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	struct bitcoin_signature sig;
 	struct secrets secrets;
 	const u8 *funding_wscript;
+    struct wscript **output_wscripts;
 
 	if (!fromwire_hsm_sign_remote_commitment_tx(tmpctx, msg_in,
 						    &tx,
 						    &remote_funding_pubkey,
-						    &funding))
+                            &funding,
+                            &output_wscripts))
 		bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 

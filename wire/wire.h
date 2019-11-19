@@ -23,6 +23,10 @@ struct channel_id {
 /* Define channel_id_eq (no padding) */
 STRUCTEQ_DEF(channel_id, 0, id);
 
+struct wscript {
+    u8 *ptr;
+};
+
 struct bitcoin_blkid;
 struct bitcoin_signature;
 struct bitcoin_txid;
@@ -89,6 +93,7 @@ void towire_siphash_seed(u8 **cursor, const struct siphash_seed *seed);
 
 void towire_bip32_key_version(u8 **cursor, const struct bip32_key_version *version);
 void towire_bitcoin_tx_output(u8 **pptr, const struct bitcoin_tx_output *output);
+void towire_wscript(u8 **pptr, const struct wscript *script);
 void towire_chainparams(u8 **cursor, const struct chainparams *chainparams);
 
 const u8 *fromwire(const u8 **cursor, size_t *max, void *copy, size_t n);
@@ -142,7 +147,8 @@ void fromwire_bip32_key_version(const u8 **cursor, size_t *max,
 				struct bip32_key_version *version);
 struct bitcoin_tx_output *fromwire_bitcoin_tx_output(const tal_t *ctx,
 						     const u8 **cursor, size_t *max);
-
+struct wscript *fromwire_wscript(const tal_t *ctx,
+                                 const u8 **cursor, size_t *max);
 void fromwire_chainparams(const u8 **cursor, size_t *max,
 			  const struct chainparams **chainparams);
 
