@@ -727,6 +727,22 @@ static PyObject *py_sha256_double(struct sha256_double const *sp)
     return pdict;
 }
 
+static PyObject *py_witscript(struct witscript const *pp)
+{
+	return pp->ptr ?
+		PyBytes_FromStringAndSize((char const *) pp->ptr, tal_count(pp->ptr)) :
+		py_none();
+}
+
+static PyObject *py_witscripts(struct witscript const **witscripts)
+{
+	size_t len = tal_count(witscripts);
+	PyObject *plist = PyList_New(len);
+	for (size_t ii = 0; ii < len; ++ii)
+		PyList_SetItem(plist, ii, py_witscript(witscripts[ii]));
+	return plist;
+}
+
 static PyObject *py_bitcoin_blkid(struct bitcoin_blkid const *bp)
 {
     PyObject *pdict = PyDict_New();
@@ -1459,20 +1475,22 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 }
 
 static void py_handle_sign_remote_commitment_tx(
-                struct bitcoin_tx *tx,
-                struct pubkey *remote_funding_pubkey,
-                struct amount_sat *funding,
-                struct node_id *peer_id,
-                u64 dbid)
+				struct bitcoin_tx *tx,
+				struct pubkey *remote_funding_pubkey,
+				struct amount_sat *funding,
+				struct node_id *peer_id,
+				u64 dbid,
+				struct witscript const **output_witscripts)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(6);
+	size_t ndx = 0;
+    PyObject *pargs = PyTuple_New(7);
     PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
     PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
     PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_funding_pubkey));
     PyTuple_SetItem(pargs, ndx++, py_amount_sat(funding));
     PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
     PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+    PyTuple_SetItem(pargs, ndx++, py_witscripts(output_witscripts));
     PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_remote_commitment_tx, pargs);
     if (pretval == NULL) {
         PyErr_Print();
@@ -1503,11 +1521,13 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	struct bitcoin_signature sig;
 	struct secrets secrets;
 	const u8 *funding_wscript;
+	struct witscript **output_witscripts;
 
 	if (!fromwire_hsm_sign_remote_commitment_tx(tmpctx, msg_in,
 						    &tx,
 						    &remote_funding_pubkey,
-						    &funding))
+							&funding,
+							&output_witscripts))
 		bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
@@ -1542,9 +1562,11 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
-    py_handle_sign_remote_commitment_tx(tx, &remote_funding_pubkey, &funding,
-                                        &c->id, c->dbid);
-    
+	py_handle_sign_remote_commitment_tx(tx, &remote_funding_pubkey, &funding,
+										&c->id, c->dbid,
+										(const struct witscript **)
+											output_witscripts);
+	
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,

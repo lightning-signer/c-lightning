@@ -707,7 +707,9 @@ static bool funder_finalize_channel_setup(struct state *state,
 	msg = towire_hsm_sign_remote_commitment_tx(NULL,
 						   *tx,
 						   &state->channel->funding_pubkey[REMOTE],
-						   state->channel->funding);
+						   state->channel->funding,
+						   (const struct witscript **)
+							   (*tx)->output_witscripts);
 
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
@@ -1220,7 +1222,9 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	msg = towire_hsm_sign_remote_commitment_tx(NULL,
 						   remote_commit,
 						   &state->channel->funding_pubkey[REMOTE],
-						   state->channel->funding);
+						   state->channel->funding,
+						   (const struct witscript **)
+							   remote_commit->output_witscripts);
 
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
