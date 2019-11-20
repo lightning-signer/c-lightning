@@ -116,26 +116,26 @@ struct client {
 
 /*~ Python function objects. */
 static struct {
-    PyObject *setup;
-    PyObject *init_hsm;
-    PyObject *handle_pass_client_hsmfd;
-    PyObject *handle_ecdh;
-    PyObject *handle_get_channel_basepoints;
-    PyObject *handle_get_per_commitment_point;
-    PyObject *handle_cannouncement_sig;
-    PyObject *handle_sign_withdrawal_tx;
-    PyObject *handle_sign_remote_commitment_tx;
-    PyObject *handle_sign_remote_htlc_tx;
-    PyObject *handle_sign_mutual_close_tx;
+	PyObject *setup;
+	PyObject *init_hsm;
+	PyObject *handle_pass_client_hsmfd;
+	PyObject *handle_ecdh;
+	PyObject *handle_get_channel_basepoints;
+	PyObject *handle_get_per_commitment_point;
+	PyObject *handle_cannouncement_sig;
+	PyObject *handle_sign_withdrawal_tx;
+	PyObject *handle_sign_remote_commitment_tx;
+	PyObject *handle_sign_remote_htlc_tx;
+	PyObject *handle_sign_mutual_close_tx;
 } pyfunc;
 
 static void log_bytes(char const * tag, void const * vptr, size_t sz) {
-    uint8_t const * ptr = (uint8_t const *) vptr;
-    fprintf(stdout, "%s: ", tag);
-    for (size_t ii = 0; ii < sz; ++ii)
-        fprintf(stdout, "%02x", ptr[ii]);
-    fprintf(stdout, "\n");
-    fflush(stdout);
+	uint8_t const * ptr = (uint8_t const *) vptr;
+	fprintf(stdout, "%s: ", tag);
+	for (size_t ii = 0; ii < sz; ++ii)
+		fprintf(stdout, "%02x", ptr[ii]);
+	fprintf(stdout, "\n");
+	fflush(stdout);
 }
 
 /*~ We keep a map of nonzero dbid -> clients, mainly for leak detection.
@@ -702,35 +702,36 @@ static void load_hsm(const struct secret *encryption_key)
 
 static PyObject *py_none(void)
 {
-    Py_RETURN_NONE;
+	Py_RETURN_NONE;
 }
 
 static PyObject *py_bip32_key_version(struct bip32_key_version const *vp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "bip32_pubkey_version",
-                         PyLong_FromLong(vp->bip32_pubkey_version));
-    PyDict_SetItemString(pdict, "bip32_privkey_version",
-                         PyLong_FromLong(vp->bip32_privkey_version));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "bip32_pubkey_version",
+			     PyLong_FromLong(vp->bip32_pubkey_version));
+	PyDict_SetItemString(pdict, "bip32_privkey_version",
+			     PyLong_FromLong(vp->bip32_privkey_version));
+	return pdict;
 }
 
 static PyObject *py_sha256(struct sha256 const *sp)
 {
-    return PyBytes_FromStringAndSize((char const *) sp->u.u8, 32);
+	return PyBytes_FromStringAndSize((char const *) sp->u.u8, 32);
 }
 
 static PyObject *py_sha256_double(struct sha256_double const *sp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "sha", py_sha256(&(sp->sha)));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "sha", py_sha256(&(sp->sha)));
+	return pdict;
 }
 
 static PyObject *py_witscript(struct witscript const *pp)
 {
 	return pp->ptr ?
-		PyBytes_FromStringAndSize((char const *) pp->ptr, tal_count(pp->ptr)) :
+		PyBytes_FromStringAndSize(
+			(char const *) pp->ptr, tal_count(pp->ptr)) :
 		py_none();
 }
 
@@ -745,302 +746,310 @@ static PyObject *py_witscripts(struct witscript const **witscripts)
 
 static PyObject *py_bitcoin_blkid(struct bitcoin_blkid const *bp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "shad", py_sha256_double(&(bp->shad)));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "shad", py_sha256_double(&(bp->shad)));
+	return pdict;
 }
 
 static PyObject *py_bitcoin_txid(struct bitcoin_txid const *bp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "shad", py_sha256_double(&(bp->shad)));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "shad", py_sha256_double(&(bp->shad)));
+	return pdict;
 }
 
 static PyObject *py_amount_sat(struct amount_sat const *ap)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "satoshis",
-                         PyLong_FromUnsignedLongLong(ap->satoshis));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "satoshis",
+			     PyLong_FromUnsignedLongLong(ap->satoshis));
+	return pdict;
 }
 
 static PyObject *py_amount_msat(struct amount_msat const *ap)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "millisatoshis",
-                         PyLong_FromUnsignedLongLong(ap->millisatoshis));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "millisatoshis",
+			     PyLong_FromUnsignedLongLong(ap->millisatoshis));
+	return pdict;
 }
 
 static PyObject *py_chainparams(struct chainparams const *cp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "network_name",
-                         PyUnicode_FromString(cp->network_name));
-    PyDict_SetItemString(pdict, "bip173_name",
-                         PyUnicode_FromString(cp->bip173_name));
-    PyDict_SetItemString(pdict, "bip70_name",
-                         PyUnicode_FromString(cp->bip70_name));
-    PyDict_SetItemString(pdict, "genesis_blockhash",
-                         py_bitcoin_blkid(&(cp->genesis_blockhash)));
-    PyDict_SetItemString(pdict, "rpc_port",
-                         PyLong_FromLong(cp->rpc_port));
-    PyDict_SetItemString(pdict, "cli",
-                         PyUnicode_FromString(cp->cli));
-    PyDict_SetItemString(pdict, "cli_args",
-                         PyUnicode_FromString(cp->cli_args));
-    PyDict_SetItemString(pdict, "cli_min_supported_version",
-                         PyLong_FromUnsignedLongLong(
-                             cp->cli_min_supported_version));
-    PyDict_SetItemString(pdict, "dust_limit",
-                         py_amount_sat(&(cp->dust_limit)));
-    PyDict_SetItemString(pdict, "max_funding",
-                         py_amount_sat(&(cp->max_funding)));
-    PyDict_SetItemString(pdict, "max_payment",
-                         py_amount_msat(&(cp->max_payment)));
-    PyDict_SetItemString(pdict, "when_lightning_became_cool",
-                         PyLong_FromUnsignedLong(
-                             cp->when_lightning_became_cool));
-    PyDict_SetItemString(pdict, "p2pkh_version",
-                         PyLong_FromUnsignedLong(cp->p2pkh_version));
-    PyDict_SetItemString(pdict, "p2sh_version",
-                         PyLong_FromUnsignedLong(cp->p2sh_version));
-    PyDict_SetItemString(pdict, "testnet",
-                         PyBool_FromLong(cp->testnet));
-    PyDict_SetItemString(pdict, "bip32_key_version",
-                         py_bip32_key_version(&(cp->bip32_key_version)));
-    PyDict_SetItemString(pdict, "is_elements",
-                         PyBool_FromLong(cp->is_elements));
-    PyDict_SetItemString(pdict, "fee_asset_tag",
-                         cp->fee_asset_tag ?
-                         PyBytes_FromStringAndSize
-                         ((char const *) cp->fee_asset_tag, 33) :
-                         py_none());
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "network_name",
+			     PyUnicode_FromString(cp->network_name));
+	PyDict_SetItemString(pdict, "bip173_name",
+			     PyUnicode_FromString(cp->bip173_name));
+	PyDict_SetItemString(pdict, "bip70_name",
+			     PyUnicode_FromString(cp->bip70_name));
+	PyDict_SetItemString(pdict, "genesis_blockhash",
+			     py_bitcoin_blkid(&(cp->genesis_blockhash)));
+	PyDict_SetItemString(pdict, "rpc_port",
+			     PyLong_FromLong(cp->rpc_port));
+	PyDict_SetItemString(pdict, "cli",
+			     PyUnicode_FromString(cp->cli));
+	PyDict_SetItemString(pdict, "cli_args",
+			     PyUnicode_FromString(cp->cli_args));
+	PyDict_SetItemString(pdict, "cli_min_supported_version",
+			     PyLong_FromUnsignedLongLong(
+				     cp->cli_min_supported_version));
+	PyDict_SetItemString(pdict, "dust_limit",
+			     py_amount_sat(&(cp->dust_limit)));
+	PyDict_SetItemString(pdict, "max_funding",
+			     py_amount_sat(&(cp->max_funding)));
+	PyDict_SetItemString(pdict, "max_payment",
+			     py_amount_msat(&(cp->max_payment)));
+	PyDict_SetItemString(pdict, "when_lightning_became_cool",
+			     PyLong_FromUnsignedLong(
+				     cp->when_lightning_became_cool));
+	PyDict_SetItemString(pdict, "p2pkh_version",
+			     PyLong_FromUnsignedLong(cp->p2pkh_version));
+	PyDict_SetItemString(pdict, "p2sh_version",
+			     PyLong_FromUnsignedLong(cp->p2sh_version));
+	PyDict_SetItemString(pdict, "testnet",
+			     PyBool_FromLong(cp->testnet));
+	PyDict_SetItemString(pdict, "bip32_key_version",
+			     py_bip32_key_version(&(cp->bip32_key_version)));
+	PyDict_SetItemString(pdict, "is_elements",
+			     PyBool_FromLong(cp->is_elements));
+	PyDict_SetItemString(pdict, "fee_asset_tag",
+			     cp->fee_asset_tag ?
+			     PyBytes_FromStringAndSize
+			     ((char const *) cp->fee_asset_tag, 33) :
+			     py_none());
+	return pdict;
 }
 
 static PyObject *py_node_id(struct node_id *pp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "k",
-        PyBytes_FromStringAndSize((char const *) pp->k, PUBKEY_CMPR_LEN));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "k",
+			     PyBytes_FromStringAndSize(
+				     (char const *) pp->k, PUBKEY_CMPR_LEN));
+	return pdict;
 }
 
 static PyObject *py_secp256k1_pubkey(secp256k1_pubkey *kp)
 {
-    return PyBytes_FromStringAndSize((char const *) kp->data, 64);
+	return PyBytes_FromStringAndSize((char const *) kp->data, 64);
 }
 
 static PyObject *py_secret(struct secret *sp)
 {
-    return PyBytes_FromStringAndSize((char const *) sp->data, 32);
+	return PyBytes_FromStringAndSize((char const *) sp->data, 32);
 }
 
 static PyObject *py_privkey(struct privkey *kp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "secret", py_secret(&(kp->secret)));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "secret", py_secret(&(kp->secret)));
+	return pdict;
 }
 
 static PyObject *py_pubkey(struct pubkey *kp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "pubkey", py_secp256k1_pubkey(&(kp->pubkey)));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "pubkey",
+			     py_secp256k1_pubkey(&(kp->pubkey)));
+	return pdict;
 }
 
 static PyObject *py_secrets(struct secrets *sp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "funding_privkey",
-                         py_privkey(&(sp->funding_privkey)));
-    PyDict_SetItemString(pdict, "revocation_basepoint_secret",
-                         py_secret(&(sp->revocation_basepoint_secret)));
-    PyDict_SetItemString(pdict, "payment_basepoint_secret",
-                         py_secret(&(sp->payment_basepoint_secret)));
-    PyDict_SetItemString(pdict, "htlc_basepoint_secret",
-                         py_secret(&(sp->htlc_basepoint_secret)));
-    PyDict_SetItemString(pdict, "delayed_payment_basepoint_secret",
-                         py_secret(&(sp->delayed_payment_basepoint_secret)));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "funding_privkey",
+			     py_privkey(&(sp->funding_privkey)));
+	PyDict_SetItemString(pdict, "revocation_basepoint_secret",
+			     py_secret(&(sp->revocation_basepoint_secret)));
+	PyDict_SetItemString(pdict, "payment_basepoint_secret",
+			     py_secret(&(sp->payment_basepoint_secret)));
+	PyDict_SetItemString(pdict, "htlc_basepoint_secret",
+			     py_secret(&(sp->htlc_basepoint_secret)));
+	PyDict_SetItemString(pdict, "delayed_payment_basepoint_secret",
+			     py_secret(
+				     &(sp->delayed_payment_basepoint_secret)));
+	return pdict;
 }
 
 static PyObject *py_unilateral_close_info(struct unilateral_close_info *ip)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "channel_id",
-                         PyLong_FromUnsignedLongLong(ip->channel_id));
-    PyDict_SetItemString(pdict, "node_id", py_node_id(&(ip->peer_id)));
-    PyDict_SetItemString(pdict, "commitment_point",
-                         ip->commitment_point ?
-                         py_pubkey(ip->commitment_point) :
-                         py_none());
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "channel_id",
+			     PyLong_FromUnsignedLongLong(ip->channel_id));
+	PyDict_SetItemString(pdict, "node_id", py_node_id(&(ip->peer_id)));
+	PyDict_SetItemString(pdict, "commitment_point",
+			     ip->commitment_point ?
+			     py_pubkey(ip->commitment_point) :
+			     py_none());
+	return pdict;
 }
 
 static PyObject *py_bitcoin_tx_output(struct bitcoin_tx_output *output)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "amount", py_amount_sat(&(output->amount)));
-    PyDict_SetItemString(pdict, "script",
-        PyBytes_FromStringAndSize((char const *) output->script,
-                                  tal_count(output->script)));
-
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "amount", py_amount_sat(&(output->amount)));
+	PyDict_SetItemString(pdict, "script",
+			     PyBytes_FromStringAndSize(
+				     (char const *) output->script,
+				     tal_count(output->script)));
+	return pdict;
 }
 
 static PyObject *py_bitcoin_tx_outputs(struct bitcoin_tx_output **outputs)
 {
-    size_t len = tal_count(outputs);
-    PyObject *plist = PyList_New(len);
-    for (size_t ii = 0; ii < len; ++ii)
-        PyList_SetItem(plist, ii, py_bitcoin_tx_output(outputs[ii]));
-    return plist;
+	size_t len = tal_count(outputs);
+	PyObject *plist = PyList_New(len);
+	for (size_t ii = 0; ii < len; ++ii)
+		PyList_SetItem(plist, ii, py_bitcoin_tx_output(outputs[ii]));
+	return plist;
 }
 
 static PyObject *py_utxo(struct utxo *utxo)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "txid", py_bitcoin_txid(&(utxo->txid)));
-    PyDict_SetItemString(pdict, "outnum",
-                         PyLong_FromUnsignedLong(utxo->outnum));
-    PyDict_SetItemString(pdict, "amount", py_amount_sat(&(utxo->amount)));
-    PyDict_SetItemString(pdict, "keyindex",
-                         PyLong_FromUnsignedLong(utxo->keyindex));
-    PyDict_SetItemString(pdict, "is_p2sh",
-                         PyBool_FromLong(utxo->is_p2sh ? 1 : 0));
-    PyDict_SetItemString(pdict, "close_info",
-                         utxo->close_info ?
-                         py_unilateral_close_info(utxo->close_info) :
-                         py_none());
-    /* status, blockheight, spendheight and scriptPubkey are not set in this
-       context */
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "txid", py_bitcoin_txid(&(utxo->txid)));
+	PyDict_SetItemString(pdict, "outnum",
+			     PyLong_FromUnsignedLong(utxo->outnum));
+	PyDict_SetItemString(pdict, "amount", py_amount_sat(&(utxo->amount)));
+	PyDict_SetItemString(pdict, "keyindex",
+			     PyLong_FromUnsignedLong(utxo->keyindex));
+	PyDict_SetItemString(pdict, "is_p2sh",
+			     PyBool_FromLong(utxo->is_p2sh ? 1 : 0));
+	PyDict_SetItemString(pdict, "close_info",
+			     utxo->close_info ?
+			     py_unilateral_close_info(utxo->close_info) :
+			     py_none());
+	/* status, blockheight, spendheight and scriptPubkey are not
+	   set in this context */
+	return pdict;
 }
 
 static PyObject *py_utxos(struct utxo **utxos)
 {
-    size_t len = tal_count(utxos);
-    PyObject *plist = PyList_New(len);
-    for (size_t ii = 0; ii < len; ++ii)
-        PyList_SetItem(plist, ii, py_utxo(utxos[ii]));
-    return plist;
+	size_t len = tal_count(utxos);
+	PyObject *plist = PyList_New(len);
+	for (size_t ii = 0; ii < len; ++ii)
+		PyList_SetItem(plist, ii, py_utxo(utxos[ii]));
+	return plist;
 }
 
 static PyObject *py_amounts_sat(struct amount_sat **input_amounts)
 {
-    size_t len = tal_count(input_amounts);
-    PyObject *plist = PyList_New(len);
-    for (size_t ii = 0; ii < len; ++ii)
-        PyList_SetItem(plist, ii, input_amounts[ii] ?
-                       py_amount_sat(input_amounts[ii]) : py_none());
-    return plist;
+	size_t len = tal_count(input_amounts);
+	PyObject *plist = PyList_New(len);
+	for (size_t ii = 0; ii < len; ++ii)
+		PyList_SetItem(plist, ii, input_amounts[ii] ?
+			       py_amount_sat(input_amounts[ii]) : py_none());
+	return plist;
 }
 
 static PyObject *py_wally_tx_witness_items(struct wally_tx_witness_item *items,
                                            size_t num_items)
 {
-    PyObject *plist = PyList_New(num_items);
-    for (size_t ii = 0; ii < num_items; ++ii)
-        PyList_SetItem(plist, ii,
-                       PyBytes_FromStringAndSize(
-                           (char const *) items[ii].witness,
-                           items[ii].witness_len));
-    return plist;
+	PyObject *plist = PyList_New(num_items);
+	for (size_t ii = 0; ii < num_items; ++ii)
+		PyList_SetItem(plist, ii,
+			       PyBytes_FromStringAndSize(
+				       (char const *) items[ii].witness,
+				       items[ii].witness_len));
+	return plist;
 }
 
 static PyObject *py_wally_tx_witness_stack(struct wally_tx_witness_stack *pp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "items",
-                         py_wally_tx_witness_items(pp->items, pp->num_items));
-    PyDict_SetItemString(pdict, "items_allocation_len",
-                         PyLong_FromSize_t(pp->items_allocation_len));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "items",
+			     py_wally_tx_witness_items(
+				     pp->items, pp->num_items));
+	PyDict_SetItemString(pdict, "items_allocation_len",
+			     PyLong_FromSize_t(pp->items_allocation_len));
+	return pdict;
 }
 
 static PyObject *py_wally_tx_input(struct wally_tx_input const *pp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "txhash",
-                         PyBytes_FromStringAndSize((char const *) pp->txhash,
-                                                   WALLY_TXHASH_LEN));
-    PyDict_SetItemString(pdict, "index",
-                         PyLong_FromUnsignedLong(pp->index));
-    PyDict_SetItemString(pdict, "sequence",
-                         PyLong_FromUnsignedLong(pp->sequence));
-    PyDict_SetItemString(pdict, "script",
-                         PyBytes_FromStringAndSize((char const *) pp->script,
-                                                   pp->script_len));
-    PyDict_SetItemString(pdict, "witness",
-                         pp->witness
-                         ? py_wally_tx_witness_stack(pp->witness)
-                         : py_none());
-    PyDict_SetItemString(pdict, "features",
-                         PyLong_FromUnsignedLong(pp->features));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "txhash",
+			     PyBytes_FromStringAndSize(
+				     (char const *) pp->txhash,
+				     WALLY_TXHASH_LEN));
+	PyDict_SetItemString(pdict, "index",
+			     PyLong_FromUnsignedLong(pp->index));
+	PyDict_SetItemString(pdict, "sequence",
+			     PyLong_FromUnsignedLong(pp->sequence));
+	PyDict_SetItemString(pdict, "script",
+			     PyBytes_FromStringAndSize(
+				     (char const *) pp->script,
+				     pp->script_len));
+	PyDict_SetItemString(pdict, "witness",
+			     pp->witness
+			     ? py_wally_tx_witness_stack(pp->witness)
+			     : py_none());
+	PyDict_SetItemString(pdict, "features",
+			     PyLong_FromUnsignedLong(pp->features));
+	return pdict;
 }
 
 static PyObject *py_wally_tx_inputs(struct wally_tx_input *inputs,
                                     size_t num_inputs)
 {
-    PyObject *plist = PyList_New(num_inputs);
-    for (size_t ii = 0; ii < num_inputs; ++ii)
-        PyList_SetItem(plist, ii, py_wally_tx_input(&(inputs[ii])));
-    return plist;
+	PyObject *plist = PyList_New(num_inputs);
+	for (size_t ii = 0; ii < num_inputs; ++ii)
+		PyList_SetItem(plist, ii, py_wally_tx_input(&(inputs[ii])));
+	return plist;
 }
 
 static PyObject *py_wally_tx_output(struct wally_tx_output const *pp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "satoshi",
-                         PyLong_FromUnsignedLongLong(pp->satoshi));
-    PyDict_SetItemString(pdict, "script",
-                         PyBytes_FromStringAndSize((char const *) pp->script,
-                                                   pp->script_len));
-    PyDict_SetItemString(pdict, "features",
-                         PyLong_FromUnsignedLong(pp->features));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "satoshi",
+			     PyLong_FromUnsignedLongLong(pp->satoshi));
+	PyDict_SetItemString(pdict, "script",
+			     PyBytes_FromStringAndSize(
+				     (char const *) pp->script,
+				     pp->script_len));
+	PyDict_SetItemString(pdict, "features",
+			     PyLong_FromUnsignedLong(pp->features));
+	return pdict;
 }
 
 static PyObject *py_wally_tx_outputs(struct wally_tx_output *outputs,
                                      size_t num_outputs)
 {
-    PyObject *plist = PyList_New(num_outputs);
-    for (size_t ii = 0; ii < num_outputs; ++ii)
-        PyList_SetItem(plist, ii, py_wally_tx_output(&(outputs[ii])));
-    return plist;
+	PyObject *plist = PyList_New(num_outputs);
+	for (size_t ii = 0; ii < num_outputs; ++ii)
+		PyList_SetItem(plist, ii, py_wally_tx_output(&(outputs[ii])));
+	return plist;
 }
 
 static PyObject *py_wally_tx(struct wally_tx const *pp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "version",
-                         PyLong_FromUnsignedLong(pp->version));
-    PyDict_SetItemString(pdict, "locktime",
-                         PyLong_FromUnsignedLong(pp->locktime));
-    PyDict_SetItemString(pdict, "inputs",
-                         py_wally_tx_inputs(pp->inputs, pp->num_inputs));
-    PyDict_SetItemString(pdict, "inputs_allocation_len",
-                         PyLong_FromSize_t(pp->inputs_allocation_len));
-    PyDict_SetItemString(pdict, "outputs",
-                         py_wally_tx_outputs(pp->outputs, pp->num_outputs));
-    PyDict_SetItemString(pdict, "outputs_allocation_len",
-                         PyLong_FromSize_t(pp->outputs_allocation_len));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "version",
+			     PyLong_FromUnsignedLong(pp->version));
+	PyDict_SetItemString(pdict, "locktime",
+			     PyLong_FromUnsignedLong(pp->locktime));
+	PyDict_SetItemString(pdict, "inputs",
+			     py_wally_tx_inputs(pp->inputs, pp->num_inputs));
+	PyDict_SetItemString(pdict, "inputs_allocation_len",
+			     PyLong_FromSize_t(pp->inputs_allocation_len));
+	PyDict_SetItemString(pdict, "outputs",
+			     py_wally_tx_outputs(pp->outputs, pp->num_outputs));
+	PyDict_SetItemString(pdict, "outputs_allocation_len",
+			     PyLong_FromSize_t(pp->outputs_allocation_len));
+	return pdict;
 }
 
 static PyObject *py_bitcoin_tx(struct bitcoin_tx const *pp)
 {
-    PyObject *pdict = PyDict_New();
-    PyDict_SetItemString(pdict, "input_amounts",
-                         py_amounts_sat(pp->input_amounts));
-    PyDict_SetItemString(pdict, "wally_tx", py_wally_tx(pp->wtx));
-    PyDict_SetItemString(pdict, "chainparams", py_chainparams(pp->chainparams));
-    return pdict;
+	PyObject *pdict = PyDict_New();
+	PyDict_SetItemString(pdict, "input_amounts",
+			     py_amounts_sat(pp->input_amounts));
+	PyDict_SetItemString(pdict, "wally_tx", py_wally_tx(pp->wtx));
+	PyDict_SetItemString(pdict, "chainparams",
+			     py_chainparams(pp->chainparams));
+	return pdict;
 }
 
 static void py_init_hsm(struct bip32_key_version *bip32_key_version,
@@ -1052,26 +1061,29 @@ static void py_init_hsm(struct bip32_key_version *bip32_key_version,
                         struct sha256 *shaseed,
                         struct secret *hsm_secret)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(8);
-    PyTuple_SetItem(pargs, ndx++, py_bip32_key_version(bip32_key_version));
-    PyTuple_SetItem(pargs, ndx++, py_chainparams(chainparams));
-    PyTuple_SetItem(pargs, ndx++, hsm_encryption_key ?
-                    py_secret(hsm_encryption_key): py_none());
-    PyTuple_SetItem(pargs, ndx++, privkey ? py_privkey(privkey) : py_none());
-    PyTuple_SetItem(pargs, ndx++, seed ? py_secret(seed) : py_none());
-    PyTuple_SetItem(pargs, ndx++, secrets ? py_secrets(secrets) : py_none());
-    PyTuple_SetItem(pargs, ndx++, shaseed ? py_sha256(shaseed) : py_none());
-    PyTuple_SetItem(pargs, ndx++, py_secret(hsm_secret));
-    PyObject *pretval = PyObject_CallObject(pyfunc.init_hsm, pargs);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"init_hsm\" failed\n");
-        // exit(3);
-    }
-    Py_DECREF(pretval);
+	size_t ndx = 0;
+	PyObject *pargs = PyTuple_New(8);
+	PyTuple_SetItem(pargs, ndx++, py_bip32_key_version(bip32_key_version));
+	PyTuple_SetItem(pargs, ndx++, py_chainparams(chainparams));
+	PyTuple_SetItem(pargs, ndx++, hsm_encryption_key ?
+			py_secret(hsm_encryption_key): py_none());
+	PyTuple_SetItem(pargs, ndx++,
+			privkey ? py_privkey(privkey) : py_none());
+	PyTuple_SetItem(pargs, ndx++, seed ? py_secret(seed) : py_none());
+	PyTuple_SetItem(pargs, ndx++,
+			secrets ? py_secrets(secrets) : py_none());
+	PyTuple_SetItem(pargs, ndx++,
+			shaseed ? py_sha256(shaseed) : py_none());
+	PyTuple_SetItem(pargs, ndx++, py_secret(hsm_secret));
+	PyObject *pretval = PyObject_CallObject(pyfunc.init_hsm, pargs);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr, "Python call \"init_hsm\" failed\n");
+		// exit(3);
+	}
+	Py_DECREF(pretval);
 
-    /* FIXME - Need to return something here */
+	/* FIXME - Need to return something here */
 }
 
 /*~ This is the response to lightningd's HSM_INIT request, which is the first
@@ -1121,10 +1133,10 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	maybe_create_new_hsm(hsm_encryption_key, true);
 	load_hsm(hsm_encryption_key);
 
-    py_init_hsm(&bip32_key_version, chainparams, hsm_encryption_key,
-                privkey, seed, secrets, shaseed,
-                &secretstuff.hsm_secret);
-    
+	py_init_hsm(&bip32_key_version, chainparams, hsm_encryption_key,
+		    privkey, seed, secrets, shaseed,
+		    &secretstuff.hsm_secret);
+
 	/*~ We don't need the hsm_secret encryption key anymore.
 	 * Note that sodium_munlock() also zeroes the memory. */
 	if (hsm_encryption_key) {
@@ -1136,8 +1148,8 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	node_key(NULL, &key);
 	node_id_from_pubkey(&node_id, &key);
 
-    /* Save the node_id in a global for the py_hsmd interface. */
-    memcpy(&self_node_id, &node_id, sizeof(self_node_id));
+	/* Save the node_id in a global for the py_hsmd interface. */
+	memcpy(&self_node_id, &node_id, sizeof(self_node_id));
 
 	/*~ Note: marshalling a bip32 tree only marshals the public side,
 	 * not the secrets!  So we're not actually handing them out here!
@@ -1149,29 +1161,31 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 
 static bool py_handle_ecdh(struct pubkey *point, struct secret *o_ss)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(2);
-    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, py_pubkey(point));
-    PyObject *pretval = PyObject_CallObject(pyfunc.handle_ecdh, pargs);
-    if (pretval == NULL) {
-        // FIXME - uncomment this when this call is supported
-        // PyErr_Print();
-        PyErr_Clear(); // needed if we don't print above
-        fprintf(stderr, "Python call \"handle_ecdh\" failed\n");
-        return false;
-    }
-    if (!PyBytes_Check(pretval)) {
-        fprintf(stderr, "Python call \"handle_ecdh\" bad return type\n");
-        return false;
-    }
-    if (PyBytes_Size(pretval) != sizeof(o_ss->data)) {
-        fprintf(stderr, "Python call \"handle_ecdh\" bad return size\n");
-        return false;
-    }
-    memcpy(o_ss->data, PyBytes_AsString(pretval), sizeof(o_ss->data));
-    Py_DECREF(pretval);
-    return true;
+	size_t ndx = 0;
+	PyObject *pargs = PyTuple_New(2);
+	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+	PyTuple_SetItem(pargs, ndx++, py_pubkey(point));
+	PyObject *pretval = PyObject_CallObject(pyfunc.handle_ecdh, pargs);
+	if (pretval == NULL) {
+		// FIXME - uncomment this when this call is supported
+		// PyErr_Print();
+		PyErr_Clear(); // needed if we don't print above
+		fprintf(stderr, "Python call \"handle_ecdh\" failed\n");
+		return false;
+	}
+	if (!PyBytes_Check(pretval)) {
+		fprintf(stderr,
+			"Python call \"handle_ecdh\" bad return type\n");
+		return false;
+	}
+	if (PyBytes_Size(pretval) != sizeof(o_ss->data)) {
+		fprintf(stderr,
+			"Python call \"handle_ecdh\" bad return size\n");
+		return false;
+	}
+	memcpy(o_ss->data, PyBytes_AsString(pretval), sizeof(o_ss->data));
+	Py_DECREF(pretval);
+	return true;
 }
 
 /*~ The client has asked us to extract the shared secret from an EC Diffie
@@ -1197,20 +1211,21 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
 	}
 
-    // FIXME - for now it's ok for the py_handle_ecdh call to fail.
-    // Eventually return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
-    struct secret ss2;
-    if (py_handle_ecdh(&point, &ss2)) {
-        if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
-            fprintf(stderr, "secrets don't match");
-            exit(3);
-        }
-    }
-    fprintf(stderr, "ECDH ");
-    for (size_t ii = 0; ii < 32; ++ii)
-        fprintf(stderr, "%02x", ss.data[ii]);
-    fprintf(stderr, "\n");
-    
+	// FIXME - for now it's ok for the py_handle_ecdh call to
+	// fail.  Eventually return bad_req_fmt(conn, c, msg_in,
+	// "secp256k1_ecdh fail");
+	struct secret ss2;
+	if (py_handle_ecdh(&point, &ss2)) {
+		if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
+			fprintf(stderr, "secrets don't match");
+			exit(3);
+		}
+	}
+	fprintf(stderr, "ECDH ");
+	for (size_t ii = 0; ii < 32; ++ii)
+		fprintf(stderr, "%02x", ss.data[ii]);
+	fprintf(stderr, "\n");
+
 	/*~ In the normal case, we return the shared secret, and then read
 	 * the next msg. */
 	return req_reply(conn, c, take(towire_hsm_ecdh_resp(NULL, &ss)));
@@ -1220,22 +1235,24 @@ static void py_handle_cannouncement_sig(u8 *ca, size_t calen,
                                         struct node_id *node_id,
                                         u64 dbid)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(4);
-    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++,
-                    PyBytes_FromStringAndSize((char const *) ca, calen));
-    PyTuple_SetItem(pargs, ndx++, py_node_id(node_id));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
-    PyObject *pretval = PyObject_CallObject(pyfunc.handle_cannouncement_sig, pargs);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"handle_cannouncement_sig\" failed\n");
-        exit(3);
-    }
-    Py_DECREF(pretval);
+	size_t ndx = 0;
+	PyObject *pargs = PyTuple_New(4);
+	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+	PyTuple_SetItem(pargs, ndx++,
+			PyBytes_FromStringAndSize((char const *) ca, calen));
+	PyTuple_SetItem(pargs, ndx++, py_node_id(node_id));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+	PyObject *pretval =
+		PyObject_CallObject(pyfunc.handle_cannouncement_sig, pargs);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr,
+			"Python \"handle_cannouncement_sig\" failed\n");
+		exit(3);
+	}
+	Py_DECREF(pretval);
 
-    /* FIXME - Need to return something here */
+	/* FIXME - Need to return something here */
 }
 
 /*~ The specific routine to sign the channel_announcement message.  This is
@@ -1298,8 +1315,8 @@ static struct io_plan *handle_cannouncement_sig(struct io_conn *conn,
 	if (fromwire_peektype(ca) != WIRE_CHANNEL_ANNOUNCEMENT)
 		return bad_req_fmt(conn, c, msg_in,
 				   "Invalid channel announcement");
-    
-    py_handle_cannouncement_sig(ca, tal_count(ca), &c->id, c->dbid);
+
+	py_handle_cannouncement_sig(ca, tal_count(ca), &c->id, c->dbid);
 
 	node_key(&node_pkey, NULL);
 	sha256_double(&hash, ca + offset, tal_count(ca) - offset);
@@ -1365,20 +1382,23 @@ static struct io_plan *handle_channel_update_sig(struct io_conn *conn,
 
 static void py_handle_get_channel_basepoints(struct node_id *peer_id, u64 dbid)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(3);
-    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
-    PyObject *pretval = PyObject_CallObject(pyfunc.handle_get_channel_basepoints, pargs);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"handle_get_channel_basepoints\" failed\n");
-        exit(3);
-    }
-    Py_DECREF(pretval);
+	size_t ndx = 0;
+	PyObject *pargs = PyTuple_New(3);
+	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+	PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+	PyObject *pretval =
+		PyObject_CallObject(
+			pyfunc.handle_get_channel_basepoints, pargs);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr,
+			"Python \"handle_get_channel_basepoints\" failed\n");
+		exit(3);
+	}
+	Py_DECREF(pretval);
 
-    /* FIXME - Need to return something here */
+	/* FIXME - Need to return something here */
 }
 
 /*~ This gets the basepoints for a channel; it's not private information really
@@ -1400,8 +1420,8 @@ static struct io_plan *handle_get_channel_basepoints(struct io_conn *conn,
 	if (!fromwire_hsm_get_channel_basepoints(msg_in, &peer_id, &dbid))
 		return bad_req(conn, c, msg_in);
 
-    py_handle_get_channel_basepoints(&peer_id, dbid);
-    
+	py_handle_get_channel_basepoints(&peer_id, dbid);
+
 	get_channel_seed(&peer_id, dbid, &seed);
 	derive_basepoints(&seed, &funding_pubkey, &basepoints, NULL, NULL);
 
@@ -1475,31 +1495,34 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 }
 
 static void py_handle_sign_remote_commitment_tx(
-				struct bitcoin_tx *tx,
-				struct pubkey *remote_funding_pubkey,
-				struct amount_sat *funding,
-				struct node_id *peer_id,
-				u64 dbid,
-				struct witscript const **output_witscripts)
+	struct bitcoin_tx *tx,
+	struct pubkey *remote_funding_pubkey,
+	struct amount_sat *funding,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct witscript const **output_witscripts)
 {
 	size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(7);
-    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
-    PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_funding_pubkey));
-    PyTuple_SetItem(pargs, ndx++, py_amount_sat(funding));
-    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
-    PyTuple_SetItem(pargs, ndx++, py_witscripts(output_witscripts));
-    PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_remote_commitment_tx, pargs);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"handle_sign_remote_commitment_tx\" failed\n");
-        exit(3);
-    }
-    Py_DECREF(pretval);
+	PyObject *pargs = PyTuple_New(7);
+	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+	PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
+	PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_funding_pubkey));
+	PyTuple_SetItem(pargs, ndx++, py_amount_sat(funding));
+	PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+	PyTuple_SetItem(pargs, ndx++, py_witscripts(output_witscripts));
+	PyObject *pretval =
+		PyObject_CallObject(
+			pyfunc.handle_sign_remote_commitment_tx, pargs);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr,
+			"Python \"handle_sign_remote_commitment_tx\" failed\n");
+		exit(3);
+	}
+	Py_DECREF(pretval);
 
-    /* FIXME - Need to return something here */
+	/* FIXME - Need to return something here */
 }
 
 /*~ This is used by channeld to create signatures for the remote peer's
@@ -1540,21 +1563,21 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	derive_basepoints(&channel_seed,
 			  &local_funding_pubkey, NULL, &secrets, NULL);
-    
-    log_bytes("handle_sign_remote_commitment_tx:funding_privkey",
-              &secrets.funding_privkey, sizeof(secrets.funding_privkey));
-    log_bytes("handle_sign_remote_commitment_tx:revocation_basepoint_secret",
-              &secrets.revocation_basepoint_secret,
-              sizeof(secrets.revocation_basepoint_secret));
-    log_bytes("handle_sign_remote_commitment_tx:payment_basepoint_secret",
-              &secrets.payment_basepoint_secret,
-              sizeof(secrets.payment_basepoint_secret));
-    log_bytes("handle_sign_remote_commitment_tx:htlc_basepoint_secret",
-              &secrets.htlc_basepoint_secret,
-              sizeof(secrets.htlc_basepoint_secret));
-    log_bytes("handle_sign_remote_commitment_tx:delayed_payment_basepoint_secret",
-              &secrets.delayed_payment_basepoint_secret,
-              sizeof(secrets.delayed_payment_basepoint_secret));
+
+	log_bytes("handle_sign_remote_commitment_tx:funding_privkey",
+		  &secrets.funding_privkey, sizeof(secrets.funding_privkey));
+	log_bytes("handle_sign_remote_commitment_tx:revocation_basepoint_secret",
+		  &secrets.revocation_basepoint_secret,
+		  sizeof(secrets.revocation_basepoint_secret));
+	log_bytes("handle_sign_remote_commitment_tx:payment_basepoint_secret",
+		  &secrets.payment_basepoint_secret,
+		  sizeof(secrets.payment_basepoint_secret));
+	log_bytes("handle_sign_remote_commitment_tx:htlc_basepoint_secret",
+		  &secrets.htlc_basepoint_secret,
+		  sizeof(secrets.htlc_basepoint_secret));
+	log_bytes("handle_sign_remote_commitment_tx:delayed_payment_basepoint_secret",
+		  &secrets.delayed_payment_basepoint_secret,
+		  sizeof(secrets.delayed_payment_basepoint_secret));
 
 	funding_wscript = bitcoin_redeem_2of2(tmpctx,
 					      &local_funding_pubkey,
@@ -1562,11 +1585,11 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
-	py_handle_sign_remote_commitment_tx(tx, &remote_funding_pubkey, &funding,
-										&c->id, c->dbid,
-										(const struct witscript **)
-											output_witscripts);
-	
+	py_handle_sign_remote_commitment_tx(
+		tx, &remote_funding_pubkey, &funding,
+		&c->id, c->dbid,
+		(const struct witscript **) output_witscripts);
+
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,
@@ -1577,32 +1600,34 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 }
 
 static void py_handle_sign_remote_htlc_tx(
-                struct bitcoin_tx *tx,
-                u8 *wscript,
-                struct pubkey *remote_per_commit_point,
-                struct node_id *peer_id,
-                u64 dbid)
+	struct bitcoin_tx *tx,
+	u8 *wscript,
+	struct pubkey *remote_per_commit_point,
+	struct node_id *peer_id,
+	u64 dbid)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(6);
-    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
-    PyTuple_SetItem(pargs, ndx++, wscript ?
-                    PyBytes_FromStringAndSize((char const *) wscript,
-                                              tal_bytelen(wscript)) :
-                    py_none());
-    PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_per_commit_point));
-    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
-    PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_remote_htlc_tx, pargs);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"handle_sign_remote_htlc_tx\" failed\n");
-        exit(3);
-    }
-    Py_DECREF(pretval);
+	size_t ndx = 0;
+	PyObject *pargs = PyTuple_New(6);
+	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+	PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
+	PyTuple_SetItem(pargs, ndx++, wscript ?
+			PyBytes_FromStringAndSize((char const *) wscript,
+						  tal_bytelen(wscript)) :
+			py_none());
+	PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_per_commit_point));
+	PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+	PyObject *pretval =
+		PyObject_CallObject(pyfunc.handle_sign_remote_htlc_tx, pargs);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr,
+			"Python call \"handle_sign_remote_htlc_tx\" failed\n");
+		exit(3);
+	}
+	Py_DECREF(pretval);
 
-    /* FIXME - Need to return something here */
+	/* FIXME - Need to return something here */
 }
 
 /*~ This is used by channeld to create signatures for the remote peer's
@@ -1646,8 +1671,8 @@ static struct io_plan *handle_sign_remote_htlc_tx(struct io_conn *conn,
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &amount);
 
-    py_handle_sign_remote_htlc_tx(tx, wscript, &remote_per_commit_point,
-                                  &c->id, c->dbid);
+	py_handle_sign_remote_htlc_tx(tx, wscript, &remote_per_commit_point,
+				      &c->id, c->dbid);
 
 	sign_tx_input(tx, 0, NULL, wscript, &htlc_privkey, &htlc_pubkey,
 		      SIGHASH_ALL, &sig);
@@ -1888,21 +1913,24 @@ static void py_handle_get_per_commitment_point(struct node_id *peer_id,
                                                u64 dbid,
                                                u64 n)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(4);
-    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(n));
-    PyObject *pretval = PyObject_CallObject(pyfunc.handle_get_per_commitment_point, pargs);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"handle_get_per_commitment_point\" failed\n");
-        // exit(3);
-    }
-    Py_XDECREF(pretval);
+	size_t ndx = 0;
+	PyObject *pargs = PyTuple_New(4);
+	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+	PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(n));
+	PyObject *pretval =
+		PyObject_CallObject(
+			pyfunc.handle_get_per_commitment_point, pargs);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr,
+			"Python \"handle_get_per_commitment_point\" failed\n");
+		// exit(3);
+	}
+	Py_XDECREF(pretval);
 
-    /* FIXME - Need to return something here */
+	/* FIXME - Need to return something here */
 }
 
 /*~ This get the Nth a per-commitment point, and for N > 2, returns the
@@ -1923,7 +1951,7 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 	if (!fromwire_hsm_get_per_commitment_point(msg_in, &n))
 		return bad_req(conn, c, msg_in);
 
-    py_handle_get_per_commitment_point(&c->id, c->dbid, n);
+	py_handle_get_per_commitment_point(&c->id, c->dbid, n);
 
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	if (!derive_shaseed(&channel_seed, &shaseed))
@@ -1943,11 +1971,11 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 	} else
 		old_secret = NULL;
 
-    log_bytes("channel_seed", &channel_seed, sizeof(channel_seed));
-    log_bytes("shaseed", &shaseed, sizeof(shaseed));
-    log_bytes("handle_get_per_commitment_point",
-              &per_commitment_point, sizeof(per_commitment_point));
-    
+	log_bytes("channel_seed", &channel_seed, sizeof(channel_seed));
+	log_bytes("shaseed", &shaseed, sizeof(shaseed));
+	log_bytes("handle_get_per_commitment_point",
+		  &per_commitment_point, sizeof(per_commitment_point));
+
 	/*~ hsm_client_wire.csv marks the secret field here optional, so it only
 	 * gets included if the parameter is non-NULL.  We violate 80 columns
 	 * pretty badly here, but it's a recommendation not a religion. */
@@ -1991,29 +2019,31 @@ static struct io_plan *handle_check_future_secret(struct io_conn *conn,
 }
 
 static void py_handle_sign_mutual_close_tx(
-                struct bitcoin_tx *tx,
-                struct pubkey *remote_funding_pubkey,
-                struct amount_sat *funding,
-                struct node_id *peer_id,
-                u64 dbid)
+	struct bitcoin_tx *tx,
+	struct pubkey *remote_funding_pubkey,
+	struct amount_sat *funding,
+	struct node_id *peer_id,
+	u64 dbid)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(6);
-    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
-    PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_funding_pubkey));
-    PyTuple_SetItem(pargs, ndx++, py_amount_sat(funding));
-    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
-    PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_mutual_close_tx, pargs);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"handle_sign_mutual_close_tx\" failed\n");
-        exit(3);
-    }
-    Py_DECREF(pretval);
+	size_t ndx = 0;
+	PyObject *pargs = PyTuple_New(6);
+	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+	PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
+	PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_funding_pubkey));
+	PyTuple_SetItem(pargs, ndx++, py_amount_sat(funding));
+	PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+	PyObject *pretval =
+		PyObject_CallObject(pyfunc.handle_sign_mutual_close_tx, pargs);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr,
+			"Python call \"handle_sign_mutual_close_tx\" failed\n");
+		exit(3);
+	}
+	Py_DECREF(pretval);
 
-    /* FIXME - Need to return something here */
+	/* FIXME - Need to return something here */
 }
 
 /* This is used by closingd to sign off on a mutual close tx. */
@@ -2049,10 +2079,10 @@ static struct io_plan *handle_sign_mutual_close_tx(struct io_conn *conn,
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
-    py_handle_sign_mutual_close_tx(tx, &remote_funding_pubkey, &funding,
-                                   &c->id, c->dbid);
-    
-    sign_tx_input(tx, 0, NULL, funding_wscript,
+	py_handle_sign_mutual_close_tx(tx, &remote_funding_pubkey, &funding,
+				       &c->id, c->dbid);
+
+	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,
 		      SIGHASH_ALL, &sig);
@@ -2094,19 +2124,22 @@ static void py_handle_pass_client_hsmfd(struct node_id *peer_id,
                                         u64 dbid,
                                         u64 capabilities)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(4);
-    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(capabilities));
-    PyObject *pretval = PyObject_CallObject(pyfunc.handle_pass_client_hsmfd, pargs);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"handle_pass_client_hsmfd\" failed\n");
-        // exit(3);
-    }
-    Py_XDECREF(pretval);
+	size_t ndx = 0;
+	PyObject *pargs = PyTuple_New(4);
+	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+	PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+	PyTuple_SetItem(pargs, ndx++,
+			PyLong_FromUnsignedLongLong(capabilities));
+	PyObject *pretval =
+		PyObject_CallObject(pyfunc.handle_pass_client_hsmfd, pargs);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr,
+			"Python call \"handle_pass_client_hsmfd\" failed\n");
+		// exit(3);
+	}
+	Py_XDECREF(pretval);
 }
 
 /*~ This is used by the master to create a new client connection (which
@@ -2133,8 +2166,8 @@ static struct io_plan *pass_client_hsmfd(struct io_conn *conn,
 	status_debug("new_client: %"PRIu64, dbid);
 	new_client(c, c->chainparams, &id, dbid, capabilities, fds[0]);
 
-    py_handle_pass_client_hsmfd(&id, dbid, capabilities);
-    
+	py_handle_pass_client_hsmfd(&id, dbid, capabilities);
+
 	/*~ We stash this in a global, because we need to get both the fd and
 	 * the client pointer to the callback.  The other way would be to
 	 * create a boutique structure and hand that, but we don't need to. */
@@ -2299,26 +2332,28 @@ static void py_handle_sign_withdrawal_tx(struct node_id *peer_id, u64 dbid,
                                          struct utxo **utxos,
                                          struct bitcoin_tx *tx)
 {
-    size_t ndx = 0;
-    PyObject *pargs = PyTuple_New(9);
-    PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
-    PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
-    PyTuple_SetItem(pargs, ndx++, py_amount_sat(satoshi_out));
-    PyTuple_SetItem(pargs, ndx++, py_amount_sat(change_out));
-    PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLong(change_keyindex));
-    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx_outputs(outputs));
-    PyTuple_SetItem(pargs, ndx++, py_utxos(utxos));
-    PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
-    PyObject *pretval = PyObject_CallObject(pyfunc.handle_sign_withdrawal_tx, pargs);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"handle_sign_withdrawal_tx\" failed\n");
-        exit(3);
-    }
-    Py_DECREF(pretval);
+	size_t ndx = 0;
+	PyObject *pargs = PyTuple_New(9);
+	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
+	PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
+	PyTuple_SetItem(pargs, ndx++, py_amount_sat(satoshi_out));
+	PyTuple_SetItem(pargs, ndx++, py_amount_sat(change_out));
+	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLong(change_keyindex));
+	PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx_outputs(outputs));
+	PyTuple_SetItem(pargs, ndx++, py_utxos(utxos));
+	PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
+	PyObject *pretval =
+		PyObject_CallObject(pyfunc.handle_sign_withdrawal_tx, pargs);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr,
+			"Python call \"handle_sign_withdrawal_tx\" failed\n");
+		exit(3);
+	}
+	Py_DECREF(pretval);
 
-    /* FIXME - Need to return something here */
+	/* FIXME - Need to return something here */
 }
 
 /*~ lightningd asks us to sign a withdrawal; same as above but in theory
@@ -2347,9 +2382,9 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			 cast_const2(const struct utxo **, utxos), outputs,
 			 &changekey, change_out, NULL, NULL);
 
-    py_handle_sign_withdrawal_tx(&c->id, c->dbid,
-                                 &satoshi_out, &change_out, change_keyindex,
-                                 outputs, utxos, tx);
+	py_handle_sign_withdrawal_tx(&c->id, c->dbid,
+				     &satoshi_out, &change_out, change_keyindex,
+				     outputs, utxos, tx);
 
 	sign_all_inputs(tx, utxos);
 
@@ -2728,50 +2763,50 @@ static void master_gone(struct io_conn *unused UNUSED, struct client *c UNUSED)
 
 static PyObject *python_function(PyObject *pmodule, char *funcname)
 {
-    PyObject *pfunc = PyObject_GetAttrString(pmodule, funcname);
-    if (pfunc == NULL || !PyCallable_Check(pfunc)) {
-        if (PyErr_Occurred())
-            PyErr_Print();
-        fprintf(stderr, "Cannot find function \"%s\"\n", funcname);
-        exit(3);
-    }
-    return pfunc;
+	PyObject *pfunc = PyObject_GetAttrString(pmodule, funcname);
+	if (pfunc == NULL || !PyCallable_Check(pfunc)) {
+		if (PyErr_Occurred())
+			PyErr_Print();
+		fprintf(stderr, "Cannot find function \"%s\"\n", funcname);
+		exit(3);
+	}
+	return pfunc;
 }
 
 static void setup_python_functions(void)
 {
-    Py_Initialize();
-    PyObject *pname = PyUnicode_DecodeFSDefault("hsmd");
-    PyObject *pmodule = PyImport_Import(pname);
-    Py_DECREF(pname);
-    if (pmodule == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Failed to load \"hsmd\"\n");
-        exit(3);
-    }
-    
-    pyfunc.setup = python_function(pmodule, "setup");
-    pyfunc.init_hsm = python_function(pmodule, "init_hsm");
-    pyfunc.handle_pass_client_hsmfd =
-        python_function(pmodule, "handle_pass_client_hsmfd");
-    pyfunc.handle_ecdh = python_function(pmodule, "handle_ecdh");
-    pyfunc.handle_get_channel_basepoints =
-        python_function(pmodule, "handle_get_channel_basepoints");
-    pyfunc.handle_get_per_commitment_point =
-        python_function(pmodule, "handle_get_per_commitment_point");
-    pyfunc.handle_cannouncement_sig =
-        python_function(pmodule, "handle_cannouncement_sig");
-    pyfunc.handle_sign_withdrawal_tx =
-        python_function(pmodule, "handle_sign_withdrawal_tx");
-    pyfunc.handle_sign_remote_commitment_tx =
-        python_function(pmodule, "handle_sign_remote_commitment_tx");
-    pyfunc.handle_sign_remote_htlc_tx =
-        python_function(pmodule, "handle_sign_remote_htlc_tx");
-    pyfunc.handle_sign_mutual_close_tx =
-        python_function(pmodule, "handle_sign_mutual_close_tx");
+	Py_Initialize();
+	PyObject *pname = PyUnicode_DecodeFSDefault("hsmd");
+	PyObject *pmodule = PyImport_Import(pname);
+	Py_DECREF(pname);
+	if (pmodule == NULL) {
+		PyErr_Print();
+		fprintf(stderr, "Failed to load \"hsmd\"\n");
+		exit(3);
+	}
 
-    /* Guess we don't need the module around anymore? */
-    Py_DECREF(pmodule);
+	pyfunc.setup = python_function(pmodule, "setup");
+	pyfunc.init_hsm = python_function(pmodule, "init_hsm");
+	pyfunc.handle_pass_client_hsmfd =
+		python_function(pmodule, "handle_pass_client_hsmfd");
+	pyfunc.handle_ecdh = python_function(pmodule, "handle_ecdh");
+	pyfunc.handle_get_channel_basepoints =
+		python_function(pmodule, "handle_get_channel_basepoints");
+	pyfunc.handle_get_per_commitment_point =
+		python_function(pmodule, "handle_get_per_commitment_point");
+	pyfunc.handle_cannouncement_sig =
+		python_function(pmodule, "handle_cannouncement_sig");
+	pyfunc.handle_sign_withdrawal_tx =
+		python_function(pmodule, "handle_sign_withdrawal_tx");
+	pyfunc.handle_sign_remote_commitment_tx =
+		python_function(pmodule, "handle_sign_remote_commitment_tx");
+	pyfunc.handle_sign_remote_htlc_tx =
+		python_function(pmodule, "handle_sign_remote_htlc_tx");
+	pyfunc.handle_sign_mutual_close_tx =
+		python_function(pmodule, "handle_sign_mutual_close_tx");
+
+	/* Guess we don't need the module around anymore? */
+	Py_DECREF(pmodule);
 }
 
 int main(int argc, char *argv[])
@@ -2783,19 +2818,19 @@ int main(int argc, char *argv[])
 	/* This sets up tmpctx, various DEVELOPER options, backtraces, etc. */
 	subdaemon_setup(argc, argv);
 
-    /* Setup the python function objects. */
-    setup_python_functions();
+	/* Setup the python function objects. */
+	setup_python_functions();
 
-    /* Call the python setup function. */
-    PyObject *pretval = PyObject_CallObject(pyfunc.setup, NULL);
-    if (pretval == NULL) {
-        PyErr_Print();
-        fprintf(stderr, "Python call \"setup\" failed\n");
-        exit(3);
-    }
-    Py_DECREF(pretval);
-    
-    /* A trivial daemon_conn just for writing. */
+	/* Call the python setup function. */
+	PyObject *pretval = PyObject_CallObject(pyfunc.setup, NULL);
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stderr, "Python call \"setup\" failed\n");
+		exit(3);
+	}
+	Py_DECREF(pretval);
+
+	/* A trivial daemon_conn just for writing. */
 	status_conn = daemon_conn_new(NULL, STDIN_FILENO, NULL, NULL, NULL);
 	status_setup_async(status_conn);
 	uintmap_init(&clients);
