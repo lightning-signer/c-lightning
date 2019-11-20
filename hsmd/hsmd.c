@@ -1497,10 +1497,11 @@ static void py_handle_sign_remote_commitment_tx(
 	struct amount_sat *funding,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct witscript const **output_witscripts)
+	struct witscript const **output_witscripts,
+	struct pubkey *remote_per_commit)
 {
 	size_t ndx = 0;
-	PyObject *pargs = PyTuple_New(7);
+	PyObject *pargs = PyTuple_New(8);
 	PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
 	PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
 	PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_funding_pubkey));
@@ -1508,6 +1509,7 @@ static void py_handle_sign_remote_commitment_tx(
 	PyTuple_SetItem(pargs, ndx++, py_node_id(peer_id));
 	PyTuple_SetItem(pargs, ndx++, PyLong_FromUnsignedLongLong(dbid));
 	PyTuple_SetItem(pargs, ndx++, py_witscripts(output_witscripts));
+	PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_per_commit));
 	PyObject *pretval =
 		PyObject_CallObject(
 			pyfunc.handle_sign_remote_commitment_tx, pargs);
@@ -1542,12 +1544,14 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	struct secrets secrets;
 	const u8 *funding_wscript;
 	struct witscript **output_witscripts;
+	struct pubkey remote_per_commit;
 
 	if (!fromwire_hsm_sign_remote_commitment_tx(tmpctx, msg_in,
 						    &tx,
 						    &remote_funding_pubkey,
-							&funding,
-							&output_witscripts))
+						    &funding,
+						    &output_witscripts,
+						    &remote_per_commit))
 		bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
@@ -1585,7 +1589,8 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	py_handle_sign_remote_commitment_tx(
 		tx, &remote_funding_pubkey, &funding,
 		&c->id, c->dbid,
-		(const struct witscript **) output_witscripts);
+		(const struct witscript **) output_witscripts,
+		&remote_per_commit);
 
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
