@@ -177,9 +177,9 @@ void permute_outputs(struct bitcoin_tx *tx, u32 *cltvs, const void **map)
 
 		/* If output_witscripts are present, swap them to match. */
 		if (tx->output_witscripts) {
-            struct witscript *tmp = tx->output_witscripts[i];
-            tx->output_witscripts[i] = tx->output_witscripts[best_pos];
-            tx->output_witscripts[best_pos] = tmp;
+			struct witscript *tmp = tx->output_witscripts[i];
+			tx->output_witscripts[i] = tx->output_witscripts[best_pos];
+			tx->output_witscripts[best_pos] = tmp;
 		}
 	}
 }

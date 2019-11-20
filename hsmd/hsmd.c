@@ -729,18 +729,18 @@ static PyObject *py_sha256_double(struct sha256_double const *sp)
 
 static PyObject *py_witscript(struct witscript const *pp)
 {
-    return pp->ptr ?
-        PyBytes_FromStringAndSize((char const *) pp->ptr, tal_count(pp->ptr)) :
-        py_none();
+	return pp->ptr ?
+		PyBytes_FromStringAndSize((char const *) pp->ptr, tal_count(pp->ptr)) :
+		py_none();
 }
 
 static PyObject *py_witscripts(struct witscript const **witscripts)
 {
-    size_t len = tal_count(witscripts);
-    PyObject *plist = PyList_New(len);
-    for (size_t ii = 0; ii < len; ++ii)
-        PyList_SetItem(plist, ii, py_witscript(witscripts[ii]));
-    return plist;
+	size_t len = tal_count(witscripts);
+	PyObject *plist = PyList_New(len);
+	for (size_t ii = 0; ii < len; ++ii)
+		PyList_SetItem(plist, ii, py_witscript(witscripts[ii]));
+	return plist;
 }
 
 static PyObject *py_bitcoin_blkid(struct bitcoin_blkid const *bp)
@@ -1482,7 +1482,7 @@ static void py_handle_sign_remote_commitment_tx(
 				u64 dbid,
 				struct witscript const **output_witscripts)
 {
-    size_t ndx = 0;
+	size_t ndx = 0;
     PyObject *pargs = PyTuple_New(7);
     PyTuple_SetItem(pargs, ndx++, py_node_id(&self_node_id));
     PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
@@ -1521,13 +1521,13 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	struct bitcoin_signature sig;
 	struct secrets secrets;
 	const u8 *funding_wscript;
-    struct witscript **output_witscripts;
+	struct witscript **output_witscripts;
 
 	if (!fromwire_hsm_sign_remote_commitment_tx(tmpctx, msg_in,
 						    &tx,
 						    &remote_funding_pubkey,
-                            &funding,
-                            &output_witscripts))
+							&funding,
+							&output_witscripts))
 		bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
@@ -1562,11 +1562,11 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
-    py_handle_sign_remote_commitment_tx(tx, &remote_funding_pubkey, &funding,
-                                        &c->id, c->dbid,
-                                        (const struct witscript **)
-                                            output_witscripts);
-    
+	py_handle_sign_remote_commitment_tx(tx, &remote_funding_pubkey, &funding,
+										&c->id, c->dbid,
+										(const struct witscript **)
+											output_witscripts);
+	
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,

@@ -145,7 +145,7 @@ void fromwire_bip32_key_version(const u8 **cursor, size_t *max,
 struct bitcoin_tx_output *fromwire_bitcoin_tx_output(const tal_t *ctx,
 						     const u8 **cursor, size_t *max);
 struct witscript *fromwire_witscript(const tal_t *ctx,
-                                 const u8 **cursor, size_t *max);
+								 const u8 **cursor, size_t *max);
 void fromwire_chainparams(const u8 **cursor, size_t *max,
 			  const struct chainparams **chainparams);
 

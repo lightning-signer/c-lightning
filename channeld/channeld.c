@@ -991,11 +991,11 @@ static secp256k1_ecdsa_signature *calc_commitsigs(const tal_t *ctx,
 			  &wscripts, peer->channel, &peer->remote_per_commit,
 			  commit_index, REMOTE);
 
-    msg = towire_hsm_sign_remote_commitment_tx(NULL, txs[0],
+	msg = towire_hsm_sign_remote_commitment_tx(NULL, txs[0],
 						   &peer->channel->funding_pubkey[REMOTE],
 						   *txs[0]->input_amounts[0],
 						   (const struct witscript **)
-                               txs[0]->output_witscripts);
+							   txs[0]->output_witscripts);
 
 	msg = hsm_req(tmpctx, take(msg));
 	if (!fromwire_hsm_sign_tx_reply(msg, commit_sig))
