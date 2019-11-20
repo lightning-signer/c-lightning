@@ -183,6 +183,8 @@ def handle_sign_withdrawal_tx(self_id, peer_id, dbid,
     for ndx, sig in enumerate(sigs):
         debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.hex())
 
+    return sigs
+
 def create_withdrawal_tx(self_id, tx, utxos, change_keyindex,
                          output, change_output):
     req = SignWithdrawalTxReq()

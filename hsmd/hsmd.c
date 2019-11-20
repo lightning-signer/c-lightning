@@ -1167,20 +1167,21 @@ static bool py_handle_ecdh(struct pubkey *point, struct secret *o_ss)
 	PyTuple_SetItem(pargs, ndx++, py_pubkey(point));
 	PyObject *pretval = PyObject_CallObject(pyfunc.handle_ecdh, pargs);
 	if (pretval == NULL) {
-		// FIXME - uncomment this when this call is supported
-		// PyErr_Print();
-		PyErr_Clear(); // needed if we don't print above
-		fprintf(stderr, "Python call \"handle_ecdh\" failed\n");
+		PyErr_Print();
+		fprintf(stdout, "PYHSMD: %s: failed\n", __func__);
+		fflush(stdout);
 		return false;
 	}
 	if (!PyBytes_Check(pretval)) {
-		fprintf(stderr,
-			"Python call \"handle_ecdh\" bad return type\n");
+		fprintf(stdout, "PYHSMD: %s: bad return type\n", __func__);
+		fflush(stdout);
+		Py_DECREF(pretval);
 		return false;
 	}
 	if (PyBytes_Size(pretval) != sizeof(o_ss->data)) {
-		fprintf(stderr,
-			"Python call \"handle_ecdh\" bad return size\n");
+		fprintf(stdout, "PYHSMD: %s: bad return size\n", __func__);
+		fflush(stdout);
+		Py_DECREF(pretval);
 		return false;
 	}
 	memcpy(o_ss->data, PyBytes_AsString(pretval), sizeof(o_ss->data));
@@ -1211,20 +1212,16 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
 	}
 
-	// FIXME - for now it's ok for the py_handle_ecdh call to
-	// fail.  Eventually return bad_req_fmt(conn, c, msg_in,
-	// "secp256k1_ecdh fail");
+	/* Compute the ecdh with liposig. */
 	struct secret ss2;
-	if (py_handle_ecdh(&point, &ss2)) {
-		if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
-			fprintf(stderr, "secrets don't match");
-			exit(3);
-		}
+	if (!py_handle_ecdh(&point, &ss2))
+		abort();
+
+	/* Compare the result w/ locally computed. */
+	if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
+		fprintf(stderr, "secrets don't match");
+		abort();
 	}
-	fprintf(stderr, "ECDH ");
-	for (size_t ii = 0; ii < 32; ++ii)
-		fprintf(stderr, "%02x", ss.data[ii]);
-	fprintf(stderr, "\n");
 
 	/*~ In the normal case, we return the shared secret, and then read
 	 * the next msg. */
@@ -2324,13 +2321,14 @@ static struct io_plan *handle_sign_funding_tx(struct io_conn *conn,
 	return req_reply(conn, c, take(towire_hsm_sign_funding_reply(NULL, tx)));
 }
 
-static void py_handle_sign_withdrawal_tx(struct node_id *peer_id, u64 dbid,
-                                         struct amount_sat *satoshi_out,
-                                         struct amount_sat *change_out,
-                                         u32 change_keyindex,
-                                         struct bitcoin_tx_output **outputs,
-                                         struct utxo **utxos,
-                                         struct bitcoin_tx *tx)
+static bool py_handle_sign_withdrawal_tx(
+	struct node_id *peer_id, u64 dbid,
+	struct amount_sat *satoshi_out,
+	struct amount_sat *change_out,
+	u32 change_keyindex,
+	struct bitcoin_tx_output **outputs,
+	struct utxo **utxos,
+	struct bitcoin_tx *tx)
 {
 	size_t ndx = 0;
 	PyObject *pargs = PyTuple_New(9);
@@ -2347,13 +2345,18 @@ static void py_handle_sign_withdrawal_tx(struct node_id *peer_id, u64 dbid,
 		PyObject_CallObject(pyfunc.handle_sign_withdrawal_tx, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr,
-			"Python call \"handle_sign_withdrawal_tx\" failed\n");
-		exit(3);
+		fprintf(stdout, "PYHSMD: %s: failed\n", __func__);
+		fflush(stdout);
+		return false;
+	}
+	if (!PyBytes_Check(pretval)) {
+		fprintf(stdout, "PYHSMD: %s: bad return type\n", __func__);
+		fflush(stdout);
+		Py_DECREF(pretval);
+		return false;
 	}
 	Py_DECREF(pretval);
-
-	/* FIXME - Need to return something here */
+	return true;
 }
 
 /*~ lightningd asks us to sign a withdrawal; same as above but in theory
@@ -2382,11 +2385,12 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			 cast_const2(const struct utxo **, utxos), outputs,
 			 &changekey, change_out, NULL, NULL);
 
-	py_handle_sign_withdrawal_tx(&c->id, c->dbid,
-				     &satoshi_out, &change_out, change_keyindex,
-				     outputs, utxos, tx);
-
 	sign_all_inputs(tx, utxos);
+
+	if (!py_handle_sign_withdrawal_tx(&c->id, c->dbid, &satoshi_out,
+					  &change_out, change_keyindex,
+					  outputs, utxos, tx))
+		abort();
 
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_withdrawal_reply(NULL, tx)));
