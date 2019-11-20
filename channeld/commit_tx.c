@@ -259,7 +259,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 	assert(n <= tx->wtx->outputs_allocation_len);
 	tal_resize(htlcmap, n);
 	tal_resize(&(tx->output_witscripts), n);
-	
+
 	/* BOLT #3:
 	 *
 	 * 7. Sort the outputs into [BIP 69+CLTV
