@@ -2333,7 +2333,8 @@ static bool py_handle_sign_withdrawal_tx(
 	u32 change_keyindex,
 	struct bitcoin_tx_output **outputs,
 	struct utxo **utxos,
-	struct bitcoin_tx *tx)
+	struct bitcoin_tx *tx,
+	u8 ***o_sigs)
 {
 	size_t ndx = 0;
 	PyObject *pargs = PyTuple_New(9);
@@ -2354,11 +2355,28 @@ static bool py_handle_sign_withdrawal_tx(
 		fflush(stdout);
 		return false;
 	}
-	if (!PyBytes_Check(pretval)) {
+	if (!PySequence_Check(pretval)) {
 		fprintf(stdout, "PYHSMD: %s: bad return type\n", __func__);
 		fflush(stdout);
 		Py_DECREF(pretval);
 		return false;
+	}
+	Py_ssize_t len = PySequence_Length(pretval);
+	*o_sigs = tal_arrz(tmpctx, u8*, len);
+	for (size_t ii = 0; ii < len; ++ii) {
+		PyObject *elem = PySequence_GetItem(pretval, ii);
+		if (!PyBytes_Check(elem)) {
+			fprintf(stdout, "PYHSMD: %s: bad element type\n",
+				__func__);
+			fflush(stdout);
+			Py_DECREF(elem);
+			Py_DECREF(pretval);
+			return false;
+		}
+		size_t elen = PyBytes_Size(elem);
+		*o_sigs[ii] = tal_arr(tmpctx, u8, elen);
+		memcpy(*o_sigs[ii], PyBytes_AsString(elem), elen);
+		Py_DECREF(elem);
 	}
 	Py_DECREF(pretval);
 	return true;
@@ -2392,10 +2410,18 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 
 	sign_all_inputs(tx, utxos);
 
+	u8 ** sigs;
 	if (!py_handle_sign_withdrawal_tx(&c->id, c->dbid, &satoshi_out,
 					  &change_out, change_keyindex,
-					  outputs, utxos, tx))
+					  outputs, utxos, tx, &sigs))
 		abort();
+	for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
+		fprintf(stdout, "SIG %lu: ", ii);
+		for (size_t jj = 0; jj < tal_count(sigs[ii]); ++jj)
+			fprintf(stdout, "%02x", sigs[ii][jj]);
+		fprintf(stdout, "\n");
+		fflush(stdout);
+	}
 
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_withdrawal_reply(NULL, tx)));
