@@ -2421,6 +2421,19 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			fprintf(stdout, "%02x", sigs[ii][jj]);
 		fprintf(stdout, "\n");
 		fflush(stdout);
+
+		fprintf(stdout, "REF %lu: ", ii);
+		const struct wally_tx_input *input = tx->wtx->inputs + ii;
+		size_t num_items = input->witness ?
+			input->witness->num_items : 0;
+		for (size_t jj = 0; jj < num_items; ++jj) {
+			const struct wally_tx_witness_item *stack;
+			stack = input->witness->items + jj;
+			for (size_t kk = 0; kk < stack->witness_len; ++kk)
+				fprintf(stdout, "%02x", stack->witness[kk]);
+		}
+		fprintf(stdout, "\n");
+		fflush(stdout);
 	}
 
 	return req_reply(conn, c,
