@@ -178,7 +178,10 @@ def handle_sign_withdrawal_tx(self_id, peer_id, dbid,
 
     debug("PYHSMD handle_sign_withdrawal_tx calling server")
     rsp = stub.SignWithdrawalTx(req)
-    sigs = rsp.raw_sigs
+
+    ## FIXME - temporary hack
+    #sigs = rsp.raw_sigs
+    sigs = []
 
     for ndx, sig in enumerate(sigs):
         debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.hex())
@@ -229,7 +232,8 @@ def create_withdrawal_tx(self_id, tx, utxos, change_keyindex,
 def handle_sign_remote_commitment_tx(self_id, tx,
                                      remote_funding_pubkey,
                                      funding, peer_id, dbid,
-                                     output_witscripts, remote_per_commit):
+                                     output_witscripts, remote_per_commit,
+                                     option_static_remotekey):
     global stub
     debug("PYHSMD handle_sign_remote_commitment_tx", self_id['k'].hex(), locals())
 
@@ -238,6 +242,7 @@ def handle_sign_remote_commitment_tx(self_id, tx,
     req.channel_nonce = peer_id['k'] + struct.pack("<Q", dbid)
     req.remote_funding_pubkey = remote_funding_pubkey['pubkey']
     req.remote_percommit_point = remote_per_commit['pubkey']
+    req.option_static_remotekey = option_static_remotekey
     for witscript in output_witscripts:
         if witscript:
             req.output_witscripts.append(witscript)
@@ -269,7 +274,9 @@ def handle_sign_remote_commitment_tx(self_id, tx,
     req.output_descs.extend(osds)
 
     rsp = stub.SignRemoteCommitmentTx(req)
-    sigs = rsp.raw_sigs
+    ## FIXME - temporary hack
+    #sigs = rsp.raw_sigs
+    sigs = []
 
     for ndx, sig in enumerate(sigs):
         debug("PYHSMD handle_sign_remote_commitment_tx sig", ndx, sig.hex())
@@ -314,7 +321,9 @@ def handle_sign_remote_htlc_tx(self_id, tx, wscript,
     req.output_descs.extend(osds)
 
     rsp = stub.SignRemoteHTLCTx(req)
-    sigs = rsp.raw_sigs
+    ## FIXME - temporary hack
+    #sigs = rsp.raw_sigs
+    sigs = []
 
     for ndx, sig in enumerate(sigs):
         debug("PYHSMD handle_sign_remote_htlc_tx sig", ndx, sig.hex())
@@ -357,7 +366,9 @@ def handle_sign_mutual_close_tx(self_id, tx,
     req.output_descs.extend(osds)
 
     rsp = stub.SignMutualCloseTx(req)
-    sigs = rsp.raw_sigs
+    ## FIXME - temporary hack
+    #sigs = rsp.raw_sigs
+    sigs = []
 
     for ndx, sig in enumerate(sigs):
         debug("PYHSMD handle_sign_mutual_close_tx sig", ndx, sig.hex())
