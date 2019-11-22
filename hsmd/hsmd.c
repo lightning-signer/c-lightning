@@ -1078,7 +1078,7 @@ static void py_init_hsm(struct bip32_key_version *bip32_key_version,
 	PyObject *pretval = PyObject_CallObject(pyfunc.init_hsm, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr, "Python call \"init_hsm\" failed\n");
+		fprintf(stderr, "Python \"init_hsm\" failed\n");
 		// exit(3);
 	}
 	Py_DECREF(pretval);
@@ -2339,7 +2339,7 @@ static bool py_handle_sign_withdrawal_tx(
 	struct bitcoin_tx_output **outputs,
 	struct utxo **utxos,
 	struct bitcoin_tx *tx,
-	u8 ***o_sigs)
+	u8 ****o_sigs)
 {
 	size_t ndx = 0;
 	PyObject *pargs = PyTuple_New(9);
@@ -2366,24 +2366,41 @@ static bool py_handle_sign_withdrawal_tx(
 		Py_DECREF(pretval);
 		return false;
 	}
-	Py_ssize_t len = PySequence_Length(pretval);
-	*o_sigs = tal_arrz(tmpctx, u8*, len);
-	for (size_t ii = 0; ii < len; ++ii) {
-		PyObject *elem = PySequence_GetItem(pretval, ii);
-		if (!PyBytes_Check(elem)) {
-			fprintf(stdout, "PYHSMD: %s: bad element type\n",
+	u8 ***sigs;
+	Py_ssize_t nsigs = PySequence_Length(pretval);
+	sigs = tal_arrz(tmpctx, u8**, nsigs);
+	for (size_t ii = 0; ii < nsigs; ++ii) {
+		PyObject *sig = PySequence_GetItem(pretval, ii);
+		if (!PySequence_Check(sig)) {
+			fprintf(stdout, "PYHSMD: %s: bad sig type\n",
 				__func__);
 			fflush(stdout);
-			Py_DECREF(elem);
+			Py_DECREF(sig);
 			Py_DECREF(pretval);
 			return false;
 		}
-		size_t elen = PyBytes_Size(elem);
-		*o_sigs[ii] = tal_arr(tmpctx, u8, elen);
-		memcpy(*o_sigs[ii], PyBytes_AsString(elem), elen);
-		Py_DECREF(elem);
+		Py_ssize_t nelem = PySequence_Length(sig);
+		sigs[ii] = tal_arrz(sigs, u8*, nelem);
+		for (size_t jj = 0; jj < nelem; ++jj) {
+			PyObject *elem = PySequence_GetItem(sig, jj);
+			if (!PyBytes_Check(elem)) {
+				fprintf(stdout, "PYHSMD: %s: bad elem type\n",
+					__func__);
+				fflush(stdout);
+				Py_DECREF(elem);
+				Py_DECREF(sig);
+				Py_DECREF(pretval);
+				return false;
+			}
+			size_t elen = PyBytes_Size(elem);
+			sigs[ii][jj] = tal_arr(sigs[ii], u8, elen);
+			memcpy(sigs[ii][jj], PyBytes_AsString(elem), elen);
+			Py_DECREF(elem);
+		}
+		Py_DECREF(sig);
 	}
 	Py_DECREF(pretval);
+	*o_sigs = sigs;
 	return true;
 }
 
@@ -2415,15 +2432,20 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 
 	sign_all_inputs(tx, utxos);
 
-	u8 ** sigs;
+	u8 *** sigs;
 	if (!py_handle_sign_withdrawal_tx(&c->id, c->dbid, &satoshi_out,
 					  &change_out, change_keyindex,
 					  outputs, utxos, tx, &sigs))
 		abort();
 	for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
 		fprintf(stdout, "SIG %lu: ", ii);
-		for (size_t jj = 0; jj < tal_count(sigs[ii]); ++jj)
-			fprintf(stdout, "%02x", sigs[ii][jj]);
+		for (size_t jj = 0; jj < tal_count(sigs[ii]); ++jj) {
+			if (jj != 0)
+				fprintf(stdout, ", ");
+			for (size_t kk = 0; kk < tal_count(sigs[ii][jj]); ++kk) {
+				fprintf(stdout, "%02x", sigs[ii][jj][kk]);
+			}
+		}
 		fprintf(stdout, "\n");
 		fflush(stdout);
 
@@ -2434,6 +2456,8 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 		for (size_t jj = 0; jj < num_items; ++jj) {
 			const struct wally_tx_witness_item *stack;
 			stack = input->witness->items + jj;
+			if (jj != 0)
+				fprintf(stdout, ", ");
 			for (size_t kk = 0; kk < stack->witness_len; ++kk)
 				fprintf(stdout, "%02x", stack->witness[kk]);
 		}

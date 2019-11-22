@@ -179,12 +179,16 @@ def handle_sign_withdrawal_tx(self_id, peer_id, dbid,
     debug("PYHSMD handle_sign_withdrawal_tx calling server")
     rsp = stub.SignWithdrawalTx(req)
 
-    ## FIXME - temporary hack
-    #sigs = rsp.raw_sigs
-    sigs = []
+    debug(rsp)
+    
+    # Remove unnecessary object derefs.
+    sigs = [sig.item for sig in rsp.sigs]
 
+    debug(sigs)
+    
     for ndx, sig in enumerate(sigs):
-        debug("PYHSMD handle_sign_withdrawal_tx sig", ndx, sig.hex())
+        debug("PYHSMD handle_sign_withdrawal_tx sig", ndx,
+              [elem.hex() for elem in sig])
 
     return sigs
 
