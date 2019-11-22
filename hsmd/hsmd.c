@@ -2083,6 +2083,7 @@ static struct io_plan *handle_sign_mutual_close_tx(struct io_conn *conn,
 	funding_wscript = bitcoin_redeem_2of2(tmpctx,
 					      &local_funding_pubkey,
 					      &remote_funding_pubkey);
+
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
@@ -2267,6 +2268,7 @@ static void sign_all_inputs(struct bitcoin_tx *tx, struct utxo **utxos)
 		/* It's either a p2wpkh or p2sh (we support that so people from
 		 * the last bitcoin era can put funds into the wallet) */
 		wscript = p2wpkh_scriptcode(tmpctx, &inkey);
+		log_bytes("RUSTY WSCRIPT", wscript, tal_count(wscript));
 		if (in->is_p2sh) {
 			/* For P2SH-wrapped Segwit, the (implied) redeemScript
 			 * is defined in BIP141 */
@@ -2279,6 +2281,10 @@ static void sign_all_inputs(struct bitcoin_tx *tx, struct utxo **utxos)
 			subscript = NULL;
 			bitcoin_tx_input_set_script(tx, i, NULL);
 		}
+
+		log_bytes("SUBSCRIPT", subscript, tal_count(subscript));
+		log_bytes("INPRIVKEY", inprivkey.secret.data, 32);
+
 		/* This is the core crypto magic. */
 		sign_tx_input(tx, i, subscript, wscript, &inprivkey, &inkey,
 			      SIGHASH_ALL, &sig);

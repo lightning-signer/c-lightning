@@ -36,7 +36,8 @@ size_t commit_tx_num_untrimmed(const struct htlc **htlcs,
 
 static void add_offered_htlc_out(struct bitcoin_tx *tx, size_t n,
 				 const struct htlc *htlc,
-				 const struct keyset *keyset)
+				 const struct keyset *keyset,
+				 struct witscript * o_wscript)
 {
 	struct ripemd160 ripemd;
 	u8 *wscript, *p2wsh;
@@ -49,12 +50,15 @@ static void add_offered_htlc_out(struct bitcoin_tx *tx, size_t n,
 	SUPERVERBOSE("# HTLC %" PRIu64 " offered %s wscript %s\n", htlc->id,
 		     type_to_string(tmpctx, struct amount_sat, &amount),
 		     tal_hex(wscript, wscript));
+	o_wscript->ptr = tal_dup_arr(o_wscript, u8,
+				     wscript, tal_count(wscript), 0);
 	tal_free(wscript);
 }
 
 static void add_received_htlc_out(struct bitcoin_tx *tx, size_t n,
 				  const struct htlc *htlc,
-				  const struct keyset *keyset)
+				  const struct keyset *keyset,
+				  struct witscript * o_wscript)
 {
 	struct ripemd160 ripemd;
 	u8 *wscript, *p2wsh;
@@ -72,6 +76,8 @@ static void add_received_htlc_out(struct bitcoin_tx *tx, size_t n,
 		     type_to_string(tmpctx, struct amount_sat,
 				    &amount),
 		     tal_hex(wscript, wscript));
+	o_wscript->ptr = tal_dup_arr(o_wscript, u8,
+				     wscript, tal_count(wscript), 0);
 	tal_free(wscript);
 }
 
@@ -170,7 +176,10 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 			continue;
 		if (trim(htlcs[i], feerate_per_kw, dust_limit, side))
 			continue;
-		add_offered_htlc_out(tx, n, htlcs[i], keyset);
+		tx->output_witscripts[n] =
+			tal(tx->output_witscripts, struct witscript);
+		add_offered_htlc_out(tx, n, htlcs[i], keyset,
+				     tx->output_witscripts[n]);
 		(*htlcmap)[n] = htlcs[i];
 		cltvs[n] = abs_locktime_to_blocks(&htlcs[i]->expiry);
 		n++;
@@ -186,7 +195,10 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 			continue;
 		if (trim(htlcs[i], feerate_per_kw, dust_limit, side))
 			continue;
-		add_received_htlc_out(tx, n, htlcs[i], keyset);
+		tx->output_witscripts[n] =
+			tal(tx->output_witscripts, struct witscript);
+		add_received_htlc_out(tx, n, htlcs[i], keyset,
+				      tx->output_witscripts[n]);
 		(*htlcmap)[n] = htlcs[i];
 		cltvs[n] = abs_locktime_to_blocks(&htlcs[i]->expiry);
 		n++;
