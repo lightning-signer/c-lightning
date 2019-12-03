@@ -2436,39 +2436,27 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			 cast_const2(const struct utxo **, utxos), outputs,
 			 &changekey, change_out, NULL, NULL);
 
-	sign_all_inputs(tx, utxos);
-
 	u8 *** sigs;
 	if (!py_handle_sign_withdrawal_tx(&c->id, c->dbid, &satoshi_out,
 					  &change_out, change_keyindex,
 					  outputs, utxos, tx, &sigs))
 		abort();
-	for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
-		fprintf(stdout, "SIG %lu: ", ii);
-		for (size_t jj = 0; jj < tal_count(sigs[ii]); ++jj) {
-			if (jj != 0)
-				fprintf(stdout, ", ");
-			for (size_t kk = 0; kk < tal_count(sigs[ii][jj]); ++kk) {
-				fprintf(stdout, "%02x", sigs[ii][jj][kk]);
-			}
-		}
-		fprintf(stdout, "\n");
-		fflush(stdout);
 
-		fprintf(stdout, "REF %lu: ", ii);
-		const struct wally_tx_input *input = tx->wtx->inputs + ii;
-		size_t num_items = input->witness ?
-			input->witness->num_items : 0;
-		for (size_t jj = 0; jj < num_items; ++jj) {
-			const struct wally_tx_witness_item *stack;
-			stack = input->witness->items + jj;
-			if (jj != 0)
-				fprintf(stdout, ", ");
-			for (size_t kk = 0; kk < stack->witness_len; ++kk)
-				fprintf(stdout, "%02x", stack->witness[kk]);
-		}
-		fprintf(stdout, "\n");
-		fflush(stdout);
+	// sign_all_inputs(tx, utxos);
+
+	assert(tal_count(sigs) == tal_count(utxos));
+	for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
+		assert(tal_count(sigs[ii]) == 2);
+
+		u8 **witness = tal_arr(tx, u8 *, 2);
+		witness[0] = tal_dup_arr(witness, u8, sigs[ii][0],
+					 tal_count(sigs[ii][0]), 0);
+		// FIXME: BREAK SIG ON PURPOSE
+		// memset(witness[0], 0, tal_count(witness[0]));
+		// memset(witness[0]+10, 0, 2);	// just a couple bytes
+		witness[1] = tal_dup_arr(witness, u8, sigs[ii][1],
+					 tal_count(sigs[ii][1]), 0);
+		bitcoin_tx_input_set_witness(tx, ii, take(witness));
 	}
 
 	return req_reply(conn, c,
