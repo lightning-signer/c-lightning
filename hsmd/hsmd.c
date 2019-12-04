@@ -1491,7 +1491,59 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 			 take(towire_hsm_sign_commitment_tx_reply(NULL, &sig)));
 }
 
-static void py_handle_sign_remote_commitment_tx(
+static bool py_return_sigs(char const * func, PyObject *pretval, u8 ****o_sigs)
+{
+	if (pretval == NULL) {
+		PyErr_Print();
+		fprintf(stdout, "PYHSMD: %s: failed\n", func);
+		fflush(stdout);
+		return false;
+	}
+	if (!PySequence_Check(pretval)) {
+		fprintf(stdout, "PYHSMD: %s: bad return type\n", func);
+		fflush(stdout);
+		Py_DECREF(pretval);
+		return false;
+	}
+	u8 ***sigs;
+	Py_ssize_t nsigs = PySequence_Length(pretval);
+	sigs = tal_arrz(tmpctx, u8**, nsigs);
+	for (size_t ii = 0; ii < nsigs; ++ii) {
+		PyObject *sig = PySequence_GetItem(pretval, ii);
+		if (!PySequence_Check(sig)) {
+			fprintf(stdout, "PYHSMD: %s: bad sig type\n",
+				__func__);
+			fflush(stdout);
+			Py_DECREF(sig);
+			Py_DECREF(pretval);
+			return false;
+		}
+		Py_ssize_t nelem = PySequence_Length(sig);
+		sigs[ii] = tal_arrz(sigs, u8*, nelem);
+		for (size_t jj = 0; jj < nelem; ++jj) {
+			PyObject *elem = PySequence_GetItem(sig, jj);
+			if (!PyBytes_Check(elem)) {
+				fprintf(stdout, "PYHSMD: %s: bad elem type\n",
+					__func__);
+				fflush(stdout);
+				Py_DECREF(elem);
+				Py_DECREF(sig);
+				Py_DECREF(pretval);
+				return false;
+			}
+			size_t elen = PyBytes_Size(elem);
+			sigs[ii][jj] = tal_arr(sigs[ii], u8, elen);
+			memcpy(sigs[ii][jj], PyBytes_AsString(elem), elen);
+			Py_DECREF(elem);
+		}
+		Py_DECREF(sig);
+	}
+	Py_DECREF(pretval);
+	*o_sigs = sigs;
+	return true;
+}
+
+static bool py_handle_sign_remote_commitment_tx(
 	struct bitcoin_tx *tx,
 	struct pubkey *remote_funding_pubkey,
 	struct amount_sat *funding,
@@ -1499,7 +1551,8 @@ static void py_handle_sign_remote_commitment_tx(
 	u64 dbid,
 	struct witscript const **output_witscripts,
 	struct pubkey *remote_per_commit,
-	bool option_static_remotekey)
+	bool option_static_remotekey,
+	u8 ****o_sigs)
 {
 	size_t ndx = 0;
 	PyObject *pargs = PyTuple_New(9);
@@ -1512,18 +1565,9 @@ static void py_handle_sign_remote_commitment_tx(
 	PyTuple_SetItem(pargs, ndx++, py_witscripts(output_witscripts));
 	PyTuple_SetItem(pargs, ndx++, py_pubkey(remote_per_commit));
 	PyTuple_SetItem(pargs, ndx++, PyBool_FromLong(option_static_remotekey));
-	PyObject *pretval =
-		PyObject_CallObject(
-			pyfunc.handle_sign_remote_commitment_tx, pargs);
-	if (pretval == NULL) {
-		PyErr_Print();
-		fprintf(stderr,
-			"Python \"handle_sign_remote_commitment_tx\" failed\n");
-		exit(3);
-	}
-	Py_DECREF(pretval);
-
-	/* FIXME - Need to return something here */
+	PyObject *pretval = PyObject_CallObject(
+		pyfunc.handle_sign_remote_commitment_tx, pargs);
+	return py_return_sigs(__func__, pretval, o_sigs);
 }
 
 /*~ This is used by channeld to create signatures for the remote peer's
@@ -1544,7 +1588,7 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
 	struct secrets secrets;
-	const u8 *funding_wscript;
+	// const u8 *funding_wscript;
 	struct witscript **output_witscripts;
 	struct pubkey remote_per_commit;
 	bool option_static_remotekey;
@@ -1584,24 +1628,35 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 		  &secrets.delayed_payment_basepoint_secret,
 		  sizeof(secrets.delayed_payment_basepoint_secret));
 
-	funding_wscript = bitcoin_redeem_2of2(tmpctx,
-					      &local_funding_pubkey,
-					      &remote_funding_pubkey);
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
-	py_handle_sign_remote_commitment_tx(
-		tx, &remote_funding_pubkey, &funding,
-		&c->id, c->dbid,
-		(const struct witscript **) output_witscripts,
-		&remote_per_commit,
-		option_static_remotekey);
+	/*
+	funding_wscript = bitcoin_redeem_2of2(tmpctx,
+					      &local_funding_pubkey,
+					      &remote_funding_pubkey);
 
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,
 		      SIGHASH_ALL,
 		      &sig);
+	*/
+
+	u8 *** sigs;
+	if (!py_handle_sign_remote_commitment_tx(
+		    tx, &remote_funding_pubkey, &funding,
+		    &c->id, c->dbid,
+		    (const struct witscript **) output_witscripts,
+		    &remote_per_commit,
+		    option_static_remotekey,
+		    &sigs))
+		abort();
+	assert(tal_count(sigs) == 1);
+
+	secp256k1_ecdsa_signature_parse_der(
+		secp256k1_ctx, &(sig.s), sigs[0][0], tal_count(sigs[0][0]));
+	sig.sighash_type = SIGHASH_ALL;
 
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
@@ -2360,54 +2415,7 @@ static bool py_handle_sign_withdrawal_tx(
 	PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
 	PyObject *pretval =
 		PyObject_CallObject(pyfunc.handle_sign_withdrawal_tx, pargs);
-	if (pretval == NULL) {
-		PyErr_Print();
-		fprintf(stdout, "PYHSMD: %s: failed\n", __func__);
-		fflush(stdout);
-		return false;
-	}
-	if (!PySequence_Check(pretval)) {
-		fprintf(stdout, "PYHSMD: %s: bad return type\n", __func__);
-		fflush(stdout);
-		Py_DECREF(pretval);
-		return false;
-	}
-	u8 ***sigs;
-	Py_ssize_t nsigs = PySequence_Length(pretval);
-	sigs = tal_arrz(tmpctx, u8**, nsigs);
-	for (size_t ii = 0; ii < nsigs; ++ii) {
-		PyObject *sig = PySequence_GetItem(pretval, ii);
-		if (!PySequence_Check(sig)) {
-			fprintf(stdout, "PYHSMD: %s: bad sig type\n",
-				__func__);
-			fflush(stdout);
-			Py_DECREF(sig);
-			Py_DECREF(pretval);
-			return false;
-		}
-		Py_ssize_t nelem = PySequence_Length(sig);
-		sigs[ii] = tal_arrz(sigs, u8*, nelem);
-		for (size_t jj = 0; jj < nelem; ++jj) {
-			PyObject *elem = PySequence_GetItem(sig, jj);
-			if (!PyBytes_Check(elem)) {
-				fprintf(stdout, "PYHSMD: %s: bad elem type\n",
-					__func__);
-				fflush(stdout);
-				Py_DECREF(elem);
-				Py_DECREF(sig);
-				Py_DECREF(pretval);
-				return false;
-			}
-			size_t elen = PyBytes_Size(elem);
-			sigs[ii][jj] = tal_arr(sigs[ii], u8, elen);
-			memcpy(sigs[ii][jj], PyBytes_AsString(elem), elen);
-			Py_DECREF(elem);
-		}
-		Py_DECREF(sig);
-	}
-	Py_DECREF(pretval);
-	*o_sigs = sigs;
-	return true;
+	return py_return_sigs(__func__, pretval, o_sigs);
 }
 
 /*~ lightningd asks us to sign a withdrawal; same as above but in theory
@@ -2451,9 +2459,6 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 		u8 **witness = tal_arr(tx, u8 *, 2);
 		witness[0] = tal_dup_arr(witness, u8, sigs[ii][0],
 					 tal_count(sigs[ii][0]), 0);
-		// FIXME: BREAK SIG ON PURPOSE
-		// memset(witness[0], 0, tal_count(witness[0]));
-		// memset(witness[0]+10, 0, 2);	// just a couple bytes
 		witness[1] = tal_dup_arr(witness, u8, sigs[ii][1],
 					 tal_count(sigs[ii][1]), 0);
 		bitcoin_tx_input_set_witness(tx, ii, take(witness));

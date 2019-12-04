@@ -178,7 +178,6 @@ def handle_sign_withdrawal_tx(self_id, peer_id, dbid,
 
     debug("PYHSMD handle_sign_withdrawal_tx calling server")
     rsp = stub.SignWithdrawalTx(req)
-
     debug(rsp)
     
     # Remove unnecessary object derefs.
@@ -260,8 +259,8 @@ def handle_sign_remote_commitment_tx(self_id, tx,
                               inp['index'],
                               inp['script'],
                               inp['sequence']))
-        # FIXME - figure out the input SignDescriptor.
         desc = SignDescriptor()
+        desc.output.value = funding['satoshis']
         isds.append(desc)
     osds = []
     txs_out = []
@@ -278,13 +277,19 @@ def handle_sign_remote_commitment_tx(self_id, tx,
     req.output_descs.extend(osds)
 
     rsp = stub.SignRemoteCommitmentTx(req)
-    ## FIXME - temporary hack
-    #sigs = rsp.raw_sigs
-    sigs = []
+    debug(rsp)
 
+    # Remove unnecessary object derefs.
+    sigs = [sig.item for sig in rsp.sigs]
+
+    debug(sigs)
+    
     for ndx, sig in enumerate(sigs):
-        debug("PYHSMD handle_sign_remote_commitment_tx sig", ndx, sig.hex())
+        debug("PYHSMD handle_sign_remote_commitment_tx sig", ndx,
+              [elem.hex() for elem in sig])
 
+    return sigs
+        
 # message 20
 @stdout_exceptions
 def handle_sign_remote_htlc_tx(self_id, tx, wscript,
