@@ -166,6 +166,7 @@ void sign_tx_input(const struct bitcoin_tx *tx,
 
 	log_bytes("SCRIPT", script, tal_count(script));
 	log_bytes("HASH", hash.sha.u.u8, 32);
+	log_bytes("PRIVKEY", privkey, sizeof(*privkey));
 
 	dump_tx("Signing", tx, in, subscript, key, &hash);
 	sign_hash(privkey, &hash, &sig->s);

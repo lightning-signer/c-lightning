@@ -270,7 +270,7 @@ def handle_sign_remote_commitment_tx(self_id, tx,
         # FIXME - figure out the output SignDescriptor.
         desc = SignDescriptor()
         osds.append(desc)
-    tx = Tx(version, txs_in, txs_out)
+    tx = Tx(version, txs_in, txs_out, tx['wally_tx']['locktime'])
     debug("PYHSMD handle_sign_remote_commitment_tx TX", tx.as_hex())
     req.raw_tx_bytes = tx.as_bin()
     req.input_descs.extend(isds)
