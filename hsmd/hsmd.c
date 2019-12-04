@@ -1588,7 +1588,7 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
 	struct secrets secrets;
-	const u8 *funding_wscript;
+	// const u8 *funding_wscript;
 	struct witscript **output_witscripts;
 	struct pubkey remote_per_commit;
 	bool option_static_remotekey;
@@ -1631,6 +1631,7 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
+	/*
 	funding_wscript = bitcoin_redeem_2of2(tmpctx,
 					      &local_funding_pubkey,
 					      &remote_funding_pubkey);
@@ -1644,6 +1645,7 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 		      &local_funding_pubkey,
 		      SIGHASH_ALL,
 		      &sig2);
+	*/
 
 	u8 *** sigs;
 	if (!py_handle_sign_remote_commitment_tx(
@@ -1659,7 +1661,7 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	bool ok = signature_from_der(sigs[0][0], tal_count(sigs[0][0]), &sig);
 	assert(ok);
 
-	log_bytes("rusty sig", &(sig2.s), sizeof(sig2.s));
+	// log_bytes("rusty sig", &(sig2.s), sizeof(sig2.s));
 	log_bytes("lipo  sig", &(sig.s), sizeof(sig.s));
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
