@@ -129,15 +129,6 @@ static struct {
 	PyObject *handle_sign_mutual_close_tx;
 } pyfunc;
 
-static void log_bytes(char const * tag, void const * vptr, size_t sz) {
-	uint8_t const * ptr = (uint8_t const *) vptr;
-	fprintf(stdout, "%s: ", tag);
-	for (size_t ii = 0; ii < sz; ++ii)
-		fprintf(stdout, "%02x", ptr[ii]);
-	fprintf(stdout, "\n");
-	fflush(stdout);
-}
-
 /*~ We keep a map of nonzero dbid -> clients, mainly for leak detection.
  * This is ccan/uintmap, which maps u64 to some (non-NULL) pointer.
  * I really dislike these kinds of declaration-via-magic macro things, as
@@ -1613,20 +1604,26 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	derive_basepoints(&channel_seed,
 			  &local_funding_pubkey, NULL, &secrets, NULL);
 
-	log_bytes("handle_sign_remote_commitment_tx:funding_privkey",
-		  &secrets.funding_privkey, sizeof(secrets.funding_privkey));
-	log_bytes("handle_sign_remote_commitment_tx:revocation_basepoint_secret",
-		  &secrets.revocation_basepoint_secret,
-		  sizeof(secrets.revocation_basepoint_secret));
-	log_bytes("handle_sign_remote_commitment_tx:payment_basepoint_secret",
-		  &secrets.payment_basepoint_secret,
-		  sizeof(secrets.payment_basepoint_secret));
-	log_bytes("handle_sign_remote_commitment_tx:htlc_basepoint_secret",
-		  &secrets.htlc_basepoint_secret,
-		  sizeof(secrets.htlc_basepoint_secret));
-	log_bytes("handle_sign_remote_commitment_tx:delayed_payment_basepoint_secret",
-		  &secrets.delayed_payment_basepoint_secret,
-		  sizeof(secrets.delayed_payment_basepoint_secret));
+	status_debug("%s:%d: funding_privkey: %s",
+		     __FILE__, __LINE__,
+		     type_to_string(tmpctx, struct privkey,
+				    &secrets.funding_privkey));
+	status_debug("%s:%d: revocation_basepoint_secret: %s",
+		     __FILE__, __LINE__,
+		     type_to_string(tmpctx, struct secret,
+				    &secrets.revocation_basepoint_secret));
+	status_debug("%s:%d: payment_basepoint_secret: %s",
+		     __FILE__, __LINE__,
+		     type_to_string(tmpctx, struct secret,
+				    &secrets.payment_basepoint_secret));
+	status_debug("%s:%d: htlc_basepoint_secret: %s",
+		     __FILE__, __LINE__,
+		     type_to_string(tmpctx, struct secret,
+				    &secrets.htlc_basepoint_secret));
+	status_debug("%s:%d: delayed_payment_basepoint_secret: %s",
+		     __FILE__, __LINE__,
+		     type_to_string(tmpctx, struct secret,
+				    &secrets.delayed_payment_basepoint_secret));
 
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
@@ -1661,8 +1658,9 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	bool ok = signature_from_der(sigs[0][0], tal_count(sigs[0][0]), &sig);
 	assert(ok);
 
-	// log_bytes("rusty sig", &(sig2.s), sizeof(sig2.s));
-	log_bytes("lipo  sig", &(sig.s), sizeof(sig.s));
+	status_debug("%s:%d: signature: %s",
+		     __FILE__, __LINE__,
+		     type_to_string(tmpctx, struct bitcoin_signature, &sig));
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
 
@@ -2038,10 +2036,14 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 	} else
 		old_secret = NULL;
 
-	log_bytes("channel_seed", &channel_seed, sizeof(channel_seed));
-	log_bytes("shaseed", &shaseed, sizeof(shaseed));
-	log_bytes("handle_get_per_commitment_point",
-		  &per_commitment_point, sizeof(per_commitment_point));
+	status_debug("%s:%d: channel_seed: %s",
+		     __FILE__, __LINE__,
+		     type_to_string(tmpctx, struct secret, &channel_seed));
+	status_debug("%s:%d: shaseed: %s",
+		     __FILE__, __LINE__,
+		     type_to_string(tmpctx, struct sha256, &shaseed));
+	status_debug("per_commitment_point: %s", type_to_string(
+			     tmpctx, struct pubkey, &per_commitment_point));
 
 	/*~ hsm_client_wire.csv marks the secret field here optional, so it only
 	 * gets included if the parameter is non-NULL.  We violate 80 columns
@@ -2328,7 +2330,6 @@ static void sign_all_inputs(struct bitcoin_tx *tx, struct utxo **utxos)
 		/* It's either a p2wpkh or p2sh (we support that so people from
 		 * the last bitcoin era can put funds into the wallet) */
 		wscript = p2wpkh_scriptcode(tmpctx, &inkey);
-		log_bytes("RUSTY WSCRIPT", wscript, tal_count(wscript));
 		if (in->is_p2sh) {
 			/* For P2SH-wrapped Segwit, the (implied) redeemScript
 			 * is defined in BIP141 */
@@ -2341,9 +2342,6 @@ static void sign_all_inputs(struct bitcoin_tx *tx, struct utxo **utxos)
 			subscript = NULL;
 			bitcoin_tx_input_set_script(tx, i, NULL);
 		}
-
-		log_bytes("SUBSCRIPT", subscript, tal_count(subscript));
-		log_bytes("INPRIVKEY", inprivkey.secret.data, 32);
 
 		/* This is the core crypto magic. */
 		sign_tx_input(tx, i, subscript, wscript, &inprivkey, &inkey,

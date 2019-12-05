@@ -138,15 +138,6 @@ static void bitcoin_tx_hash_for_sig(const struct bitcoin_tx *tx, unsigned int in
 	}
 }
 
-static void log_bytes(char const * tag, void const * vptr, size_t sz) {
-	uint8_t const * ptr = (uint8_t const *) vptr;
-	fprintf(stdout, "%s: ", tag);
-	for (size_t ii = 0; ii < sz; ++ii)
-		fprintf(stdout, "%02x", ptr[ii]);
-	fprintf(stdout, "\n");
-	fflush(stdout);
-}
-
 void sign_tx_input(const struct bitcoin_tx *tx,
 		   unsigned int in,
 		   const u8 *subscript,
@@ -163,10 +154,6 @@ void sign_tx_input(const struct bitcoin_tx *tx,
 
 	sig->sighash_type = sighash_type;
 	bitcoin_tx_hash_for_sig(tx, in, script, sighash_type, &hash);
-
-	log_bytes("SCRIPT", script, tal_count(script));
-	log_bytes("HASH", hash.sha.u.u8, 32);
-	log_bytes("PRIVKEY", privkey, sizeof(*privkey));
 
 	dump_tx("Signing", tx, in, subscript, key, &hash);
 	sign_hash(privkey, &hash, &sig->s);
