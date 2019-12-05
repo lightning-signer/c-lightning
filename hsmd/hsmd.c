@@ -1069,8 +1069,8 @@ static void py_init_hsm(struct bip32_key_version *bip32_key_version,
 	PyObject *pretval = PyObject_CallObject(pyfunc.init_hsm, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr, "Python \"init_hsm\" failed\n");
-		// exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR, "%s:%d %s failed",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 	Py_DECREF(pretval);
 
@@ -1159,19 +1159,21 @@ static bool py_handle_ecdh(struct pubkey *point, struct secret *o_ss)
 	PyObject *pretval = PyObject_CallObject(pyfunc.handle_ecdh, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stdout, "PYHSMD: %s: failed\n", __func__);
-		fflush(stdout);
-		return false;
+		status_failed(STATUS_FAIL_INTERNAL_ERROR, "%s:%d %s failed",
+			      __FILE__, __LINE__, __FUNCTION__);
+		return false;	// not reached
 	}
+	// None will get returned if the input was bad.  Caller will
+	// do the status_broken.
 	if (!PyBytes_Check(pretval)) {
-		fprintf(stdout, "PYHSMD: %s: bad return type\n", __func__);
-		fflush(stdout);
+		status_debug("%s:%d %s: bad return type",
+			     __FILE__, __LINE__, __FUNCTION__);
 		Py_DECREF(pretval);
 		return false;
 	}
 	if (PyBytes_Size(pretval) != sizeof(o_ss->data)) {
-		fprintf(stdout, "PYHSMD: %s: bad return size\n", __func__);
-		fflush(stdout);
+		status_debug("%s:%d %s: bad return size",
+			     __FILE__, __LINE__, __FUNCTION__);
 		Py_DECREF(pretval);
 		return false;
 	}
@@ -1188,7 +1190,6 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 				   struct client *c,
 				   const u8 *msg_in)
 {
-	struct privkey privkey;
 	struct pubkey point;
 	struct secret ss;
 
@@ -1197,21 +1198,17 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 
 	/*~ We simply use the secp256k1_ecdh function: if ss.data is invalid,
 	 * we kill them for bad randomness (~1 in 2^127 if ss.data is random) */
+	/*
+	struct privkey privkey;
 	node_key(&privkey, NULL);
 	if (secp256k1_ecdh(secp256k1_ctx, ss.data, &point.pubkey,
 			   privkey.secret.data, NULL, NULL) != 1) {
 		return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
 	}
+	*/
 
-	/* Compute the ecdh with liposig. */
-	struct secret ss2;
-	if (!py_handle_ecdh(&point, &ss2))
-		abort();
-
-	/* Compare the result w/ locally computed. */
-	if (memcmp(ss.data, ss2.data, sizeof(ss.data)) != 0) {
-		fprintf(stderr, "secrets don't match");
-		abort();
+	if (!py_handle_ecdh(&point, &ss)) {
+		return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
 	}
 
 	/*~ In the normal case, we return the shared secret, and then read
@@ -1234,9 +1231,8 @@ static void py_handle_cannouncement_sig(u8 *ca, size_t calen,
 		PyObject_CallObject(pyfunc.handle_cannouncement_sig, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr,
-			"Python \"handle_cannouncement_sig\" failed\n");
-		exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR, "%s:%d %s failed",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 	Py_DECREF(pretval);
 
@@ -1380,9 +1376,8 @@ static void py_handle_get_channel_basepoints(struct node_id *peer_id, u64 dbid)
 			pyfunc.handle_get_channel_basepoints, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr,
-			"Python \"handle_get_channel_basepoints\" failed\n");
-		exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR, "%s:%d %s failed",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 	Py_DECREF(pretval);
 
@@ -1482,19 +1477,18 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 			 take(towire_hsm_sign_commitment_tx_reply(NULL, &sig)));
 }
 
-static bool py_return_sigs(char const * func, PyObject *pretval, u8 ****o_sigs)
+static void py_return_sigs(char const * func, PyObject *pretval, u8 ****o_sigs)
 {
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stdout, "PYHSMD: %s: failed\n", func);
-		fflush(stdout);
-		return false;
+		status_failed(STATUS_FAIL_INTERNAL_ERROR, "%s:%d %s failed",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 	if (!PySequence_Check(pretval)) {
-		fprintf(stdout, "PYHSMD: %s: bad return type\n", func);
-		fflush(stdout);
-		Py_DECREF(pretval);
-		return false;
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "%s:%d %s bad return type",
+			      __FILE__, __LINE__, __FUNCTION__);
+		Py_DECREF(pretval);	// not reached
 	}
 	u8 ***sigs;
 	Py_ssize_t nsigs = PySequence_Length(pretval);
@@ -1502,25 +1496,23 @@ static bool py_return_sigs(char const * func, PyObject *pretval, u8 ****o_sigs)
 	for (size_t ii = 0; ii < nsigs; ++ii) {
 		PyObject *sig = PySequence_GetItem(pretval, ii);
 		if (!PySequence_Check(sig)) {
-			fprintf(stdout, "PYHSMD: %s: bad sig type\n",
-				__func__);
-			fflush(stdout);
-			Py_DECREF(sig);
-			Py_DECREF(pretval);
-			return false;
+			status_failed(STATUS_FAIL_INTERNAL_ERROR,
+				      "%s:%d %s bad sig type",
+				      __FILE__, __LINE__, __FUNCTION__);
+			Py_DECREF(sig);		// not reached
+			Py_DECREF(pretval);	// not reached
 		}
 		Py_ssize_t nelem = PySequence_Length(sig);
 		sigs[ii] = tal_arrz(sigs, u8*, nelem);
 		for (size_t jj = 0; jj < nelem; ++jj) {
 			PyObject *elem = PySequence_GetItem(sig, jj);
 			if (!PyBytes_Check(elem)) {
-				fprintf(stdout, "PYHSMD: %s: bad elem type\n",
-					__func__);
-				fflush(stdout);
-				Py_DECREF(elem);
-				Py_DECREF(sig);
-				Py_DECREF(pretval);
-				return false;
+				status_failed(STATUS_FAIL_INTERNAL_ERROR,
+					      "%s:%d %s bad elem type",
+					      __FILE__, __LINE__, __FUNCTION__);
+				Py_DECREF(elem);	// not reached
+				Py_DECREF(sig);		// not reached
+				Py_DECREF(pretval);	// not reached
 			}
 			size_t elen = PyBytes_Size(elem);
 			sigs[ii][jj] = tal_arr(sigs[ii], u8, elen);
@@ -1531,10 +1523,9 @@ static bool py_return_sigs(char const * func, PyObject *pretval, u8 ****o_sigs)
 	}
 	Py_DECREF(pretval);
 	*o_sigs = sigs;
-	return true;
 }
 
-static bool py_handle_sign_remote_commitment_tx(
+static void py_handle_sign_remote_commitment_tx(
 	struct bitcoin_tx *tx,
 	struct pubkey *remote_funding_pubkey,
 	struct amount_sat *funding,
@@ -1558,7 +1549,7 @@ static bool py_handle_sign_remote_commitment_tx(
 	PyTuple_SetItem(pargs, ndx++, PyBool_FromLong(option_static_remotekey));
 	PyObject *pretval = PyObject_CallObject(
 		pyfunc.handle_sign_remote_commitment_tx, pargs);
-	return py_return_sigs(__func__, pretval, o_sigs);
+	py_return_sigs(__func__, pretval, o_sigs);
 }
 
 /*~ This is used by channeld to create signatures for the remote peer's
@@ -1604,24 +1595,24 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	derive_basepoints(&channel_seed,
 			  &local_funding_pubkey, NULL, &secrets, NULL);
 
-	status_debug("%s:%d: funding_privkey: %s",
-		     __FILE__, __LINE__,
+	status_debug("%s:%d %s: funding_privkey: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct privkey,
 				    &secrets.funding_privkey));
-	status_debug("%s:%d: revocation_basepoint_secret: %s",
-		     __FILE__, __LINE__,
+	status_debug("%s:%d %s: revocation_basepoint_secret: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct secret,
 				    &secrets.revocation_basepoint_secret));
-	status_debug("%s:%d: payment_basepoint_secret: %s",
-		     __FILE__, __LINE__,
+	status_debug("%s:%d %s: payment_basepoint_secret: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct secret,
 				    &secrets.payment_basepoint_secret));
-	status_debug("%s:%d: htlc_basepoint_secret: %s",
-		     __FILE__, __LINE__,
+	status_debug("%s:%d %s: htlc_basepoint_secret: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct secret,
 				    &secrets.htlc_basepoint_secret));
-	status_debug("%s:%d: delayed_payment_basepoint_secret: %s",
-		     __FILE__, __LINE__,
+	status_debug("%s:%d %s: delayed_payment_basepoint_secret: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct secret,
 				    &secrets.delayed_payment_basepoint_secret));
 
@@ -1645,21 +1636,20 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	*/
 
 	u8 *** sigs;
-	if (!py_handle_sign_remote_commitment_tx(
-		    tx, &remote_funding_pubkey, &funding,
-		    &c->id, c->dbid,
-		    (const struct witscript **) output_witscripts,
-		    &remote_per_commit,
-		    option_static_remotekey,
-		    &sigs))
-		abort();
+	py_handle_sign_remote_commitment_tx(
+		tx, &remote_funding_pubkey, &funding,
+		&c->id, c->dbid,
+		(const struct witscript **) output_witscripts,
+		&remote_per_commit,
+		option_static_remotekey,
+		&sigs);
 	assert(tal_count(sigs) == 1);
 
 	bool ok = signature_from_der(sigs[0][0], tal_count(sigs[0][0]), &sig);
 	assert(ok);
 
-	status_debug("%s:%d: signature: %s",
-		     __FILE__, __LINE__,
+	status_debug("%s:%d %s: signature: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct bitcoin_signature, &sig));
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
@@ -1686,9 +1676,8 @@ static void py_handle_sign_remote_htlc_tx(
 		PyObject_CallObject(pyfunc.handle_sign_remote_htlc_tx, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr,
-			"Python call \"handle_sign_remote_htlc_tx\" failed\n");
-		exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR, "%s:%d %s failed",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 	Py_DECREF(pretval);
 
@@ -1989,9 +1978,8 @@ static void py_handle_get_per_commitment_point(struct node_id *peer_id,
 			pyfunc.handle_get_per_commitment_point, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr,
-			"Python \"handle_get_per_commitment_point\" failed\n");
-		// exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR, "%s:%d %s failed",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 	Py_XDECREF(pretval);
 
@@ -2036,13 +2024,14 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 	} else
 		old_secret = NULL;
 
-	status_debug("%s:%d: channel_seed: %s",
-		     __FILE__, __LINE__,
+	status_debug("%s:%d %s: channel_seed: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct secret, &channel_seed));
-	status_debug("%s:%d: shaseed: %s",
-		     __FILE__, __LINE__,
+	status_debug("%s:%d %s: shaseed: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct sha256, &shaseed));
-	status_debug("per_commitment_point: %s", type_to_string(
+	status_debug("%s:%d %s: per_commitment_point: %s",
+		     __FILE__, __LINE__, __FUNCTION__, type_to_string(
 			     tmpctx, struct pubkey, &per_commitment_point));
 
 	/*~ hsm_client_wire.csv marks the secret field here optional, so it only
@@ -2106,9 +2095,8 @@ static void py_handle_sign_mutual_close_tx(
 		PyObject_CallObject(pyfunc.handle_sign_mutual_close_tx, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr,
-			"Python call \"handle_sign_mutual_close_tx\" failed\n");
-		exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR, "%s:%d %s failed",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 	Py_DECREF(pretval);
 
@@ -2205,9 +2193,8 @@ static void py_handle_pass_client_hsmfd(struct node_id *peer_id,
 		PyObject_CallObject(pyfunc.handle_pass_client_hsmfd, pargs);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr,
-			"Python call \"handle_pass_client_hsmfd\" failed\n");
-		// exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR, "%s:%d %s failed",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 	Py_XDECREF(pretval);
 }
@@ -2395,7 +2382,7 @@ static struct io_plan *handle_sign_funding_tx(struct io_conn *conn,
 	return req_reply(conn, c, take(towire_hsm_sign_funding_reply(NULL, tx)));
 }
 
-static bool py_handle_sign_withdrawal_tx(
+static void py_handle_sign_withdrawal_tx(
 	struct node_id *peer_id, u64 dbid,
 	struct amount_sat *satoshi_out,
 	struct amount_sat *change_out,
@@ -2418,7 +2405,7 @@ static bool py_handle_sign_withdrawal_tx(
 	PyTuple_SetItem(pargs, ndx++, py_bitcoin_tx(tx));
 	PyObject *pretval =
 		PyObject_CallObject(pyfunc.handle_sign_withdrawal_tx, pargs);
-	return py_return_sigs(__func__, pretval, o_sigs);
+	py_return_sigs(__func__, pretval, o_sigs);
 }
 
 /*~ lightningd asks us to sign a withdrawal; same as above but in theory
@@ -2448,10 +2435,9 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			 &changekey, change_out, NULL, NULL);
 
 	u8 *** sigs;
-	if (!py_handle_sign_withdrawal_tx(&c->id, c->dbid, &satoshi_out,
-					  &change_out, change_keyindex,
-					  outputs, utxos, tx, &sigs))
-		abort();
+	py_handle_sign_withdrawal_tx(&c->id, c->dbid, &satoshi_out,
+				     &change_out, change_keyindex,
+				     outputs, utxos, tx, &sigs);
 
 	// sign_all_inputs(tx, utxos);
 
@@ -2846,8 +2832,9 @@ static PyObject *python_function(PyObject *pmodule, char *funcname)
 	if (pfunc == NULL || !PyCallable_Check(pfunc)) {
 		if (PyErr_Occurred())
 			PyErr_Print();
-		fprintf(stderr, "Cannot find function \"%s\"\n", funcname);
-		exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "%s:%d %s cannot find function \"%s\"",
+			      __FILE__, __LINE__, __FUNCTION__, funcname);
 	}
 	return pfunc;
 }
@@ -2860,8 +2847,9 @@ static void setup_python_functions(void)
 	Py_DECREF(pname);
 	if (pmodule == NULL) {
 		PyErr_Print();
-		fprintf(stderr, "Failed to load \"hsmd\"\n");
-		exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "%s:%d %s failed tp load \"hsmd\"",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 
 	pyfunc.setup = python_function(pmodule, "setup");
@@ -2904,8 +2892,9 @@ int main(int argc, char *argv[])
 	PyObject *pretval = PyObject_CallObject(pyfunc.setup, NULL);
 	if (pretval == NULL) {
 		PyErr_Print();
-		fprintf(stderr, "Python call \"setup\" failed\n");
-		exit(3);
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "%s:%d %s python setup failed",
+			      __FILE__, __LINE__, __FUNCTION__);
 	}
 	Py_DECREF(pretval);
 
