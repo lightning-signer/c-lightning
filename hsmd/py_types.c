@@ -1,7 +1,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
-#include <hsmd/py_hsmd_types.h>
+#include <hsmd/py_types.h>
 
 PyObject *py_none(void)
 {
