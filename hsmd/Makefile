@@ -10,6 +10,7 @@ CFLAGS += -I/usr/include/python3.7m
 LDLIBS += -lpython3.7m
 
 LIGHTNINGD_HSM_SRC := hsmd/hsmd.c	\
+	hsmd/py_hsmd_types.c			\
 	hsmd/gen_hsm_wire.c
 LIGHTNINGD_HSM_HEADERS := hsmd/gen_hsm_wire.h
 LIGHTNINGD_HSM_OBJS := $(LIGHTNINGD_HSM_SRC:.c=.o)
