@@ -7,9 +7,8 @@
  * by request, response.
  */
 
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
-
+#include <hsmd/py_types.h>
+#include <hsmd/py_hsmd.h>
 #include <bitcoin/address.h>
 #include <bitcoin/privkey.h>
 #include <bitcoin/pubkey.h>
@@ -57,8 +56,6 @@
 #include <wally_bip32.h>
 #include <wire/gen_peer_wire.h>
 #include <wire/wire_io.h>
-#include <hsmd/py_types.h>
-#include <hsmd/py_hsmd.h>
 
 /*~ Each subdaemon is started with stdin connected to lightningd (for status
  * messages), and stderr untouched (for emergency printing).  File descriptors
@@ -1501,7 +1498,6 @@ static struct io_plan *handle_sign_mutual_close_tx(struct io_conn *conn,
 	funding_wscript = bitcoin_redeem_2of2(tmpctx,
 					      &local_funding_pubkey,
 					      &remote_funding_pubkey);
-
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
@@ -1676,7 +1672,6 @@ static void sign_all_inputs(struct bitcoin_tx *tx, struct utxo **utxos)
 			subscript = NULL;
 			bitcoin_tx_input_set_script(tx, i, NULL);
 		}
-
 		/* This is the core crypto magic. */
 		sign_tx_input(tx, i, subscript, wscript, &inprivkey, &inkey,
 			      SIGHASH_ALL, &sig);

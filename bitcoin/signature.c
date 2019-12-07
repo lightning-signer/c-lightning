@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 #include "privkey.h"
 #include "pubkey.h"
 #include "script.h"
