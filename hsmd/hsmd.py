@@ -25,8 +25,6 @@ from api_pb2 import (
 
 from pycoin.symbols.btc import network
 
-import EXFILT
-
 Tx = network.tx
 
 def debug(*objs):
