@@ -265,7 +265,6 @@ def handle_sign_remote_commitment_tx(self_id, tx,
     for out in tx['wally_tx']['outputs']:
         txs_out.append(Tx.TxOut(out['satoshi'],
                                 out['script']))
-        # FIXME - figure out the output SignDescriptor.
         desc = SignDescriptor()
         osds.append(desc)
     tx = Tx(version, txs_in, txs_out, tx['wally_tx']['locktime'])
