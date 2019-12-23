@@ -4,6 +4,7 @@
 #include <bitcoin/chainparams.h>
 #include <bitcoin/privkey.h>
 #include <ccan/container_of/container_of.h>
+#include <ccan/strmap/strmap.h>
 #include <ccan/time/time.h>
 #include <ccan/timer/timer.h>
 #include <lightningd/htlc_end.h>
@@ -249,11 +250,16 @@ struct lightningd {
 	char *wallet_dsn;
 
 	bool encrypted_hsm;
+
+	STRMAP(const char *) alt_subdaemons;
 };
 
 /* Turning this on allows a tal allocation to return NULL, rather than aborting.
  * Use only on carefully tested code! */
 extern bool tal_oom_ok;
+
+/* Return true if called with a recognized subdaemon, eg: "lightning_hsmd" */
+bool is_subdaemon(const char *sdname);
 
 /* Check we can run subdaemons, and check their versions */
 void test_subdaemons(const struct lightningd *ld);
