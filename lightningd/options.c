@@ -880,7 +880,9 @@ static void register_opts(struct lightningd *ld)
 			 "If the supplied path is relative the subdaemon "
 			 "binary is found in the working directory. "
 			 "This option may be specified multiple times, "
-			 "but only once for each subdaemon.");
+			 "but only once for each subdaemon. For example, "
+			 "--alt-subdaemon=lightning_hsmd:remote_signer "
+			 "would use a hypothetical remote signing subdaemon.");
 
 	opt_register_logging(ld);
 	opt_register_version();
