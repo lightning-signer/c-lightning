@@ -875,7 +875,12 @@ static void register_opts(struct lightningd *ld)
 	                   "you will be prompted to enter it.");
 
 	opt_register_arg("--alt-subdaemon", opt_alt_subdaemon, NULL,
-			 ld, "Use alternate subdaemon");
+			 ld, "Arg specified as SUBDAEMON:PATH. "
+			 "Specifies an alternate subdaemon binary. "
+			 "If the supplied path is relative the subdaemon "
+			 "binary is found in the working directory. "
+			 "This option may be specified multiple times, "
+			 "but only once for each subdaemon.");
 
 	opt_register_logging(ld);
 	opt_register_version();
