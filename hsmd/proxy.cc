@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <grpcpp/grpcpp.h>
+#include <grpc++/grpc++.h>
 
 #include "hsmd/api.pb.h"
 #include "hsmd/api.grpc.pb.h"
