@@ -7,9 +7,22 @@ hsmd-wrongdir:
 default: hsmd-all
 
 LIGHTNINGD_HSM_SRC := hsmd/hsmd.c	\
-	hsmd/gen_hsm_wire.c
-LIGHTNINGD_HSM_HEADERS := hsmd/gen_hsm_wire.h
-LIGHTNINGD_HSM_OBJS := $(LIGHTNINGD_HSM_SRC:.c=.o)
+	hsmd/gen_hsm_wire.c \
+	hsmd/api.pb.cc \
+	hsmd/api.grpc.pb.cc \
+	hsmd/proxy.cc
+LIGHTNINGD_HSM_HEADERS := hsmd/gen_hsm_wire.h hsmd/api.pb.h hsmd/api.grpc.pb.h
+LIGHTNINGD_HSM_CCOBJS := $(LIGHTNINGD_HSM_SRC:.cc=.o)
+LIGHTNINGD_HSM_OBJS := $(LIGHTNINGD_HSM_CCOBJS:.c=.o)
+
+HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
+SYSTEM ?= $(HOST_SYSTEM)
+CXX = g++
+CXXFLAGS += -std=c++11 -I. -Iccan
+PROTOC = protoc
+GRPC_CPP_PLUGIN = grpc_cpp_plugin
+GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
+PROTOS_PATH = hsmd
 
 # Common source we use.
 HSMD_COMMON_OBJS :=				\
@@ -46,10 +59,19 @@ $(LIGHTNINGD_HSM_OBJS): $(LIGHTNINGD_HEADERS)
 ALL_OBJS += $(LIGHTNINGD_HSM_OBJS)
 ALL_PROGRAMS += lightningd/lightning_hsmd
 ALL_GEN_HEADERS += hsmd/gen_hsm_wire.h
+ALL_GEN_HEADERS += hsmd/api.pb.h hsmd/api.grpc.pb.h
 
 hsmd-all: lightningd/lightning_hsmd
 
 lightningd/lightning_hsmd: $(LIGHTNINGD_HSM_OBJS) $(LIGHTNINGD_LIB_OBJS) $(HSMD_COMMON_OBJS) $(BITCOIN_OBJS) $(WIRE_OBJS)
+
+hsmd/api.grpc.pb.o hsmd/api.pb.o hsmd/proxy.o : CPPFLAGS += `pkg-config --cflags protobuf grpc`
+lightningd/lightning_hsmd: LDFLAGS += -L/usr/local/lib \
+	`pkg-config --libs protobuf grpc++`\
+	-pthread\
+	-Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
+	-ldl
+lightningd/lightning_hsmd: LDLIBS += -lstdc++
 
 hsmd/gen_hsm_wire.h: $(WIRE_GEN) hsmd/hsm_wire.csv
 	$(WIRE_GEN) --page header $@ hsm_wire_type < hsmd/hsm_wire.csv > $@
@@ -66,5 +88,14 @@ clean: lightningd/hsm-clean
 
 lightningd/hsm-clean:
 	$(RM) $(LIGHTNINGD_HSM_OBJS) hsmd/gen_*
+	$(RM) hsmd/*.pb.cc hsmd/*.pb.h
+
+.PRECIOUS: %.grpc.pb.cc
+%.grpc.pb.cc: %.proto
+	$(PROTOC) -I $(PROTOS_PATH) --grpc_out=hsmd --plugin=protoc-gen-grpc=$(GRPC_CPP_PLUGIN_PATH) $<
+
+.PRECIOUS: %.pb.cc
+%.pb.cc: %.proto
+	$(PROTOC) -I $(PROTOS_PATH) --cpp_out=hsmd $<
 
 -include hsmd/test/Makefile
