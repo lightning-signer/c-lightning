@@ -66,7 +66,7 @@ hsmd-all: lightningd/lightning_hsmd
 lightningd/lightning_hsmd: $(LIGHTNINGD_HSM_OBJS) $(LIGHTNINGD_LIB_OBJS) $(HSMD_COMMON_OBJS) $(BITCOIN_OBJS) $(WIRE_OBJS)
 
 hsmd/api.grpc.pb.o hsmd/api.pb.o hsmd/proxy.o : CPPFLAGS += `pkg-config --cflags protobuf grpc`
-lightningd/lightning_hsmd: LDFLAGS += -L/usr/local/lib \
+lightningd/lightning_hsmd: LDLIBS += -L/usr/local/lib \
 	`pkg-config --libs protobuf grpc++`\
 	-pthread\
 	-Wl,--no-as-needed -lgrpc++_reflection -Wl,--as-needed\
