@@ -9,6 +9,7 @@
 
 extern "C" {
 #include <bitcoin/chainparams.h>
+#include <bitcoin/privkey.h>
 }
 
 using std::cerr;
@@ -83,10 +84,12 @@ void proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 	cp->set_fee_asset_tag(&chainparams->fee_asset_tag,
 			      sizeof(chainparams->fee_asset_tag));
 
+	/* FIXME - Sending the secret instead of gnerating on the remote. */
+	req.set_hsm_secret(hsm_secret->data, sizeof(hsm_secret->data));
+
 	ClientContext context;
 	InitHSMRsp rsp;
 	Status status = stub->InitHSM(&context, req, &rsp);
-
 }
 
 } /* extern "C" */
