@@ -717,9 +717,19 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	maybe_create_new_hsm(hsm_encryption_key, true);
 	load_hsm(hsm_encryption_key);
 
-	proxy_init_hsm(&bip32_key_version, chainparams, hsm_encryption_key,
-		       privkey, seed, secrets, shaseed,
-		       &secretstuff.hsm_secret);
+	proxy_stat rv = proxy_init_hsm(&bip32_key_version, chainparams,
+				       hsm_encryption_key, privkey, seed,
+				       secrets, shaseed,
+				       &secretstuff.hsm_secret,
+				       &node_id);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_init_hsm failed: %s",
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_init_hsm error: %s",
+				   proxy_last_message());
 
 	/*~ We don't need the hsm_secret encryption key anymore.
 	 * Note that sodium_munlock() also zeroes the memory. */
@@ -2054,9 +2064,6 @@ int main(int argc, char *argv[])
 	/* This sets up tmpctx, various DEVELOPER options, backtraces, etc. */
 	subdaemon_setup(argc, argv);
 
-	/* Setup the remote proxy */
-	proxy_setup();
-
 	/* A trivial daemon_conn just for writing. */
 	status_conn = daemon_conn_new(NULL, STDIN_FILENO, NULL, NULL, NULL);
 	status_setup_async(status_conn);
@@ -2070,6 +2077,9 @@ int main(int argc, char *argv[])
 
 	/* When conn closes, everything is freed. */
 	io_set_finish(master->conn, master_gone, master);
+
+	/* Setup the remote proxy */
+	proxy_setup();
 
 	/*~ The two NULL args are a list of timers, and the timer which expired:
 	 * we don't have any timers. */
