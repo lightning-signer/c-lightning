@@ -235,6 +235,7 @@ include doc/Makefile
 include devtools/Makefile
 include tools/Makefile
 include plugins/Makefile
+include contrib/remote_hsmd/Makefile
 
 # Git doesn't maintain timestamps, so we only regen if git says we should.
 CHANGED_FROM_GIT = [ x"`git log $@ | head -n1`" != x"`git log $< | head -n1`" -o x"`git diff $<`" != x"" ]
@@ -498,7 +499,8 @@ PKGLIBEXEC_PROGRAMS = \
 	       lightningd/lightning_gossipd \
 	       lightningd/lightning_hsmd \
 	       lightningd/lightning_onchaind \
-	       lightningd/lightning_openingd
+	       lightningd/lightning_openingd \
+	       lightningd/remote_hsmd
 PLUGINS=plugins/pay plugins/autoclean plugins/fundchannel
 
 install-program: installdirs $(BIN_PROGRAMS) $(PKGLIBEXEC_PROGRAMS) $(PLUGINS)

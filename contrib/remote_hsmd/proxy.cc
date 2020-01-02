@@ -2,10 +2,10 @@
 
 #include <grpc++/grpc++.h>
 
-#include "hsmd/api.pb.h"
-#include "hsmd/api.grpc.pb.h"
+#include "contrib/remote_hsmd/api.pb.h"
+#include "contrib/remote_hsmd/api.grpc.pb.h"
 
-#include "hsmd/proxy.h"
+#include "contrib/remote_hsmd/proxy.h"
 
 extern "C" {
 #include <bitcoin/chainparams.h>
