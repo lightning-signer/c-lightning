@@ -758,20 +758,21 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 				   struct client *c,
 				   const u8 *msg_in)
 {
-	struct privkey privkey;
 	struct pubkey point;
 	struct secret ss;
 
 	if (!fromwire_hsm_ecdh_req(msg_in, &point))
 		return bad_req(conn, c, msg_in);
 
-	/*~ We simply use the secp256k1_ecdh function: if ss.data is invalid,
-	 * we kill them for bad randomness (~1 in 2^127 if ss.data is random) */
-	node_key(&privkey, NULL);
-	if (secp256k1_ecdh(secp256k1_ctx, ss.data, &point.pubkey,
-			   privkey.secret.data, NULL, NULL) != 1) {
-		return bad_req_fmt(conn, c, msg_in, "secp256k1_ecdh fail");
-	}
+	proxy_stat rv = proxy_handle_ecdh(&point, &ss);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_handle_ecdh failed: %s",
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_handle_ecdh error: %s",
+				   proxy_last_message());
 
 	/*~ In the normal case, we return the shared secret, and then read
 	 * the next msg. */

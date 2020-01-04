@@ -27,10 +27,13 @@ using grpc::StatusCode;
 using rpc::Signer;
 using rpc::InitHSMReq;
 using rpc::InitHSMRsp;
+using rpc::ECDHReq;
+using rpc::ECDHRsp;
 
 namespace {
 unique_ptr<Signer::Stub> stub;
 string last_message;
+struct node_id self_id;
 
 proxy_stat map_status(StatusCode const & code)
 {
@@ -136,6 +139,9 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 		assert(rsp.self_node_id().length() == sizeof(o_node_id->k));
 		memcpy(o_node_id->k, rsp.self_node_id().c_str(),
 		       sizeof(o_node_id->k));
+		assert(rsp.self_node_id().length() == sizeof(self_id.k));
+		memcpy(self_id.k, rsp.self_node_id().c_str(),
+		       sizeof(self_id.k));
 		status_debug("%s:%d %s node_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     as_hex(o_node_id->k,
@@ -145,6 +151,45 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 	} else {
 		status_unusual("%s:%d %s: %s",
 			       __FILE__, __LINE__, __FUNCTION__,
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+proxy_stat proxy_handle_ecdh(struct pubkey *point,
+			     struct secret *o_ss)
+{
+	status_debug(
+		"%s:%d %s self_id=%s point=%s",
+		__FILE__, __LINE__, __FUNCTION__,
+		as_hex(self_id.k, sizeof(self_id.k)).c_str(),
+		as_hex(point->pubkey.data, sizeof(point->pubkey.data)).c_str()
+		);
+	last_message = "";
+	ECDHReq req;
+
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_point((const char *) point->pubkey.data,
+		      sizeof(point->pubkey.data));
+
+	ClientContext context;
+	ECDHRsp rsp;
+	Status status = stub->ECDH(&context, req, &rsp);
+	if (status.ok()) {
+		assert(rsp.shared_secret().length() == sizeof(o_ss->data));
+		memcpy(o_ss->data, rsp.shared_secret().c_str(),
+		       sizeof(o_ss->data));
+		status_debug("%s:%d %s self_id=%s ss=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     as_hex(self_id.k, sizeof(self_id.k)).c_str(),
+			     as_hex(o_ss->data, sizeof(o_ss->data)).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       as_hex(self_id.k, sizeof(self_id.k)).c_str(),
 			       status.error_message().c_str());
 		last_message = status.error_message();
 		return map_status(status.error_code());

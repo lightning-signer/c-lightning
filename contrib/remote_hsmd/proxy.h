@@ -23,6 +23,7 @@ typedef enum proxy_status proxy_stat;
 char const *proxy_last_message(void);
 
 void proxy_setup(void);
+
 proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 			  struct chainparams const *chainparams,
 			  struct secret *hsm_encryption_key,
@@ -32,6 +33,9 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 			  struct sha256 *shaseed,
 			  struct secret *hsm_secret,
 			  struct node_id *o_node_id);
+
+proxy_stat proxy_handle_ecdh(struct pubkey *point,
+			     struct secret *o_ss);
 
 #ifdef __cplusplus
 } /* extern C */
