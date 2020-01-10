@@ -204,8 +204,7 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 		       sizeof(self_id.k));
 		status_debug("%s:%d %s node_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
-			     dump_hex(o_node_id->k,
-				      sizeof(o_node_id->k)).c_str());
+			     dump_node_id(o_node_id).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -223,8 +222,8 @@ proxy_stat proxy_handle_ecdh(struct pubkey *point,
 	status_debug(
 		"%s:%d %s self_id=%s point=%s",
 		__FILE__, __LINE__, __FUNCTION__,
-		dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
-		dump_hex(point->pubkey.data, sizeof(point->pubkey.data)).c_str()
+		dump_node_id(&self_id).c_str(),
+		dump_pubkey(point).c_str()
 		);
 	last_message = "";
 	ECDHReq req;
@@ -242,14 +241,14 @@ proxy_stat proxy_handle_ecdh(struct pubkey *point,
 		       sizeof(o_ss->data));
 		status_debug("%s:%d %s self_id=%s ss=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
-			     dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
+			     dump_node_id(&self_id).c_str(),
 			     dump_hex(o_ss->data, sizeof(o_ss->data)).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
 		status_unusual("%s:%d %s: self_id=%s %s",
 			       __FILE__, __LINE__, __FUNCTION__,
-			       dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
+			       dump_node_id(&self_id).c_str(),
 			       status.error_message().c_str());
 		last_message = status.error_message();
 		return map_status(status.error_code());
@@ -272,8 +271,8 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 		"satoshi_out=%" PRIu64 " change_out=%" PRIu64 " "
 		"change_keyindex=%u utxos=%s outputs=%s tx=%s",
 		__FILE__, __LINE__, __FUNCTION__,
-		dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
-		dump_hex(peer_id->k, sizeof(peer_id->k)).c_str(),
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
 		dbid,
 		satoshi_out->satoshis,
 		change_out->satoshis,
@@ -335,13 +334,13 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 		*o_sigs = return_sigs(rsp.sigs());
 		status_debug("%s:%d %s self_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
-			     dump_hex(self_id.k, sizeof(self_id.k)).c_str());
+			     dump_node_id(&self_id).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
 		status_unusual("%s:%d %s: self_id=%s %s",
 			       __FILE__, __LINE__, __FUNCTION__,
-			       dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
+			       dump_node_id(&self_id).c_str(),
 			       status.error_message().c_str());
 		last_message = status.error_message();
 		return map_status(status.error_code());
