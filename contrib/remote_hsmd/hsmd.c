@@ -724,11 +724,11 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 				       &node_id);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
-		              "proxy_init_hsm failed: %s",
+		              "proxy_%s failed: %s", __FUNCTION__,
 			      proxy_last_message());
 	else if (!PROXY_SUCCESS(rv))
 		return bad_req_fmt(conn, c, msg_in,
-				   "proxy_init_hsm error: %s",
+				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
 
 	/*~ We don't need the hsm_secret encryption key anymore.
@@ -767,11 +767,11 @@ static struct io_plan *handle_ecdh(struct io_conn *conn,
 	proxy_stat rv = proxy_handle_ecdh(&point, &ss);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
-		              "proxy_handle_ecdh failed: %s",
+		              "proxy_%s failed: %s", __FUNCTION__,
 			      proxy_last_message());
 	else if (!PROXY_SUCCESS(rv))
 		return bad_req_fmt(conn, c, msg_in,
-				   "proxy_handle_ecdh error: %s",
+				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
 
 	/*~ In the normal case, we return the shared secret, and then read
@@ -1681,7 +1681,31 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			 cast_const2(const struct utxo **, utxos), outputs,
 			 &changekey, change_out, NULL, NULL);
 
-	sign_all_inputs(tx, utxos);
+	u8 *** sigs;
+	proxy_stat rv = proxy_handle_sign_withdrawal_tx(
+		&c->id, c->dbid, &satoshi_out,
+		&change_out, change_keyindex,
+		outputs, utxos, tx, &sigs);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+
+	assert(tal_count(sigs) == tal_count(utxos));
+	for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
+		assert(tal_count(sigs[ii]) == 2);
+
+		u8 **witness = tal_arr(tx, u8 *, 2);
+		witness[0] = tal_dup_arr(witness, u8, sigs[ii][0],
+					 tal_count(sigs[ii][0]), 0);
+		witness[1] = tal_dup_arr(witness, u8, sigs[ii][1],
+					 tal_count(sigs[ii][1]), 0);
+		bitcoin_tx_input_set_witness(tx, ii, take(witness));
+	}
 
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_withdrawal_reply(NULL, tx)));

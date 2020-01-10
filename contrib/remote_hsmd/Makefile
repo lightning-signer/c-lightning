@@ -20,7 +20,12 @@ LIGHTNINGD_RMTHSM_OBJS := $(LIGHTNINGD_RMTHSM_CCOBJS:.c=.o)
 HOST_SYSTEM = $(shell uname | cut -f 1 -d_)
 SYSTEM ?= $(HOST_SYSTEM)
 CXX = g++
-CXXFLAGS += -std=c++11 -I. -Iccan -Iexternal/libwally-core/src/secp256k1/include
+CXXFLAGS += -std=c++11 \
+	-I. \
+	-Iccan \
+	-Iexternal/libwally-core/include \
+	-Iexternal/libwally-core/src/secp256k1/include \
+	-g
 PROTOC = protoc
 GRPC_CPP_PLUGIN = grpc_cpp_plugin
 GRPC_CPP_PLUGIN_PATH ?= `which $(GRPC_CPP_PLUGIN)`
