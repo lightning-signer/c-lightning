@@ -10,6 +10,7 @@ LIGHTNINGD_RMTHSM_SRC := contrib/remote_hsmd/hsmd.c	\
 	contrib/remote_hsmd/gen_hsm_wire.c \
 	contrib/remote_hsmd/api.pb.cc \
 	contrib/remote_hsmd/api.grpc.pb.cc \
+	contrib/remote_hsmd/dump.cc \
 	contrib/remote_hsmd/proxy.cc
 LIGHTNINGD_RMTHSM_HEADERS := contrib/remote_hsmd/gen_hsm_wire.h \
 	contrib/remote_hsmd/api.pb.h \
@@ -72,7 +73,7 @@ rmthsmd-all: lightningd/remote_hsmd
 
 lightningd/remote_hsmd: $(LIGHTNINGD_RMTHSM_OBJS) $(LIGHTNINGD_LIB_OBJS) $(RMTHSMD_COMMON_OBJS) $(BITCOIN_OBJS) $(WIRE_OBJS)
 
-contrib/remote_hsmd/api.grpc.pb.o contrib/remote_hsmd/api.pb.o contrib/remote_hsmd/proxy.o : CPPFLAGS += `pkg-config --cflags protobuf grpc`
+contrib/remote_hsmd/api.grpc.pb.o contrib/remote_hsmd/api.pb.o contrib/remote_hsmd/proxy.o contrib/remote_hsmd/dump.o : CPPFLAGS += `pkg-config --cflags protobuf grpc`
 lightningd/remote_hsmd: LDLIBS += -L/usr/local/lib \
 	`pkg-config --libs protobuf grpc++`\
 	-pthread\

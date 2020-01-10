@@ -1,14 +1,10 @@
 #include <iostream>
+#include <sstream>
 
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 
 #include <grpc++/grpc++.h>
-
-#include "contrib/remote_hsmd/api.pb.h"
-#include "contrib/remote_hsmd/api.grpc.pb.h"
-
-#include "contrib/remote_hsmd/proxy.h"
 
 extern "C" {
 #include <bitcoin/chainparams.h>
@@ -20,8 +16,15 @@ extern "C" {
 #include <common/utxo.h>
 }
 
+#include "contrib/remote_hsmd/api.pb.h"
+#include "contrib/remote_hsmd/api.grpc.pb.h"
+
+#include "contrib/remote_hsmd/dump.h"
+#include "contrib/remote_hsmd/proxy.h"
+
 using std::cerr;
 using std::endl;
+using std::ostringstream;
 using std::string;
 using std::unique_ptr;
 
@@ -60,21 +63,6 @@ proxy_stat map_status(StatusCode const & code)
 		cerr << "UNHANDLED grpc::StatusCode " << int(code) << endl;
 		abort();
 	}
-}
-
-/* type_to_string has issues in the C++ environment, use this to
-   dump binary data as hex instead. */
-string as_hex(const void *vptr, size_t sz)
-{
-	static const char hex[] = "0123456789abcdef";
-	string retval(sz*2, '\0');
-	uint8_t const * ptr = (uint8_t const *) vptr;
-	for (size_t ii = 0; ii < sz; ++ii) {
-		retval[ii*2+0] = hex[(*ptr) >> 4];
-		retval[ii*2+1] = hex[(*ptr) & 0xf];
-		ptr++;
-	}
-	return retval;
 }
 
 string channel_nonce(struct node_id *peer_id, u64 dbid)
@@ -216,8 +204,8 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 		       sizeof(self_id.k));
 		status_debug("%s:%d %s node_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
-			     as_hex(o_node_id->k,
-				    sizeof(o_node_id->k)).c_str());
+			     dump_hex(o_node_id->k,
+				      sizeof(o_node_id->k)).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -235,8 +223,8 @@ proxy_stat proxy_handle_ecdh(struct pubkey *point,
 	status_debug(
 		"%s:%d %s self_id=%s point=%s",
 		__FILE__, __LINE__, __FUNCTION__,
-		as_hex(self_id.k, sizeof(self_id.k)).c_str(),
-		as_hex(point->pubkey.data, sizeof(point->pubkey.data)).c_str()
+		dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
+		dump_hex(point->pubkey.data, sizeof(point->pubkey.data)).c_str()
 		);
 	last_message = "";
 	ECDHReq req;
@@ -254,14 +242,14 @@ proxy_stat proxy_handle_ecdh(struct pubkey *point,
 		       sizeof(o_ss->data));
 		status_debug("%s:%d %s self_id=%s ss=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
-			     as_hex(self_id.k, sizeof(self_id.k)).c_str(),
-			     as_hex(o_ss->data, sizeof(o_ss->data)).c_str());
+			     dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
+			     dump_hex(o_ss->data, sizeof(o_ss->data)).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
 		status_unusual("%s:%d %s: self_id=%s %s",
 			       __FILE__, __LINE__, __FUNCTION__,
-			       as_hex(self_id.k, sizeof(self_id.k)).c_str(),
+			       dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
 			       status.error_message().c_str());
 		last_message = status.error_message();
 		return map_status(status.error_code());
@@ -282,14 +270,18 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	status_debug(
 		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
 		"satoshi_out=%" PRIu64 " change_out=%" PRIu64 " "
-		"change_keyindex=%u",
+		"change_keyindex=%u utxos=%s outputs=%s tx=%s",
 		__FILE__, __LINE__, __FUNCTION__,
-		as_hex(self_id.k, sizeof(self_id.k)).c_str(),
-		as_hex(peer_id->k, sizeof(peer_id->k)).c_str(),
+		dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
+		dump_hex(peer_id->k, sizeof(peer_id->k)).c_str(),
 		dbid,
 		satoshi_out->satoshis,
 		change_out->satoshis,
-		change_keyindex
+		change_keyindex,
+		dump_utxos((const struct utxo **)utxos).c_str(),
+		dump_bitcoin_tx_outputs(
+			(const struct bitcoin_tx_output **)outputs).c_str(),
+		dump_tx(tx).c_str()
 		);
 	last_message = "";
 	SignWithdrawalTxReq req;
@@ -343,13 +335,13 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 		*o_sigs = return_sigs(rsp.sigs());
 		status_debug("%s:%d %s self_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
-			     as_hex(self_id.k, sizeof(self_id.k)).c_str());
+			     dump_hex(self_id.k, sizeof(self_id.k)).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
 		status_unusual("%s:%d %s: self_id=%s %s",
 			       __FILE__, __LINE__, __FUNCTION__,
-			       as_hex(self_id.k, sizeof(self_id.k)).c_str(),
+			       dump_hex(self_id.k, sizeof(self_id.k)).c_str(),
 			       status.error_message().c_str());
 		last_message = status.error_message();
 		return map_status(status.error_code());
