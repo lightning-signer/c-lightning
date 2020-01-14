@@ -1,8 +1,12 @@
-#include <iostream>
-#include <sstream>
-
+/* This needs to be first */
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
+
+#include <sys/types.h>	/* These two only needed for sleep() and getpid() */
+#include <unistd.h>
+
+#include <iostream>
+#include <sstream>
 
 #include <grpc++/grpc++.h>
 
@@ -39,6 +43,8 @@ using rpc::InitHSMReq;
 using rpc::InitHSMRsp;
 using rpc::KeyLocator;
 using rpc::SignDescriptor;
+using rpc::SignRemoteCommitmentTxReq;
+using rpc::SignRemoteCommitmentTxRsp;
 using rpc::SignWithdrawalTxReq;
 using rpc::SignWithdrawalTxRsp;
 using rpc::Signature;
@@ -346,5 +352,85 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	}
 }
 
-} /* extern "C" */
+proxy_stat proxy_handle_sign_remote_commitment_tx(
+	struct bitcoin_tx *tx,
+	struct pubkey *remote_funding_pubkey,
+	struct amount_sat *funding,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct witscript const **output_witscripts,
+	struct pubkey *remote_per_commit,
+	bool option_static_remotekey,
+	u8 ****o_sigs)
+{
+	status_debug(
+		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
+		"funding=%" PRIu64 " remote_funding_pubkey=%s "
+		"output_witscripts=%s remote_per_commit=%s "
+		"option_static_remotekey=%s  tx=%s",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		funding->satoshis,
+		dump_pubkey(remote_funding_pubkey).c_str(),
+		dump_output_witscripts(output_witscripts).c_str(),
+		dump_pubkey(remote_per_commit).c_str(),
+		(option_static_remotekey ? "true" : "false"),
+		dump_tx(tx).c_str()
+		);
 
+	last_message = "";
+	SignRemoteCommitmentTxReq req;
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_channel_nonce(channel_nonce(peer_id, dbid));
+	req.set_remote_funding_pubkey(
+		(const char *) remote_funding_pubkey->pubkey.data,
+		sizeof(remote_funding_pubkey->pubkey.data));
+	req.set_remote_percommit_point(
+		(const char *) remote_per_commit->pubkey.data,
+		sizeof(remote_per_commit->pubkey.data));
+	req.set_option_static_remotekey(option_static_remotekey);
+	for (size_t ii = 0; ii < tal_count(output_witscripts); ii++)
+		if (output_witscripts[ii]->ptr)
+			req.add_output_witscripts(
+				(const char *) output_witscripts[ii]->ptr,
+				tal_count(output_witscripts[ii]->ptr));
+		else
+			req.add_output_witscripts("");
+	req.set_raw_tx_bytes(serialized_tx(tx, true));
+
+	assert(tx->wtx->num_inputs == 1);
+	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
+		SignDescriptor *desc = req.add_input_descs();
+		/* FIXME - Do we need to set key_index and key_family here? */
+		desc->mutable_output()->set_value(funding->satoshis);
+	}
+
+	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
+	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
+		SignDescriptor *desc = req.add_output_descs();
+		/* FIXME - We don't need to set *anything* here? */
+	}
+
+	ClientContext context;
+	SignRemoteCommitmentTxRsp rsp;
+	Status status = stub->SignRemoteCommitmentTx(&context, req, &rsp);
+	if (status.ok()) {
+		*o_sigs = return_sigs(rsp.sigs());
+		status_debug("%s:%d %s self_id=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+} /* extern "C" */

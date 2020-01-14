@@ -51,6 +51,17 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	struct bitcoin_tx *tx,
 	u8 ****o_sigs);
 
+proxy_stat proxy_handle_sign_remote_commitment_tx(
+	struct bitcoin_tx *tx,
+	struct pubkey *remote_funding_pubkey,
+	struct amount_sat *funding,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct witscript const **output_witscripts,
+	struct pubkey *remote_per_commit,
+	bool option_static_remotekey,
+	u8 ****o_sigs);
+
 #ifdef __cplusplus
 } /* extern C */
 #endif

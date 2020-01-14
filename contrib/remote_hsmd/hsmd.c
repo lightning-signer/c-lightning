@@ -1011,7 +1011,6 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
 	struct secrets secrets;
-	const u8 *funding_wscript;
 	struct witscript **output_witscripts;
 	struct pubkey remote_per_commit;
 	bool option_static_remotekey;
@@ -1038,16 +1037,42 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	derive_basepoints(&channel_seed,
 			  &local_funding_pubkey, NULL, &secrets, NULL);
 
+	/* Need input amount for signing */
+	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
+
+/*
 	funding_wscript = bitcoin_redeem_2of2(tmpctx,
 					      &local_funding_pubkey,
 					      &remote_funding_pubkey);
-	/* Need input amount for signing */
-	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,
 		      SIGHASH_ALL,
 		      &sig);
+*/
+	u8 *** sigs;
+	proxy_stat rv = proxy_handle_sign_remote_commitment_tx(
+		tx, &remote_funding_pubkey, &funding,
+		&c->id, c->dbid,
+		(const struct witscript **) output_witscripts,
+		&remote_per_commit,
+		option_static_remotekey,
+		&sigs);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	assert(tal_count(sigs) == 1);
+
+	bool ok = signature_from_der(sigs[0][0], tal_count(sigs[0][0]), &sig);
+	assert(ok);
+	status_debug("%s:%d %s: signature: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct bitcoin_signature, &sig));
 
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
