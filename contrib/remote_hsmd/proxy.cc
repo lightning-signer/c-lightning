@@ -123,6 +123,12 @@ string serialized_tx(struct bitcoin_tx *tx, bool bip144)
 	return retval;
 }
 
+/* Copied from ccan/mem/mem.h which the c++ compiler doesn't like */
+static inline bool memeq(const void *a, size_t al, const void *b, size_t bl)
+{
+	return al == bl && !memcmp(a, b, bl);
+}
+
 } /* end namespace */
 
 extern "C" {
@@ -282,6 +288,7 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 			(const struct bitcoin_tx_output **)outputs).c_str(),
 		dump_tx(tx).c_str()
 		);
+
 	last_message = "";
 	SignWithdrawalTxReq req;
 	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
@@ -289,41 +296,33 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	req.set_raw_tx_bytes(serialized_tx(tx, true));
 
 	assert(tx->wtx->num_inputs == tal_count(utxos));
-	for (size_t ii = 0; ii < tal_count(utxos); ii++) {
+	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
 	 	const struct utxo *in = utxos[ii];
+		assert(!in->is_p2sh);
 		SignDescriptor *desc = req.add_input_descs();
 		desc->mutable_key_loc()->set_key_index(in->keyindex);
 		desc->mutable_key_loc()->set_key_family(KeyLocator::layer_one);
 		desc->mutable_output()->set_value(in->amount.satoshis);
 	}
 
-	/* FIXME - Why doesn't this assert succeed?
-        contrib/remote_hsmd/proxy.cc:310 proxy_handle_sign_withdrawal_tx num_outputs=2 tal_count(outputs)=1
-￼	fprintf(stderr, "%s:%d %s num_outputs=%d tal_count(outputs)=%d\n",
-		__FILE__, __LINE__, __FUNCTION__,
-		tx->wtx->num_outputs, tal_count(outputs));
-	assert(tx->wtx->num_outputs == tal_count(outputs));
-	*/
-
-	for (size_t ii = 0; ii < tal_count(outputs); ii++) {
-	 	const struct bitcoin_tx_output *out = outputs[ii];
+	/* We expect exactly two total ouputs, with one non-change. */
+	assert(tx->wtx->num_outputs == 2);
+	assert(tal_count(outputs) == 1);
+	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
+	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
 		SignDescriptor *desc = req.add_output_descs();
-		if (out->script) {
-			/* FIXME - This assert fails too:
-                        contrib/remote_hsmd/proxy.cc:323 proxy_handle_sign_withdrawal_tx out->amount.satoshis=1000000 change_out->satoshis=995418
-			fprintf(stderr,
-				"%s:%d %s out->amount.satoshis=%" PRIu64 " "
-				"change_out->satoshis=%" PRIu64 "\n",
-				__FILE__, __LINE__, __FUNCTION__,
-				out->amount.satoshis, change_out->satoshis);
-			assert(out->amount.satoshis == change_out->satoshis);
-                        */
+		/* Does this output match the funding output? */
+		if (memeq(out->script, out->script_len,
+			  outputs[0]->script, tal_count(outputs[0]->script))) {
+			/* Yes, this is the funding output. */
+			desc->mutable_key_loc()->set_key_family(
+				KeyLocator::unknown);
+		} else {
+			/* Nope, this must be the change output. */
+			assert(out->satoshi == change_out->satoshis);
 			desc->mutable_key_loc()->set_key_index(change_keyindex);
 			desc->mutable_key_loc()->set_key_family(
 				KeyLocator::layer_one);
-		} else {
-			desc->mutable_key_loc()->set_key_family(
-				KeyLocator::unknown);
 		}
 	}
 
