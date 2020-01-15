@@ -722,14 +722,18 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 				       secrets, shaseed,
 				       &secretstuff.hsm_secret,
 				       &node_id);
-	if (PROXY_PERMANENT(rv))
+	if (PROXY_PERMANENT(rv)) {
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
 			      proxy_last_message());
-	else if (!PROXY_SUCCESS(rv))
+	}
+	else if (!PROXY_SUCCESS(rv)) {
+		status_unusual("proxy_%s failed: %s", __FUNCTION__,
+			       proxy_last_message());
 		return bad_req_fmt(conn, c, msg_in,
 				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
+	}
 
 	/*~ We don't need the hsm_secret encryption key anymore.
 	 * Note that sodium_munlock() also zeroes the memory. */
