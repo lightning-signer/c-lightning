@@ -735,6 +735,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 				   proxy_last_message());
 	}
 
+
 	/*~ We don't need the hsm_secret encryption key anymore.
 	 * Note that sodium_munlock() also zeroes the memory. */
 	if (hsm_encryption_key) {
