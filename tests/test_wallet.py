@@ -998,6 +998,7 @@ def write_all(fd, bytestr):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support hsm_secret file")
 def test_hsm_secret_encryption(node_factory):
     l1 = node_factory.get_node(may_fail=True)  # May fail when started without key
     password = "reckful&é🍕\n"
@@ -1061,6 +1062,7 @@ class HsmTool(TailableProc):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support hsm_secret file")
 def test_hsmtool_secret_decryption(node_factory):
     l1 = node_factory.get_node()
     password = "reckless123#{ù}\n"

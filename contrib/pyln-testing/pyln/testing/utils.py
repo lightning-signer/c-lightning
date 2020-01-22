@@ -79,6 +79,7 @@ TEST_DEBUG = env("TEST_DEBUG", "0") == "1"
 SLOW_MACHINE = env("SLOW_MACHINE", "0") == "1"
 DEPRECATED_APIS = env("DEPRECATED_APIS", "0") == "1"
 TIMEOUT = int(env("TIMEOUT", 180 if SLOW_MACHINE else 60))
+SUBDAEMON = env("SUBDAEMON", "")
 EXPERIMENTAL_DUAL_FUND = env("EXPERIMENTAL_DUAL_FUND", "0") == "1"
 
 
@@ -538,6 +539,9 @@ class LightningD(TailableProc):
             # Make sure we don't touch any existing config files in the user's $HOME
             'bitcoin-datadir': lightning_dir,
         }
+
+        if SUBDAEMON:
+            opts['subdaemon'] = SUBDAEMON
 
         for k, v in opts.items():
             self.opts[k] = v
