@@ -42,6 +42,8 @@ using rpc::ECDHRsp;
 using rpc::InitHSMReq;
 using rpc::InitHSMRsp;
 using rpc::KeyLocator;
+using rpc::PassClientHSMFdReq;
+using rpc::PassClientHSMFdRsp;
 using rpc::SignDescriptor;
 using rpc::SignRemoteCommitmentTxReq;
 using rpc::SignRemoteCommitmentTxRsp;
@@ -255,6 +257,45 @@ proxy_stat proxy_handle_ecdh(struct pubkey *point,
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_hex(o_ss->data, sizeof(o_ss->data)).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+proxy_stat proxy_handle_pass_client_hsmfd(
+	struct node_id *peer_id,
+	u64 dbid,
+	u64 capabilities)
+{
+	status_debug(
+		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
+		"capabilities=%" PRIu64 "",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		capabilities
+		);
+	last_message = "";
+	PassClientHSMFdReq req;
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_channel_nonce(channel_nonce(peer_id, dbid));
+	req.set_capabilities(capabilities);
+
+	ClientContext context;
+	PassClientHSMFdRsp rsp;
+	Status status = stub->PassClientHSMFd(&context, req, &rsp);
+	if (status.ok()) {
+		status_debug("%s:%d %s self_id=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {

@@ -41,6 +41,11 @@ proxy_stat proxy_handle_ecdh(
 	struct pubkey *point,
 	struct secret *o_ss);
 
+proxy_stat proxy_handle_pass_client_hsmfd(
+	struct node_id *peer_id,
+	u64 dbid,
+	u64 capabilities);
+
 proxy_stat proxy_handle_sign_withdrawal_tx(
 	struct node_id *peer_id, u64 dbid,
 	struct amount_sat *satoshi_out,
