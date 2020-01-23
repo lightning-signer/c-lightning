@@ -39,6 +39,8 @@ using grpc::StatusCode;
 
 using rpc::ECDHReq;
 using rpc::ECDHRsp;
+using rpc::GetPerCommitmentPointReq;
+using rpc::GetPerCommitmentPointRsp;
 using rpc::InitHSMReq;
 using rpc::InitHSMRsp;
 using rpc::KeyLocator;
@@ -462,6 +464,72 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		status_debug("%s:%d %s self_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+proxy_stat proxy_handle_get_per_commitment_point(
+	struct node_id *peer_id,
+	u64 dbid,
+	u64 n,
+	struct pubkey *o_per_commitment_point,
+	struct secret **o_old_secret)
+{
+	status_debug(
+		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
+		"n=%" PRIu64 "",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		n
+		);
+	last_message = "";
+	GetPerCommitmentPointReq req;
+
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_channel_nonce(channel_nonce(peer_id, dbid));
+	req.set_n(n);
+
+	ClientContext context;
+	GetPerCommitmentPointRsp rsp;
+	Status status = stub->GetPerCommitmentPoint(&context, req, &rsp);
+	if (status.ok()) {
+		/* per_commitment_point needs to be compressed DER */
+		if (!pubkey_from_der(
+			    (const u8*)rsp.per_commitment_point().c_str(),
+			    rsp.per_commitment_point().length(),
+			    o_per_commitment_point)) {
+			last_message = "bad returned per_commitment_point";
+			return PROXY_INTERNAL_ERROR;
+		}
+		assert(rsp.old_secret().empty() || (
+			       rsp.old_secret().length() ==
+			       sizeof((*o_old_secret)->data)));
+		if (rsp.old_secret().empty())
+			*o_old_secret = NULL;
+		else {
+			*o_old_secret = tal(tmpctx, struct secret);
+			memcpy((*o_old_secret)->data, rsp.old_secret().c_str(),
+			       sizeof((*o_old_secret)->data));
+		}
+		status_debug("%s:%d %s self_id=%s "
+			     "per_commitment_point=%s old_secret=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str(),
+			     dump_pubkey(o_per_commitment_point).c_str(),
+			     (*o_old_secret ?
+			      dump_hex((*o_old_secret)->data,
+				       sizeof((*o_old_secret)->data)).c_str() :
+			      "<none>"));
 		last_message = "success";
 		return PROXY_OK;
 	} else {

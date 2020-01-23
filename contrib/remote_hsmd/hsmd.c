@@ -1374,14 +1374,33 @@ static struct io_plan *handle_get_per_commitment_point(struct io_conn *conn,
 	if (!fromwire_hsm_get_per_commitment_point(msg_in, &n))
 		return bad_req(conn, c, msg_in);
 
+	proxy_stat rv = proxy_handle_get_per_commitment_point(
+		&c->id, c->dbid, n,
+		&per_commitment_point, &old_secret);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+
+	/* FIXME - lightning-signer server only currently returns the
+	 * per_commitment_point, use the original code to compute the
+	 * old_secret for now.
+	 */
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	if (!derive_shaseed(&channel_seed, &shaseed))
 		return bad_req_fmt(conn, c, msg_in, "bad derive_shaseed");
 
+	/*
 	if (!per_commit_point(&shaseed, &per_commitment_point, n))
 		return bad_req_fmt(conn, c, msg_in,
 				   "bad per_commit_point %"PRIu64, n);
+	*/
 
+	/* FIXME - replace this with old_secret from the server */
 	if (n >= 2) {
 		old_secret = tal(tmpctx, struct secret);
 		if (!per_commit_secret(&shaseed, old_secret, n - 2)) {

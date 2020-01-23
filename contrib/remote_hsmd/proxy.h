@@ -67,6 +67,13 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	bool option_static_remotekey,
 	u8 ****o_sigs);
 
+proxy_stat proxy_handle_get_per_commitment_point(
+	struct node_id *peer_id,
+	u64 dbid,
+	u64 n,
+	struct pubkey *o_per_commitment_point,
+	struct secret **o_old_secret);
+
 #ifdef __cplusplus
 } /* extern C */
 #endif
