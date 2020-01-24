@@ -1087,22 +1087,24 @@ static struct io_plan *handle_sign_remote_htlc_tx(struct io_conn *conn,
 						  struct client *c,
 						  const u8 *msg_in)
 {
-	struct secret channel_seed;
+	// struct secret channel_seed;
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
-	struct secrets secrets;
-	struct basepoints basepoints;
+	// struct secrets secrets;
+	// struct basepoints basepoints;
 	struct pubkey remote_per_commit_point;
 	struct amount_sat amount;
 	u8 *wscript;
-	struct privkey htlc_privkey;
-	struct pubkey htlc_pubkey;
+	// struct privkey htlc_privkey;
+	// struct pubkey htlc_pubkey;
 
 	if (!fromwire_hsm_sign_remote_htlc_tx(tmpctx, msg_in,
 					      &tx, &wscript, &amount,
 					      &remote_per_commit_point))
 		return bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
+
+	/*
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	derive_basepoints(&channel_seed, NULL, &basepoints, &secrets, NULL);
 
@@ -1118,11 +1120,39 @@ static struct io_plan *handle_sign_remote_htlc_tx(struct io_conn *conn,
 			       &htlc_pubkey))
 		return bad_req_fmt(conn, c, msg_in,
 				   "Failed deriving htlc pubkey");
+	*/
 
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &amount);
+
+	/*
 	sign_tx_input(tx, 0, NULL, wscript, &htlc_privkey, &htlc_pubkey,
 		      SIGHASH_ALL, &sig);
+	*/
+
+	u8 *** sigs;
+	proxy_stat rv = proxy_handle_sign_remote_htlc_tx(
+		tx,
+		wscript,
+		&remote_per_commit_point,
+		&c->id,
+		c->dbid,
+		&sigs);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	assert(tal_count(sigs) == 1);
+
+	bool ok = signature_from_der(sigs[0][0], tal_count(sigs[0][0]), &sig);
+	assert(ok);
+	status_debug("%s:%d %s: signature: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct bitcoin_signature, &sig));
 
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
