@@ -85,18 +85,20 @@ string channel_nonce(struct node_id *peer_id, u64 dbid)
 
 u8 ***return_sigs(RepeatedPtrField< ::rpc::Signature > const &isigs)
 {
-	u8 ***osigs;
+	u8 ***osigs = NULL;
 	int nsigs = isigs.size();
-	osigs = tal_arrz(tmpctx, u8**, nsigs);
-	for (size_t ii = 0; ii < nsigs; ++ii) {
-		Signature const &sig = isigs[ii];
-		int nelem = sig.item_size();
-		osigs[ii] = tal_arrz(osigs, u8*, nelem);
-		for (size_t jj = 0; jj < nelem; ++jj) {
-			string const &elem = sig.item(jj);
-			size_t elen = elem.size();
-			osigs[ii][jj] = tal_arr(osigs[ii], u8, elen);
-			memcpy(osigs[ii][jj], &elem[0], elen);
+	if (nsigs > 0) {
+		osigs = tal_arrz(tmpctx, u8**, nsigs);
+		for (size_t ii = 0; ii < nsigs; ++ii) {
+			Signature const &sig = isigs[ii];
+			int nelem = sig.item_size();
+			osigs[ii] = tal_arrz(osigs, u8*, nelem);
+			for (size_t jj = 0; jj < nelem; ++jj) {
+				string const &elem = sig.item(jj);
+				size_t elen = elem.size();
+				osigs[ii][jj] = tal_arr(osigs[ii], u8, elen);
+				memcpy(osigs[ii][jj], &elem[0], elen);
+			}
 		}
 	}
 	return osigs;
@@ -495,7 +497,7 @@ proxy_stat proxy_handle_sign_remote_htlc_tx(
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		dump_hex(wscript, tal_count(wscript)),
+		dump_hex(wscript, tal_count(wscript)).c_str(),
 		dump_tx(tx).c_str()
 		);
 
