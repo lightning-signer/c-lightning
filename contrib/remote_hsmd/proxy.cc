@@ -14,6 +14,7 @@ extern "C" {
 #include <bitcoin/chainparams.h>
 #include <bitcoin/privkey.h>
 #include <bitcoin/tx.h>
+#include <common/hash_u5.h>
 #include <common/node_id.h>
 #include <common/status.h>
 #include <common/utils.h>
@@ -47,6 +48,8 @@ using rpc::KeyLocator;
 using rpc::PassClientHSMFdReq;
 using rpc::PassClientHSMFdRsp;
 using rpc::SignDescriptor;
+using rpc::SignInvoiceReq;
+using rpc::SignInvoiceRsp;
 using rpc::SignRemoteCommitmentTxReq;
 using rpc::SignRemoteCommitmentTxRsp;
 using rpc::SignRemoteHTLCTxReq;
@@ -600,6 +603,46 @@ proxy_stat proxy_handle_get_per_commitment_point(
 			      dump_hex((*o_old_secret)->data,
 				       sizeof((*o_old_secret)->data)).c_str() :
 			      "<none>"));
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+proxy_stat proxy_handle_sign_invoice(
+	u5 *u5bytes,
+	u8 *hrpu8,
+	u8 **o_sig)
+{
+	status_debug(
+		"%s:%d %s self_id=%s u5bytes=%s hrpu8=%s",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_hex(u5bytes, tal_count(u5bytes)).c_str(),
+		string((const char *)hrpu8, tal_count(hrpu8)).c_str()
+		);
+
+	last_message = "";
+	SignInvoiceReq req;
+	req.set_data_part(u5bytes, tal_count(u5bytes));
+	req.set_human_readable_part((const char *)hrpu8, tal_count(hrpu8));
+
+	ClientContext context;
+	SignInvoiceRsp rsp;
+	Status status = stub->SignInvoice(&context, req, &rsp);
+	if (status.ok()) {
+		*o_sig = tal_dup_arr(tmpctx, u8, (const u8*) rsp.sig().data(),
+				     rsp.sig().size(), 0);
+		status_debug("%s:%d %s self_id=%s sig=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str(),
+			     dump_hex(*o_sig, tal_count(*o_sig)).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {

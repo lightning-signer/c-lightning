@@ -12,12 +12,12 @@ test_pay.py::test_sendpay
 
 #### proxy done, but server not complete
 
+8   hsm_sign_invoice					SignInvoice
 18  hsm_get_per_commitment_point		GetPerCommitmentPoint
 20  hsm_sign_remote_htlc_tx				SignRemoteHTLCTx
 
 #### need proxy and server
 
 3   hsm_cupdate_sig_req
-8   hsm_sign_invoice
 10  hsm_get_channel_basepoints
 

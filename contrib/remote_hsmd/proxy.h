@@ -82,6 +82,11 @@ proxy_stat proxy_handle_get_per_commitment_point(
 	struct pubkey *o_per_commitment_point,
 	struct secret **o_old_secret);
 
+proxy_stat proxy_handle_sign_invoice(
+	u5 *u5bytes,
+	u8 *hrpu8,
+	u8 **o_sig);
+
 #ifdef __cplusplus
 } /* extern C */
 #endif

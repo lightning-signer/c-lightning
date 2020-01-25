@@ -1824,6 +1824,21 @@ static struct io_plan *handle_sign_invoice(struct io_conn *conn,
 	if (!fromwire_hsm_sign_invoice(tmpctx, msg_in, &u5bytes, &hrpu8))
 		return bad_req(conn, c, msg_in);
 
+	u8 *sigbytes;
+	proxy_stat rv = proxy_handle_sign_invoice(u5bytes, hrpu8, &sigbytes);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+
+	/* FIXME - convert the returned signature to an
+	 * secp256k1_ecdsa_recoverable_signature and remove the code
+	 * below. */
+
 	/* BOLT #11:
 	 *
 	 * A writer... MUST set `signature` to a valid 512-bit
