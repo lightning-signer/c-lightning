@@ -893,6 +893,21 @@ static struct io_plan *handle_channel_update_sig(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in,
 				   "inner channel_update too short");
 
+	proxy_stat rv = proxy_handle_channel_update_sig(
+		&chain_hash, &scid, timestamp, message_flags, channel_flags,
+		cltv_expiry_delta, &htlc_minimum, fee_base_msat,
+		fee_proportional_mill, &htlc_maximum, &sig);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+
+	/* FIXME - REPLACE BELOW W/ REMOTE RETURN */
+
 	node_key(&node_pkey, NULL);
 	sha256_double(&hash, cu + offset, tal_count(cu) - offset);
 

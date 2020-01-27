@@ -87,6 +87,19 @@ proxy_stat proxy_handle_sign_invoice(
 	u8 *hrpu8,
 	u8 **o_sig);
 
+proxy_stat proxy_handle_channel_update_sig(
+	struct bitcoin_blkid *chain_hash,
+	struct short_channel_id *scid,
+	u32 timestamp,
+	u8 message_flags,
+	u8 channel_flags,
+	u16 cltv_expiry_delta,
+	struct amount_msat *htlc_minimum,
+	u32 fee_base_msat,
+	u32 fee_proportional_mill,
+	struct amount_msat *htlc_maximum,
+	secp256k1_ecdsa_signature *o_sig);
+
 #ifdef __cplusplus
 } /* extern C */
 #endif

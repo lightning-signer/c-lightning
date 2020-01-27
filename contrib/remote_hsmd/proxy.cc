@@ -13,6 +13,7 @@
 extern "C" {
 #include <bitcoin/chainparams.h>
 #include <bitcoin/privkey.h>
+#include <bitcoin/short_channel_id.h>
 #include <bitcoin/tx.h>
 #include <common/hash_u5.h>
 #include <common/node_id.h>
@@ -38,6 +39,8 @@ using grpc::ClientContext;
 using grpc::Status;
 using grpc::StatusCode;
 
+using rpc::ChannelUpdateSigReq;
+using rpc::ChannelUpdateSigRsp;
 using rpc::ECDHReq;
 using rpc::ECDHRsp;
 using rpc::GetPerCommitmentPointReq;
@@ -643,6 +646,80 @@ proxy_stat proxy_handle_sign_invoice(
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_hex(*o_sig, tal_count(*o_sig)).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+proxy_stat proxy_handle_channel_update_sig(
+	struct bitcoin_blkid *chain_hash,
+	struct short_channel_id *scid,
+	u32 timestamp,
+	u8 message_flags,
+	u8 channel_flags,
+	u16 cltv_expiry_delta,
+	struct amount_msat *htlc_minimum,
+	u32 fee_base_msat,
+	u32 fee_proportional_mill,
+	struct amount_msat *htlc_maximum,
+	secp256k1_ecdsa_signature *o_sig)
+{
+	status_debug(
+		"%s:%d %s self_id=%s "
+		"chain_hash=%s scid=%" PRIu64 " timestamp=%u "
+		"message_flags=0x%x channel_flags=0x%x "
+		"cltv_expiry_delta=%ud htlc_minimum=%" PRIu64 " "
+		"fee_base_msat=%u fee_proportional_mill=%u "
+		"htlc_maximum=%" PRIu64 "",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_hex(chain_hash->shad.sha.u.u8,
+			 sizeof(chain_hash->shad.sha.u.u8)).c_str(),
+		scid->u64,
+		timestamp,
+		static_cast<u32>(message_flags),
+		static_cast<u32>(channel_flags),
+		static_cast<u32>(cltv_expiry_delta),
+		htlc_minimum->millisatoshis,
+		fee_base_msat,
+		fee_proportional_mill,
+		htlc_maximum->millisatoshis
+		);
+
+	last_message = "";
+	ChannelUpdateSigReq req;
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_chain_hash((const char *) chain_hash->shad.sha.u.u8,
+			   sizeof(chain_hash->shad.sha.u.u8));
+	req.set_short_channel_id(scid->u64);
+	req.set_timestamp(timestamp);
+	req.set_message_flags(static_cast<u32>(message_flags));
+	req.set_channel_flags(static_cast<u32>(channel_flags));
+	req.set_cltv_expiry_delta(static_cast<u32>(cltv_expiry_delta));
+	req.set_htlc_minimum(htlc_minimum->millisatoshis);
+	req.set_fee_base_msat(fee_base_msat);
+	req.set_fee_proportional_mill(fee_proportional_mill);
+	req.set_htlc_maximum(htlc_maximum->millisatoshis);
+
+	ClientContext context;
+	ChannelUpdateSigRsp rsp;
+	Status status = stub->ChannelUpdateSig(&context, req, &rsp);
+	if (status.ok()) {
+		// FIXME - UNCOMMENT RETURN VALUE WHEN IMPLEMENTED
+		// assert(rsp.sig().size() == sizeof(o_sig->data));
+		// memcpy(o_sig->data, (const u8*) rsp.sig().data(),
+		//        sizeof(o_sig->data));
+		status_debug("%s:%d %s self_id=%s sig=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str(),
+			     dump_hex(o_sig, sizeof(o_sig->data)).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
