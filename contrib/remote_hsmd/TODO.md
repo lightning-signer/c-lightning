@@ -1,6 +1,7 @@
 ## Tests in list
 
 test_pay.py::test_sendpay
+test_closing.py::test_closing
 
 #### proxy and server done
 
@@ -14,10 +15,14 @@ test_pay.py::test_sendpay
 
 3   hsm_cupdate_sig_req					ChannelUpdateSig
 8   hsm_sign_invoice					SignInvoice
+10  hsm_get_channel_basepoints			GetChannelBasepoints
 18  hsm_get_per_commitment_point		GetPerCommitmentPoint
 20  hsm_sign_remote_htlc_tx				SignRemoteHTLCTx
+    HSM_SIGN_MUTUAL_CLOSE_TX			SignMutualCloseTx
 
 #### need proxy and server
 
-10  hsm_get_channel_basepoints
-
+PROXY NEED WIRE_HSM_SIGN_COMMITMENT_TX
+PROXY NEED WIRE_HSM_SIGN_COMMITMENT_TX
+PROXY NEED WIRE_HSM_SIGN_COMMITMENT_TX
+PROXY NEED WIRE_HSM_SIGN_COMMITMENT_TX

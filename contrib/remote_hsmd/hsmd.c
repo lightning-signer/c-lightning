@@ -953,6 +953,20 @@ static struct io_plan *handle_get_channel_basepoints(struct io_conn *conn,
 	if (!fromwire_hsm_get_channel_basepoints(msg_in, &peer_id, &dbid))
 		return bad_req(conn, c, msg_in);
 
+	proxy_stat rv = proxy_handle_get_channel_basepoints(
+		&peer_id, dbid, &basepoints, &funding_pubkey);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+	/* FIXME - REPLACE BELOW W/ REMOTE RETURN */
+
 	get_channel_seed(&peer_id, dbid, &seed);
 	derive_basepoints(&seed, &funding_pubkey, &basepoints, NULL, NULL);
 
@@ -1536,6 +1550,28 @@ static struct io_plan *handle_sign_mutual_close_tx(struct io_conn *conn,
 		return bad_req(conn, c, msg_in);
 
 	tx->chainparams = c->chainparams;
+
+	/* Need input amount for signing */
+	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
+
+	u8 *** sigs;
+	proxy_stat rv = proxy_handle_sign_mutual_close_tx(
+		tx, &remote_funding_pubkey, &funding,
+		&c->id, c->dbid,
+		&sigs);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	/* FIXME - uncomment this: assert(tal_count(sigs) == 1); */
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+	/* FIXME - USE SERVER RESULT AND REMOVE BELOW */
+
 	/* FIXME: We should know dust level, decent fee range and
 	 * balances, and final_keyindex, and thus be able to check tx
 	 * outputs! */
@@ -1546,8 +1582,6 @@ static struct io_plan *handle_sign_mutual_close_tx(struct io_conn *conn,
 	funding_wscript = bitcoin_redeem_2of2(tmpctx,
 					      &local_funding_pubkey,
 					      &remote_funding_pubkey);
-	/* Need input amount for signing */
-	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,

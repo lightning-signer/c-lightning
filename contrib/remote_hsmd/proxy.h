@@ -38,7 +38,7 @@ proxy_stat proxy_init_hsm(
 	struct node_id *o_node_id);
 
 proxy_stat proxy_handle_ecdh(
-	struct pubkey *point,
+	const struct pubkey *point,
 	struct secret *o_ss);
 
 proxy_stat proxy_handle_pass_client_hsmfd(
@@ -58,19 +58,19 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 
 proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct bitcoin_tx *tx,
-	struct pubkey *remote_funding_pubkey,
+	const struct pubkey *remote_funding_pubkey,
 	struct amount_sat *funding,
 	struct node_id *peer_id,
 	u64 dbid,
 	struct witscript const **output_witscripts,
-	struct pubkey *remote_per_commit,
+	const struct pubkey *remote_per_commit,
 	bool option_static_remotekey,
 	u8 ****o_sigs);
 
 proxy_stat proxy_handle_sign_remote_htlc_tx(
 	struct bitcoin_tx *tx,
 	u8 *wscript,
-	struct pubkey *remote_per_commit_point,
+	const struct pubkey *remote_per_commit_point,
 	struct node_id *peer_id,
 	u64 dbid,
 	u8 ****o_sigs);
@@ -99,6 +99,20 @@ proxy_stat proxy_handle_channel_update_sig(
 	u32 fee_proportional_mill,
 	struct amount_msat *htlc_maximum,
 	secp256k1_ecdsa_signature *o_sig);
+
+proxy_stat proxy_handle_get_channel_basepoints(
+	struct node_id *peer_id,
+	u64 dbid,
+	struct basepoints *o_basepoints,
+	struct pubkey *o_funding_pubkey);
+
+proxy_stat proxy_handle_sign_mutual_close_tx(
+	struct bitcoin_tx *tx,
+	const struct pubkey *remote_funding_pubkey,
+	struct amount_sat *funding,
+	struct node_id *peer_id,
+	u64 dbid,
+	u8 ****o_sigs);
 
 #ifdef __cplusplus
 } /* extern C */
