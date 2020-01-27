@@ -953,6 +953,20 @@ static struct io_plan *handle_get_channel_basepoints(struct io_conn *conn,
 	if (!fromwire_hsm_get_channel_basepoints(msg_in, &peer_id, &dbid))
 		return bad_req(conn, c, msg_in);
 
+	proxy_stat rv = proxy_handle_get_channel_basepoints(
+		&peer_id, dbid, &basepoints, &funding_pubkey);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+	/* FIXME - REPLACE BELOW W/ REMOTE RETURN */
+
 	get_channel_seed(&peer_id, dbid, &seed);
 	derive_basepoints(&seed, &funding_pubkey, &basepoints, NULL, NULL);
 
