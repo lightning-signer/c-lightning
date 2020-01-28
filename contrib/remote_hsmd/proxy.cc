@@ -56,6 +56,8 @@ using rpc::PassClientHSMFdRsp;
 using rpc::SignDescriptor;
 using rpc::SignInvoiceReq;
 using rpc::SignInvoiceRsp;
+using rpc::SignMutualCloseTxReq;
+using rpc::SignMutualCloseTxRsp;
 using rpc::SignRemoteCommitmentTxReq;
 using rpc::SignRemoteCommitmentTxRsp;
 using rpc::SignRemoteHTLCTxReq;
@@ -763,7 +765,11 @@ proxy_stat proxy_handle_get_channel_basepoints(
 	Status status = stub->GetChannelBasepoints(&context, req, &rsp);
 	if (status.ok()) {
 		/* FIXME - Uncomment these when real value returned */
-		/*
+#if 1
+		/* For now just make valgrind happy */
+		memset(o_basepoints, '\0', sizeof(*o_basepoints));
+		memset(o_funding_pubkey, '\0', sizeof(*o_funding_pubkey));
+#else
 		if (!return_pubkey(rsp.basepoints().revocation(),
 				   &o_basepoints->revocation)) {
 			last_message = "bad returned revocation basepoint";
@@ -789,13 +795,75 @@ proxy_stat proxy_handle_get_channel_basepoints(
 			last_message = "bad returned funding pubkey";
 			return PROXY_INTERNAL_ERROR;
 		}
-		*/
+#endif
 		status_debug("%s:%d %s self_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_basepoints(o_basepoints).c_str(),
 			     dump_pubkey(o_funding_pubkey).c_str());
 
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+proxy_stat proxy_handle_sign_mutual_close_tx(
+	struct bitcoin_tx *tx,
+	const struct pubkey *remote_funding_pubkey,
+	struct amount_sat *funding,
+	struct node_id *peer_id,
+	u64 dbid,
+	u8 ****o_sigs)
+{
+	status_debug(
+		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
+		"funding=%" PRIu64 " remote_funding_pubkey=%s tx=%s",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		funding->satoshis,
+		dump_pubkey(remote_funding_pubkey).c_str(),
+		dump_tx(tx).c_str()
+		);
+
+	last_message = "";
+	SignMutualCloseTxReq req;
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_channel_nonce(channel_nonce(peer_id, dbid));
+	req.set_remote_funding_pubkey(
+		(const char *) remote_funding_pubkey->pubkey.data,
+		sizeof(remote_funding_pubkey->pubkey.data));
+	req.set_raw_tx_bytes(serialized_tx(tx, true));
+
+	assert(tx->wtx->num_inputs == 1);
+	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
+		SignDescriptor *desc = req.add_input_descs();
+		/* FIXME - Do we need to set key_index and key_family here? */
+		desc->mutable_output()->set_value(funding->satoshis);
+	}
+
+	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
+	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
+		SignDescriptor *desc = req.add_output_descs();
+		/* FIXME - We don't need to set *anything* here? */
+	}
+
+	ClientContext context;
+	SignMutualCloseTxRsp rsp;
+	Status status = stub->SignMutualCloseTx(&context, req, &rsp);
+	if (status.ok()) {
+		*o_sigs = return_sigs(rsp.sigs());
+		status_debug("%s:%d %s self_id=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
