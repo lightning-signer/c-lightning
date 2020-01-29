@@ -1878,27 +1878,32 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
 
-/* FIXME - we currently fail tests/test_closing.py::test_onchain_first_commit.
- * The failed assert in proxy_handle_sign_withdrawal_tx implies that this
- * test is using P2SH.  With the assert commented out we fail ...
- */
-#if 0
-	g_proxy_impl = PROXY_IMPL_COMPLETE;
-	assert(tal_count(sigs) == tal_count(utxos));
-	for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
-		assert(tal_count(sigs[ii]) == 2);
+	/* FIXME - We need to implement P2SH signing in the server.
+	 * For now use old code when we see P2SH inputs.
+	 */
+	bool is_p2sh = false;
+	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++)
+		if (utxos[ii]->is_p2sh)
+			is_p2sh = true;
+	if (!is_p2sh) {
+		/* Sign w/ the remote lightning-signer. */
+		g_proxy_impl = PROXY_IMPL_COMPLETE;
+		assert(tal_count(sigs) == tal_count(utxos));
+		for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
+			assert(tal_count(sigs[ii]) == 2);
 
-		u8 **witness = tal_arr(tx, u8 *, 2);
-		witness[0] = tal_dup_arr(witness, u8, sigs[ii][0],
-					 tal_count(sigs[ii][0]), 0);
-		witness[1] = tal_dup_arr(witness, u8, sigs[ii][1],
-					 tal_count(sigs[ii][1]), 0);
-		bitcoin_tx_input_set_witness(tx, ii, take(witness));
+			u8 **witness = tal_arr(tx, u8 *, 2);
+			witness[0] = tal_dup_arr(witness, u8, sigs[ii][0],
+						 tal_count(sigs[ii][0]), 0);
+			witness[1] = tal_dup_arr(witness, u8, sigs[ii][1],
+						 tal_count(sigs[ii][1]), 0);
+			bitcoin_tx_input_set_witness(tx, ii, take(witness));
+		}
+	} else {
+		/* It's P2SH, need to sign here */
+		g_proxy_impl = PROXY_IMPL_MARSHALED;
+		sign_all_inputs(tx, utxos);
 	}
-#else
-	g_proxy_impl = PROXY_IMPL_MARSHALED;
-	sign_all_inputs(tx, utxos);
-#endif
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_withdrawal_reply(NULL, tx)));
 }
