@@ -459,7 +459,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		sizeof(remote_per_commit->pubkey.data));
 	req.set_option_static_remotekey(option_static_remotekey);
 	for (size_t ii = 0; ii < tal_count(output_witscripts); ii++)
-		if (output_witscripts[ii]->ptr)
+		if (output_witscripts[ii])
 			req.add_output_witscripts(
 				(const char *) output_witscripts[ii]->ptr,
 				tal_count(output_witscripts[ii]->ptr));
