@@ -2257,9 +2257,21 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 {
 	g_proxy_impl = PROXY_IMPL_NONE;	/* presume unimplemented */
 	struct io_plan *rv = handle_client_(conn, c);
-	if (g_proxy_impl == PROXY_IMPL_NONE) {
-		fprintf(stderr, "PROXY NEED %s\n",
+	switch (g_proxy_impl) {
+	case PROXY_IMPL_NONE:
+		fprintf(stderr, "PROXY_IMPL_NONE %s\n",
 			hsm_wire_type_name(g_proxy_last));
+		break;
+	case PROXY_IMPL_MARSHALED:
+		/*
+		fprintf(stderr, "PROXY_IMPL_MARSHALED %s\n",
+			hsm_wire_type_name(g_proxy_last));
+		*/
+		break;
+	case PROXY_IMPL_COMPLETE:
+	case PROXY_IMPL_IGNORE:
+		/* quiet on purpose here */
+		break;
 	}
 	return rv;
 }
