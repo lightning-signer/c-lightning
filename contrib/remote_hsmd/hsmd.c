@@ -1012,6 +1012,38 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 	if (tx->wtx->num_outputs == 0)
 		return bad_req_fmt(conn, c, msg_in, "tx must have > 0 outputs");
 
+	/*~ Segregated Witness also added the input amount to the signing
+	 * algorithm; it's only part of the input implicitly (it's part of the
+	 * output it's spending), so in our 'bitcoin_tx' structure it's a
+	 * pointer, as we don't always know it (and zero is a valid amount, so
+	 * NULL is better to mean 'unknown' and has the nice property that
+	 * you'll crash if you assume it's there and you're wrong.) */
+	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
+
+	u8 *** sigs;
+	proxy_stat rv = proxy_handle_sign_commitment_tx(
+		tx, &remote_funding_pubkey, &funding,
+		&c->id, c->dbid,
+		&sigs);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+#if 0
+	assert(tal_count(sigs) == 1);
+
+	bool ok = signature_from_der(sigs[0][0], tal_count(sigs[0][0]), &sig);
+	assert(ok);
+	status_debug("%s:%d %s: signature: %s",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     type_to_string(tmpctx, struct bitcoin_signature, &sig));
+#else
 	get_channel_seed(&peer_id, dbid, &channel_seed);
 	derive_basepoints(&channel_seed,
 			  &local_funding_pubkey, NULL, &secrets, NULL);
@@ -1022,18 +1054,12 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 	funding_wscript = bitcoin_redeem_2of2(tmpctx,
 					      &local_funding_pubkey,
 					      &remote_funding_pubkey);
-	/*~ Segregated Witness also added the input amount to the signing
-	 * algorithm; it's only part of the input implicitly (it's part of the
-	 * output it's spending), so in our 'bitcoin_tx' structure it's a
-	 * pointer, as we don't always know it (and zero is a valid amount, so
-	 * NULL is better to mean 'unknown' and has the nice property that
-	 * you'll crash if you assume it's there and you're wrong.) */
-	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 	sign_tx_input(tx, 0, NULL, funding_wscript,
 		      &secrets.funding_privkey,
 		      &local_funding_pubkey,
 		      SIGHASH_ALL,
 		      &sig);
+#endif
 
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_commitment_tx_reply(NULL, &sig)));
@@ -1079,6 +1105,7 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	if (tal_count(output_witscripts) != tx->wtx->num_outputs)
 		return bad_req_fmt(conn, c, msg_in, "tx must have matching witscripts");
 
+	/* FIXME - WE DON'T NEED THESE ANYMORE, RIGHT? */
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	derive_basepoints(&channel_seed,
 			  &local_funding_pubkey, NULL, &secrets, NULL);

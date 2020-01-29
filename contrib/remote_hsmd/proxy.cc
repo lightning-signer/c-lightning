@@ -53,6 +53,8 @@ using rpc::InitHSMRsp;
 using rpc::KeyLocator;
 using rpc::PassClientHSMFdReq;
 using rpc::PassClientHSMFdRsp;
+using rpc::SignCommitmentTxReq;
+using rpc::SignCommitmentTxRsp;
 using rpc::SignDescriptor;
 using rpc::SignInvoiceReq;
 using rpc::SignInvoiceRsp;
@@ -859,6 +861,68 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 	ClientContext context;
 	SignMutualCloseTxRsp rsp;
 	Status status = stub->SignMutualCloseTx(&context, req, &rsp);
+	if (status.ok()) {
+		*o_sigs = return_sigs(rsp.sigs());
+		status_debug("%s:%d %s self_id=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+proxy_stat proxy_handle_sign_commitment_tx(
+	struct bitcoin_tx *tx,
+	const struct pubkey *remote_funding_pubkey,
+	struct amount_sat *funding,
+	struct node_id *peer_id,
+	u64 dbid,
+	u8 ****o_sigs)
+{
+	status_debug(
+		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
+		"funding=%" PRIu64 " remote_funding_pubkey=%s tx=%s",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		funding->satoshis,
+		dump_pubkey(remote_funding_pubkey).c_str(),
+		dump_tx(tx).c_str()
+		);
+
+	last_message = "";
+	SignCommitmentTxReq req;
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_channel_nonce(channel_nonce(peer_id, dbid));
+	req.set_remote_funding_pubkey(
+		(const char *) remote_funding_pubkey->pubkey.data,
+		sizeof(remote_funding_pubkey->pubkey.data));
+	req.set_raw_tx_bytes(serialized_tx(tx, true));
+
+	assert(tx->wtx->num_inputs == 1);
+	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
+		SignDescriptor *desc = req.add_input_descs();
+		/* FIXME - Do we need to set key_index and key_family here? */
+		desc->mutable_output()->set_value(funding->satoshis);
+	}
+
+	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
+	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
+		SignDescriptor *desc = req.add_output_descs();
+		/* FIXME - We don't need to set *anything* here? */
+	}
+
+	ClientContext context;
+	SignCommitmentTxRsp rsp;
+	Status status = stub->SignCommitmentTx(&context, req, &rsp);
 	if (status.ok()) {
 		*o_sigs = return_sigs(rsp.sigs());
 		status_debug("%s:%d %s self_id=%s",

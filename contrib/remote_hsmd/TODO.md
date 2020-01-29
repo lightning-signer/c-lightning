@@ -19,10 +19,8 @@ test_closing.py::test_closing
 18  hsm_get_per_commitment_point		GetPerCommitmentPoint
 20  hsm_sign_remote_htlc_tx				SignRemoteHTLCTx
     HSM_SIGN_MUTUAL_CLOSE_TX			SignMutualCloseTx
+    HSM_SIGN_COMMITMENT_TX				SignCommitmentTx
 
 #### need proxy and server
 
-PROXY NEED WIRE_HSM_SIGN_COMMITMENT_TX
-PROXY NEED WIRE_HSM_SIGN_COMMITMENT_TX
-PROXY NEED WIRE_HSM_SIGN_COMMITMENT_TX
-PROXY NEED WIRE_HSM_SIGN_COMMITMENT_TX
+PROXY_IMPL_NONE WIRE_HSM_DEV_MEMLEAK
