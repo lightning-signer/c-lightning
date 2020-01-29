@@ -1877,8 +1877,13 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in,
 				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
-	g_proxy_impl = PROXY_IMPL_COMPLETE;
 
+/* FIXME - we currently fail tests/test_closing.py::test_onchain_first_commit.
+ * The failed assert in proxy_handle_sign_withdrawal_tx implies that this
+ * test is using P2SH.  With the assert commented out we fail ...
+ */
+#if 0
+	g_proxy_impl = PROXY_IMPL_COMPLETE;
 	assert(tal_count(sigs) == tal_count(utxos));
 	for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
 		assert(tal_count(sigs[ii]) == 2);
@@ -1890,7 +1895,10 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 					 tal_count(sigs[ii][1]), 0);
 		bitcoin_tx_input_set_witness(tx, ii, take(witness));
 	}
-
+#else
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+	sign_all_inputs(tx, utxos);
+#endif
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_withdrawal_reply(NULL, tx)));
 }
@@ -2068,6 +2076,9 @@ static struct io_plan *handle_memleak(struct io_conn *conn,
 	struct htable *memtable;
 	bool found_leak;
 	u8 *reply;
+
+	/* Ignore this routine for proxy implementation purposes */
+	g_proxy_impl = PROXY_IMPL_IGNORE;
 
 	memtable = memleak_enter_allocations(tmpctx, msg_in, msg_in);
 
