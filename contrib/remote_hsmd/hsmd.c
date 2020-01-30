@@ -1878,14 +1878,15 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
 
-	/* FIXME - We need to implement P2SH signing in the server.
-	 * For now use old code when we see P2SH inputs.
+	/* FIXME - There are two things we can't do remotely yet:
+	 * 1. Handle P2SH inputs.
+	 * 2. Handle inputs w/ close_info.
 	 */
-	bool is_p2sh = false;
+	bool demure = false;
 	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++)
-		if (utxos[ii]->is_p2sh)
-			is_p2sh = true;
-	if (!is_p2sh) {
+		if (utxos[ii]->is_p2sh || utxos[ii]->close_info)
+			demure = true;
+	if (!demure) {
 		/* Sign w/ the remote lightning-signer. */
 		g_proxy_impl = PROXY_IMPL_COMPLETE;
 		assert(tal_count(sigs) == tal_count(utxos));
