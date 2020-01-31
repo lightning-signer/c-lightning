@@ -122,6 +122,10 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	u64 dbid,
 	u8 ****o_sigs);
 
+proxy_stat proxy_handle_sign_node_announcement(
+	u8 *node_announcement,
+	secp256k1_ecdsa_signature *o_sig);
+
 proxy_stat proxy_handle_cannouncement_sig(
 	struct node_id *peer_id,
 	u64 dbid,

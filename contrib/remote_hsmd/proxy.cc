@@ -53,6 +53,8 @@ using rpc::GetPerCommitmentPointRsp;
 using rpc::InitHSMReq;
 using rpc::InitHSMRsp;
 using rpc::KeyLocator;
+using rpc::NodeAnnouncementSigReq;
+using rpc::NodeAnnouncementSigRsp;
 using rpc::PassClientHSMFdReq;
 using rpc::PassClientHSMFdRsp;
 using rpc::SignCommitmentTxReq;
@@ -990,6 +992,52 @@ proxy_stat proxy_handle_cannouncement_sig(
 				      sizeof(o_node_sig->data)).c_str(),
 			     dump_hex(o_bitcoin_sig,
 				      sizeof(o_bitcoin_sig->data)).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+proxy_stat proxy_handle_sign_node_announcement(
+	u8 *node_announcement,
+	secp256k1_ecdsa_signature *o_sig)
+{
+	status_debug(
+		"%s:%d %s self_id=%s ann=%s",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_hex(node_announcement,
+			 tal_count(node_announcement)).c_str()
+		);
+
+	last_message = "";
+	NodeAnnouncementSigReq req;
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_node_announcement(node_announcement,
+				     tal_count(node_announcement));
+
+	ClientContext context;
+	NodeAnnouncementSigRsp rsp;
+	Status status = stub->NodeAnnouncementSig(&context, req, &rsp);
+	if (status.ok()) {
+		/* FIXME - Uncomment these when real value returned */
+#if 1
+		/* For now just make valgrind happy */
+		memset(o_sig, '\0', sizeof(*o_sig));
+#else
+		/* FIXME - return these values here */
+		assert(false);
+#endif
+		status_debug("%s:%d %s self_id=%s node_sig=%s bitcoin_sig=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str(),
+			     dump_hex(o_sig, sizeof(o_sig->data)).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {

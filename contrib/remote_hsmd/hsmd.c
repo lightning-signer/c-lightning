@@ -2039,6 +2039,19 @@ static struct io_plan *handle_sign_node_announcement(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in,
 				   "Invalid announcement");
 
+	proxy_stat rv = proxy_handle_sign_node_announcement(ann, &sig);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+	/* FIXME - REPLACE BELOW W/ REMOTE RETURN */
+
 	node_key(&node_pkey, NULL);
 	sha256_double(&hash, ann + offset, tal_count(ann) - offset);
 
