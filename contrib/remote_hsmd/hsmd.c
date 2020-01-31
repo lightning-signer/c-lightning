@@ -856,6 +856,22 @@ static struct io_plan *handle_cannouncement_sig(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in,
 				   "Invalid channel announcement");
 
+	proxy_stat rv = proxy_handle_cannouncement_sig(
+		&c->id, c->dbid, ca,
+		&node_sig, &bitcoin_sig
+		);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+	/* FIXME - REPLACE BELOW W/ REMOTE RETURN */
+
 	node_key(&node_pkey, NULL);
 	sha256_double(&hash, ca + offset, tal_count(ca) - offset);
 
@@ -2305,6 +2321,7 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case PROXY_IMPL_NONE:
 		fprintf(stderr, "PROXY_IMPL_NONE %s\n",
 			hsm_wire_type_name(g_proxy_last));
+		assert(false);
 		break;
 	case PROXY_IMPL_MARSHALED:
 		/*

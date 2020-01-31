@@ -3,6 +3,10 @@
 test_pay.py::test_sendpay
 test_closing.py::test_closing
 
+tests/test_closing.py::test_closing_different_fees
+
+tests/test_misc.py::test_funding_reorg_remote_lags
+
 #### proxy and server done
 
 1   hsm_ecdh_req						ECDH
@@ -20,11 +24,13 @@ test_closing.py::test_closing
 20  hsm_sign_remote_htlc_tx				SignRemoteHTLCTx
     HSM_SIGN_MUTUAL_CLOSE_TX			SignMutualCloseTx
     HSM_SIGN_COMMITMENT_TX				SignCommitmentTx
+    PROXY_IMPL_NONE WIRE_HSM_CANNOUNCEMENT_SIG_REQ
 
 #### need proxy and server
 
-PROXY_IMPL_NONE WIRE_HSM_CANNOUNCEMENT_SIG_REQ
 PROXY_IMPL_NONE WIRE_HSM_NODE_ANNOUNCEMENT_SIG_REQ
 PROXY_IMPL_NONE WIRE_HSM_SIGN_DELAYED_PAYMENT_TO_US
 PROXY_IMPL_NONE WIRE_HSM_SIGN_LOCAL_HTLC_TX
 PROXY_IMPL_NONE WIRE_HSM_SIGN_REMOTE_HTLC_TO_US
+
+
