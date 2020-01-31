@@ -130,10 +130,12 @@ string dump_input_amounts(const struct amount_sat **ias)
 {
 	ostringstream ostrm;
 	ostrm << "[";
-	for (size_t ii = 0; ii < tal_count(ias); ii++) {
-		if (ii != 0)
-			ostrm << ",";
-		ostrm << ias[ii]->satoshis;
+	if (*ias) {
+		for (size_t ii = 0; ii < tal_count(ias); ii++) {
+			if (ii != 0)
+				ostrm << ",";
+			ostrm << ias[ii]->satoshis;
+		}
 	}
 	ostrm << "]";
 	return ostrm.str();

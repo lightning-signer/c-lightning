@@ -1392,6 +1392,22 @@ static struct io_plan *handle_sign_penalty_to_us(struct io_conn *conn,
 		return bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
+	proxy_stat rv = proxy_handle_sign_penalty_to_us(
+		tx, &revocation_secret, wscript, &input_sat,
+		&c->id, c->dbid,
+		&privkey);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+	/* FIXME - REPLACE BELOW W/ REMOTE RETURN */
+
 	if (!pubkey_from_secret(&revocation_secret, &point))
 		return bad_req_fmt(conn, c, msg_in, "Failed deriving pubkey");
 

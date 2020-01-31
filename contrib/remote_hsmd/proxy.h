@@ -133,6 +133,15 @@ proxy_stat proxy_handle_cannouncement_sig(
 	secp256k1_ecdsa_signature *o_node_sig,
 	secp256k1_ecdsa_signature *o_bitcoin_sig);
 
+proxy_stat proxy_handle_sign_penalty_to_us(
+	struct bitcoin_tx *tx,
+	struct secret *revocation_secret,
+	u8 *wscript,
+	struct amount_sat *input_sat,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct privkey *o_privkey);
+
 #ifdef __cplusplus
 } /* extern C */
 #endif
