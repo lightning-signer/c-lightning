@@ -142,6 +142,15 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 	u64 dbid,
 	struct privkey *o_privkey);
 
+proxy_stat proxy_handle_sign_delayed_payment_to_us(
+	struct bitcoin_tx *tx,
+	u64 commit_num,
+	u8 *wscript,
+	struct amount_sat *input_sat,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct privkey *o_privkey);
+
 #ifdef __cplusplus
 } /* extern C */
 #endif

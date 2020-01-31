@@ -59,6 +59,8 @@ using rpc::PassClientHSMFdReq;
 using rpc::PassClientHSMFdRsp;
 using rpc::SignCommitmentTxReq;
 using rpc::SignCommitmentTxRsp;
+using rpc::SignDelayedPaymentToUsReq;
+using rpc::SignDelayedPaymentToUsRsp;
 using rpc::SignDescriptor;
 using rpc::SignInvoiceReq;
 using rpc::SignInvoiceRsp;
@@ -1132,5 +1134,84 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 		return map_status(status.error_code());
 	}
 }
+
+proxy_stat proxy_handle_sign_delayed_payment_to_us(
+	struct bitcoin_tx *tx,
+	u64 commit_num,
+	u8 *wscript,
+	struct amount_sat *input_sat,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct privkey *o_privkey)
+{
+	status_debug(
+		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
+		"commit_num==%" PRIu64 " "
+		"wscript=%s "
+		"input_sat=%" PRIu64 " "
+		"tx=%s",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		commit_num,
+		dump_hex(wscript, tal_count(wscript)).c_str(),
+		input_sat->satoshis,
+		dump_tx(tx).c_str()
+		);
+
+	last_message = "";
+	SignDelayedPaymentToUsReq req;
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_channel_nonce(channel_nonce(peer_id, dbid));
+	req.set_raw_tx_bytes(serialized_tx(tx, true));
+	req.set_commit_num(commit_num);
+	req.set_wscript(wscript, tal_count(wscript));
+	req.set_input_sat(input_sat->satoshis);
+
+	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
+	 	const struct wally_tx_input *in = &tx->wtx->inputs[ii];
+		SignDescriptor *desc = req.add_input_descs();
+		/* FIXME - We don't need to set *anything* here? */
+	}
+
+	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
+	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
+		SignDescriptor *desc = req.add_output_descs();
+		/* FIXME - We don't need to set *anything* here? */
+	}
+
+	ClientContext context;
+	SignDelayedPaymentToUsRsp rsp;
+	Status status = stub->SignDelayedPaymentToUs(&context, req, &rsp);
+	if (status.ok()) {
+#if 1
+		/* For now just make valgrind happy */
+		memset(o_privkey->secret.data, '\0',
+		       sizeof(o_privkey->secret.data));
+#else
+		assert(rsp.privkey().length() ==
+		       sizeof(o_privkey->secret.data));
+		memcpy(o_privkey->secret.data, rsp.privkey().data(),
+		       sizeof(o_privkey->secret.data));
+#endif
+		status_debug("%s:%d %s self_id=%s privkey=%s",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str(),
+			     dump_hex(o_privkey->secret.data,
+				      sizeof(o_privkey->secret.data)).c_str()
+			);
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
 
 } /* extern "C" */

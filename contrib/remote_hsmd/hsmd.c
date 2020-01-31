@@ -1297,6 +1297,23 @@ static struct io_plan *handle_sign_delayed_payment_to_us(struct io_conn *conn,
 						     &input_sat))
 		return bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
+
+	proxy_stat rv = proxy_handle_sign_delayed_payment_to_us(
+		tx, commit_num, wscript, &input_sat,
+		&c->id, c->dbid,
+		&privkey);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+	/* FIXME - REPLACE BELOW W/ REMOTE RETURN */
+
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 
 	/*~ ccan/crypto/shachain how we efficiently derive 2^48 ordered
