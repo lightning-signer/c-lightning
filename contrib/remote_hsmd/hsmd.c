@@ -1500,8 +1500,25 @@ static struct io_plan *handle_sign_local_htlc_tx(struct io_conn *conn,
 	if (tx->wtx->num_inputs != 1)
 		return bad_req_fmt(conn, c, msg_in, "bad txinput count");
 
-	/* FIXME: Check that output script is correct! */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &input_sat);
+
+	proxy_stat rv = proxy_handle_sign_local_htlc_tx(
+		tx, commit_num, wscript, &input_sat,
+		&c->id, c->dbid,
+		&sig);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+	/* FIXME - REPLACE BELOW W/ REMOTE RETURN */
+
+	/* FIXME: Check that output script is correct! */
 	sign_tx_input(tx, 0, NULL, wscript, &htlc_privkey, &htlc_pubkey,
 		      SIGHASH_ALL, &sig);
 

@@ -4,6 +4,7 @@
 extern "C" {
 #include <bitcoin/chainparams.h>
 #include <bitcoin/privkey.h>
+#include <bitcoin/signature.h>
 #include <bitcoin/tx.h>
 #include <common/derive_basepoints.h>
 #include <common/node_id.h>
@@ -35,6 +36,21 @@ string dump_hex(const void *vptr, size_t sz)
 string dump_bitcoin_txid(const struct bitcoin_txid *txid)
 {
 	return dump_hex(txid->shad.sha.u.u8, sizeof(txid->shad.sha.u.u8));
+}
+
+string dump_bitcoin_signature(const struct bitcoin_signature *sp)
+{
+	ostringstream ostrm;
+	ostrm << "{ "
+	      << "sighash_type=" << int(sp->sighash_type)
+	      << "s=" << dump_secp256k1_ecdsa_signature(&sp->s)
+	      << " }";
+	return ostrm.str();
+}
+
+string dump_secp256k1_ecdsa_signature(const secp256k1_ecdsa_signature *sp)
+{
+	return dump_hex(sp->data, sizeof(sp->data));
 }
 
 string dump_node_id(const struct node_id *pp)
