@@ -33,10 +33,11 @@ tests/test_misc.py::test_funding_reorg_remote_lags
     WIRE_HSM_SIGN_PENALTY_TO_US
     WIRE_HSM_SIGN_DELAYED_PAYMENT_TO_US
     WIRE_HSM_SIGN_LOCAL_HTLC_TX
+    WIRE_HSM_SIGN_REMOTE_HTLC_TO_US
 
 #### need proxy and server
 
-PROXY_IMPL_NONE WIRE_HSM_SIGN_REMOTE_HTLC_TO_US
+
 
 
 Improvements

@@ -1191,16 +1191,17 @@ static struct io_plan *handle_sign_remote_htlc_tx(struct io_conn *conn,
 	tx->chainparams = c->chainparams;
 
 	/* Need input amount for signing */
+	if (tx->wtx->num_inputs != 1)
+		return bad_req_fmt(conn, c, msg_in, "bad txinput count");
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &amount);
 
-	u8 *** sigs;
 	proxy_stat rv = proxy_handle_sign_remote_htlc_tx(
 		tx,
 		wscript,
 		&remote_per_commit_point,
 		&c->id,
 		c->dbid,
-		&sigs);
+		&sig);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
@@ -1298,10 +1299,13 @@ static struct io_plan *handle_sign_delayed_payment_to_us(struct io_conn *conn,
 		return bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
+	if (tx->wtx->num_inputs != 1)
+		return bad_req_fmt(conn, c, msg_in, "bad txinput count");
+	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &input_sat);
+
+	struct bitcoin_signature sig;
 	proxy_stat rv = proxy_handle_sign_delayed_payment_to_us(
-		tx, commit_num, wscript, &input_sat,
-		&c->id, c->dbid,
-		&privkey);
+		tx, commit_num, wscript, &c->id, c->dbid, &sig);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
@@ -1369,6 +1373,33 @@ static struct io_plan *handle_sign_remote_htlc_to_us(struct io_conn *conn,
 		return bad_req(conn, c, msg_in);
 
 	tx->chainparams = c->chainparams;
+
+	/* Need input amount for signing */
+	if (tx->wtx->num_inputs != 1)
+		return bad_req_fmt(conn, c, msg_in, "bad txinput count");
+	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &input_sat);
+
+	struct bitcoin_signature sig;
+	proxy_stat rv = proxy_handle_sign_remote_htlc_to_us(
+		tx,
+		wscript,
+		&remote_per_commitment_point,
+		&c->id,
+		c->dbid,
+		&sig);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_MARSHALED;
+
+	/* FIXME - server-side not implemented yet. Use original code
+	 * below for now */
+
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 
 	if (!derive_htlc_basepoint(&channel_seed, &htlc_basepoint,
@@ -1409,10 +1440,14 @@ static struct io_plan *handle_sign_penalty_to_us(struct io_conn *conn,
 		return bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
+	/* Need input amount for signing */
+	if (tx->wtx->num_inputs != 1)
+		return bad_req_fmt(conn, c, msg_in, "bad txinput count");
+	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &input_sat);
+
+	struct bitcoin_signature sig;
 	proxy_stat rv = proxy_handle_sign_penalty_to_us(
-		tx, &revocation_secret, wscript, &input_sat,
-		&c->id, c->dbid,
-		&privkey);
+		tx, &revocation_secret, wscript, &c->id, c->dbid, &sig);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
@@ -1499,13 +1534,10 @@ static struct io_plan *handle_sign_local_htlc_tx(struct io_conn *conn,
 
 	if (tx->wtx->num_inputs != 1)
 		return bad_req_fmt(conn, c, msg_in, "bad txinput count");
-
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &input_sat);
 
 	proxy_stat rv = proxy_handle_sign_local_htlc_tx(
-		tx, commit_num, wscript, &input_sat,
-		&c->id, c->dbid,
-		&sig);
+		tx, commit_num, wscript, &c->id, c->dbid, &sig);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,

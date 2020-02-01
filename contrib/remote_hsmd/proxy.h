@@ -67,14 +67,6 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	bool option_static_remotekey,
 	u8 ****o_sigs);
 
-proxy_stat proxy_handle_sign_remote_htlc_tx(
-	struct bitcoin_tx *tx,
-	u8 *wscript,
-	const struct pubkey *remote_per_commit_point,
-	struct node_id *peer_id,
-	u64 dbid,
-	u8 ****o_sigs);
-
 proxy_stat proxy_handle_get_per_commitment_point(
 	struct node_id *peer_id,
 	u64 dbid,
@@ -133,29 +125,42 @@ proxy_stat proxy_handle_cannouncement_sig(
 	secp256k1_ecdsa_signature *o_node_sig,
 	secp256k1_ecdsa_signature *o_bitcoin_sig);
 
-proxy_stat proxy_handle_sign_penalty_to_us(
+proxy_stat proxy_handle_sign_local_htlc_tx(
 	struct bitcoin_tx *tx,
-	struct secret *revocation_secret,
+	u64 commit_num,
 	u8 *wscript,
-	struct amount_sat *input_sat,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct privkey *o_privkey);
+	struct bitcoin_signature *o_sig);
+
+proxy_stat proxy_handle_sign_remote_htlc_tx(
+	struct bitcoin_tx *tx,
+	u8 *wscript,
+	const struct pubkey *remote_per_commit_point,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct bitcoin_signature *o_sig);
 
 proxy_stat proxy_handle_sign_delayed_payment_to_us(
 	struct bitcoin_tx *tx,
 	u64 commit_num,
 	u8 *wscript,
-	struct amount_sat *input_sat,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct privkey *o_privkey);
+	struct bitcoin_signature *o_sig);
 
-proxy_stat proxy_handle_sign_local_htlc_tx(
+proxy_stat proxy_handle_sign_remote_htlc_to_us(
 	struct bitcoin_tx *tx,
-	u64 commit_num,
 	u8 *wscript,
-	struct amount_sat *input_sat,
+	const struct pubkey *remote_per_commit_point,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct bitcoin_signature *o_sig);
+
+proxy_stat proxy_handle_sign_penalty_to_us(
+	struct bitcoin_tx *tx,
+	struct secret *revocation_secret,
+	u8 *wscript,
 	struct node_id *peer_id,
 	u64 dbid,
 	struct bitcoin_signature *o_sig);
