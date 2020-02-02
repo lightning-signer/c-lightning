@@ -165,6 +165,13 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 	u64 dbid,
 	struct bitcoin_signature *o_sig);
 
+proxy_stat proxy_handle_check_future_secret(
+	struct node_id *peer_id,
+	u64 dbid,
+	u64 n,
+	struct secret *suggested,
+	bool *o_correct);
+
 #ifdef __cplusplus
 } /* extern C */
 #endif

@@ -1638,6 +1638,21 @@ static struct io_plan *handle_check_future_secret(struct io_conn *conn,
 	if (!fromwire_hsm_check_future_secret(msg_in, &n, &suggested))
 		return bad_req(conn, c, msg_in);
 
+	bool correct;
+	proxy_stat rv = proxy_handle_check_future_secret(
+		&c->id, c->dbid, n, &suggested, &correct);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_COMPLETE;
+
+	/* FIXME - REPLACE BELOW W/ REMOTE RETURN */
+
 	get_channel_seed(&c->id, c->dbid, &channel_seed);
 	if (!derive_shaseed(&channel_seed, &shaseed))
 		return bad_req_fmt(conn, c, msg_in, "bad derive_shaseed");

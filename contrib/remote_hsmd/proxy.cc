@@ -44,6 +44,8 @@ using rpc::ChannelAnnouncementSigReq;
 using rpc::ChannelAnnouncementSigRsp;
 using rpc::ChannelUpdateSigReq;
 using rpc::ChannelUpdateSigRsp;
+using rpc::CheckFutureSecretReq;
+using rpc::CheckFutureSecretRsp;
 using rpc::ECDHReq;
 using rpc::ECDHRsp;
 using rpc::GetChannelBasepointsReq;
@@ -1322,6 +1324,52 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str()
 			);
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status.error_code());
+	}
+}
+
+proxy_stat proxy_handle_check_future_secret(
+	struct node_id *peer_id,
+	u64 dbid,
+	u64 n,
+	struct secret *suggested,
+	bool *o_correct)
+{
+	status_debug(
+		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
+		"n=%" PRIu64 " suggested=%s",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		n,
+		dump_hex(suggested->data, sizeof(suggested->data)).c_str()
+		);
+
+	last_message = "";
+	CheckFutureSecretReq req;
+	req.set_self_node_id((const char *) self_id.k, sizeof(self_id.k));
+	req.set_channel_nonce(channel_nonce(peer_id, dbid));
+	req.set_n(n);
+	req.set_suggested((const char *)suggested->data,
+			  sizeof(suggested->data));
+
+	ClientContext context;
+	CheckFutureSecretRsp rsp;
+	Status status = stub->CheckFutureSecret(&context, req, &rsp);
+	if (status.ok()) {
+		*o_correct = rsp.correct();
+		status_debug("%s:%d %s self_id=%s correct=%d",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str(), int(*o_correct));
 		last_message = "success";
 		return PROXY_OK;
 	} else {

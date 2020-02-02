@@ -7,8 +7,6 @@ API Coverage
 # passes much of the time
 tests/test_closing.py::test_closing_different_fees
 
-tests/test_connection.py::test_dataloss_protection
-
 
 #### proxy and server done
 
@@ -33,10 +31,10 @@ tests/test_connection.py::test_dataloss_protection
     WIRE_HSM_SIGN_DELAYED_PAYMENT_TO_US
     WIRE_HSM_SIGN_LOCAL_HTLC_TX
     WIRE_HSM_SIGN_REMOTE_HTLC_TO_US
+    handle_check_future_secret
 
 #### need proxy and server
 
-handle_check_future_secret
 handle_sign_funding_tx
 handle_sign_message
 
