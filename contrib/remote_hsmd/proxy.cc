@@ -486,11 +486,9 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	req.set_raw_tx_bytes(serialized_tx(tx, true));
 
 	assert(tx->wtx->num_inputs == 1);
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-		SignDescriptor *desc = req.add_input_descs();
-		/* FIXME - Do we need to set key_index and key_family here? */
-		desc->mutable_output()->set_value(funding->satoshis);
-	}
+	SignDescriptor *desc = req.add_input_descs();
+	desc->mutable_output()->set_value(tx->input_amounts[0]->satoshis);
+	/* FIXME - What else needs to be set? */
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
@@ -798,11 +796,9 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 	req.set_raw_tx_bytes(serialized_tx(tx, true));
 
 	assert(tx->wtx->num_inputs == 1);
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-		SignDescriptor *desc = req.add_input_descs();
-		/* FIXME - Do we need to set key_index and key_family here? */
-		desc->mutable_output()->set_value(funding->satoshis);
-	}
+	SignDescriptor *desc = req.add_input_descs();
+	desc->mutable_output()->set_value(tx->input_amounts[0]->satoshis);
+	/* FIXME - What else needs to be set? */
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
@@ -860,11 +856,9 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	req.set_raw_tx_bytes(serialized_tx(tx, true));
 
 	assert(tx->wtx->num_inputs == 1);
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-		SignDescriptor *desc = req.add_input_descs();
-		/* FIXME - Do we need to set key_index and key_family here? */
-		desc->mutable_output()->set_value(funding->satoshis);
-	}
+	SignDescriptor *desc = req.add_input_descs();
+	desc->mutable_output()->set_value(tx->input_amounts[0]->satoshis);
+	/* FIXME - What else needs to be set? */
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
@@ -1024,11 +1018,10 @@ proxy_stat proxy_handle_sign_local_htlc_tx(
 	req.set_commit_num(commit_num);
 	req.set_wscript(wscript, tal_count(wscript));
 
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-	 	const struct wally_tx_input *in = &tx->wtx->inputs[ii];
-		SignDescriptor *desc = req.add_input_descs();
-		/* FIXME - We don't need to set *anything* here? */
-	}
+	assert(tx->wtx->num_inputs == 1);
+	SignDescriptor *desc = req.add_input_descs();
+	desc->mutable_output()->set_value(tx->input_amounts[0]->satoshis);
+	/* FIXME - What else needs to be set? */
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
@@ -1094,13 +1087,9 @@ proxy_stat proxy_handle_sign_remote_htlc_tx(
 	req.set_raw_tx_bytes(serialized_tx(tx, true));
 
 	assert(tx->wtx->num_inputs == 1);
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-	 	const struct wally_tx_input *in = &tx->wtx->inputs[ii];
-		SignDescriptor *desc = req.add_input_descs();
-		/* FIXME - Do we need to set key_index and key_family here? */
-		desc->mutable_output()->set_value(
-			tx->input_amounts[ii]->satoshis);
-	}
+	SignDescriptor *desc = req.add_input_descs();
+	desc->mutable_output()->set_value(tx->input_amounts[0]->satoshis);
+	/* FIXME - What else needs to be set? */
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
@@ -1166,11 +1155,10 @@ proxy_stat proxy_handle_sign_delayed_payment_to_us(
 	req.set_commit_num(commit_num);
 	req.set_wscript(wscript, tal_count(wscript));
 
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-	 	const struct wally_tx_input *in = &tx->wtx->inputs[ii];
-		SignDescriptor *desc = req.add_input_descs();
-		/* FIXME - We don't need to set *anything* here? */
-	}
+	assert(tx->wtx->num_inputs == 1);
+	SignDescriptor *desc = req.add_input_descs();
+	desc->mutable_output()->set_value(tx->input_amounts[0]->satoshis);
+	/* FIXME - What else needs to be set? */
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
@@ -1236,13 +1224,9 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 	req.set_raw_tx_bytes(serialized_tx(tx, true));
 
 	assert(tx->wtx->num_inputs == 1);
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-	 	const struct wally_tx_input *in = &tx->wtx->inputs[ii];
-		SignDescriptor *desc = req.add_input_descs();
-		/* FIXME - Do we need to set key_index and key_family here? */
-		desc->mutable_output()->set_value(
-			tx->input_amounts[ii]->satoshis);
-	}
+	SignDescriptor *desc = req.add_input_descs();
+	desc->mutable_output()->set_value(tx->input_amounts[0]->satoshis);
+	/* FIXME - What else needs to be set? */
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
@@ -1311,11 +1295,10 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 				  sizeof(revocation_secret->data));
 	req.set_wscript(wscript, tal_count(wscript));
 
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-	 	const struct wally_tx_input *in = &tx->wtx->inputs[ii];
-		SignDescriptor *desc = req.add_input_descs();
-		/* FIXME - We don't need to set *anything* here? */
-	}
+	assert(tx->wtx->num_inputs == 1);
+	SignDescriptor *desc = req.add_input_descs();
+	desc->mutable_output()->set_value(tx->input_amounts[0]->satoshis);
+	/* FIXME - What else needs to be set? */
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];

@@ -2,14 +2,13 @@
 API Coverage
 ----------------------------------------------------------------
 
-## Tests in list
+## Failing Tests
 
-test_pay.py::test_sendpay
-test_closing.py::test_closing
-
+# passes much of the time
 tests/test_closing.py::test_closing_different_fees
 
-tests/test_misc.py::test_funding_reorg_remote_lags
+tests/test_connection.py::test_dataloss_protection
+
 
 #### proxy and server done
 
@@ -37,8 +36,9 @@ tests/test_misc.py::test_funding_reorg_remote_lags
 
 #### need proxy and server
 
-
-
+handle_check_future_secret
+handle_sign_funding_tx
+handle_sign_message
 
 Improvements
 ----------------------------------------------------------------
