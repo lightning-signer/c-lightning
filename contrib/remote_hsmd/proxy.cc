@@ -23,8 +23,8 @@ extern "C" {
 #include <common/utxo.h>
 }
 
-#include "contrib/remote_hsmd/api.pb.h"
-#include "contrib/remote_hsmd/api.grpc.pb.h"
+#include "contrib/remote_hsmd/remotesigner.pb.h"
+#include "contrib/remote_hsmd/remotesigner.grpc.pb.h"
 
 #include "contrib/remote_hsmd/dump.h"
 #include "contrib/remote_hsmd/proxy.h"
@@ -40,48 +40,48 @@ using grpc::ClientContext;
 using grpc::Status;
 using grpc::StatusCode;
 
-using rpc::ChannelAnnouncementSigReq;
-using rpc::ChannelAnnouncementSigRsp;
-using rpc::ChannelUpdateSigReq;
-using rpc::ChannelUpdateSigRsp;
-using rpc::CheckFutureSecretReq;
-using rpc::CheckFutureSecretRsp;
-using rpc::ECDHReq;
-using rpc::ECDHRsp;
-using rpc::GetChannelBasepointsReq;
-using rpc::GetChannelBasepointsRsp;
-using rpc::GetPerCommitmentPointReq;
-using rpc::GetPerCommitmentPointRsp;
-using rpc::InitHSMReq;
-using rpc::InitHSMRsp;
-using rpc::KeyLocator;
-using rpc::NodeAnnouncementSigReq;
-using rpc::NodeAnnouncementSigRsp;
-using rpc::PassClientHSMFdReq;
-using rpc::PassClientHSMFdRsp;
-using rpc::SignCommitmentTxReq;
-using rpc::SignCommitmentTxRsp;
-using rpc::SignDelayedPaymentToUsReq;
-using rpc::SignDelayedPaymentToUsRsp;
-using rpc::SignDescriptor;
-using rpc::SignInvoiceReq;
-using rpc::SignInvoiceRsp;
-using rpc::SignLocalHTLCTxReq;
-using rpc::SignLocalHTLCTxRsp;
-using rpc::SignMutualCloseTxReq;
-using rpc::SignMutualCloseTxRsp;
-using rpc::SignPenaltyToUsReq;
-using rpc::SignPenaltyToUsRsp;
-using rpc::SignRemoteCommitmentTxReq;
-using rpc::SignRemoteCommitmentTxRsp;
-using rpc::SignRemoteHTLCToUsReq;
-using rpc::SignRemoteHTLCToUsRsp;
-using rpc::SignRemoteHTLCTxReq;
-using rpc::SignRemoteHTLCTxRsp;
-using rpc::SignWithdrawalTxReq;
-using rpc::SignWithdrawalTxRsp;
-using rpc::Signature;
-using rpc::Signer;
+using remotesigner::ChannelAnnouncementSigReq;
+using remotesigner::ChannelAnnouncementSigRsp;
+using remotesigner::ChannelUpdateSigReq;
+using remotesigner::ChannelUpdateSigRsp;
+using remotesigner::CheckFutureSecretReq;
+using remotesigner::CheckFutureSecretRsp;
+using remotesigner::ECDHReq;
+using remotesigner::ECDHRsp;
+using remotesigner::GetChannelBasepointsReq;
+using remotesigner::GetChannelBasepointsRsp;
+using remotesigner::GetPerCommitmentPointReq;
+using remotesigner::GetPerCommitmentPointRsp;
+using remotesigner::InitHSMReq;
+using remotesigner::InitHSMRsp;
+using remotesigner::KeyLocator;
+using remotesigner::NodeAnnouncementSigReq;
+using remotesigner::NodeAnnouncementSigRsp;
+using remotesigner::PassClientHSMFdReq;
+using remotesigner::PassClientHSMFdRsp;
+using remotesigner::SignCommitmentTxReq;
+using remotesigner::SignCommitmentTxRsp;
+using remotesigner::SignDelayedPaymentToUsReq;
+using remotesigner::SignDelayedPaymentToUsRsp;
+using remotesigner::SignDescriptor;
+using remotesigner::SignInvoiceReq;
+using remotesigner::SignInvoiceRsp;
+using remotesigner::SignLocalHTLCTxReq;
+using remotesigner::SignLocalHTLCTxRsp;
+using remotesigner::SignMutualCloseTxReq;
+using remotesigner::SignMutualCloseTxRsp;
+using remotesigner::SignPenaltyToUsReq;
+using remotesigner::SignPenaltyToUsRsp;
+using remotesigner::SignRemoteCommitmentTxReq;
+using remotesigner::SignRemoteCommitmentTxRsp;
+using remotesigner::SignRemoteHTLCToUsReq;
+using remotesigner::SignRemoteHTLCToUsRsp;
+using remotesigner::SignRemoteHTLCTxReq;
+using remotesigner::SignRemoteHTLCTxRsp;
+using remotesigner::SignWithdrawalTxReq;
+using remotesigner::SignWithdrawalTxRsp;
+using remotesigner::Signature;
+using remotesigner::Signer;
 
 using ::google::protobuf::RepeatedPtrField;
 
@@ -110,7 +110,7 @@ string channel_nonce(struct node_id *peer_id, u64 dbid)
 		string((char const *)&dbid, sizeof(dbid));
 }
 
-u8 ***return_sigs(RepeatedPtrField< ::rpc::Signature > const &isigs)
+u8 ***return_sigs(RepeatedPtrField< ::remotesigner::Signature > const &isigs)
 {
 	u8 ***osigs = NULL;
 	int nsigs = isigs.size();
