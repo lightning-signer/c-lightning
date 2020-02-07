@@ -78,7 +78,7 @@ proxy_stat proxy_handle_get_per_commitment_point(
 proxy_stat proxy_handle_sign_invoice(
 	u5 *u5bytes,
 	u8 *hrpu8,
-	u8 **o_sig);
+	secp256k1_ecdsa_recoverable_signature *o_sig);
 
 proxy_stat proxy_handle_channel_update_sig(
 	struct bitcoin_blkid *chain_hash,

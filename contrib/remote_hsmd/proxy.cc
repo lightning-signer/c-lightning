@@ -21,6 +21,7 @@ extern "C" {
 #include <common/status.h>
 #include <common/utils.h>
 #include <common/utxo.h>
+#include <secp256k1_recovery.h>
 }
 
 #include "contrib/remote_hsmd/remotesigner.pb.h"
@@ -99,6 +100,19 @@ void output_ecdsa_signature(ECDSASignature const &es,
 		o_sig,
 		(const u8*)es.data().data(),
 		es.data().size());
+	assert(ok);
+}
+
+void output_ecdsa_recoverable_signature(ECDSARecoverableSignature const &es,
+			    secp256k1_ecdsa_recoverable_signature *o_sig)
+{
+	assert(es.data().size() == 65);
+	int recid = es.data().data()[64];
+	int ok = secp256k1_ecdsa_recoverable_signature_parse_compact(
+		secp256k1_ctx,
+		o_sig,
+		(const u8*)es.data().data(),
+		recid);
 	assert(ok);
 }
 
@@ -578,7 +592,7 @@ proxy_stat proxy_handle_get_per_commitment_point(
 proxy_stat proxy_handle_sign_invoice(
 	u5 *u5bytes,
 	u8 *hrpu8,
-	u8 **o_sig)
+	secp256k1_ecdsa_recoverable_signature *o_sig)
 {
 	status_debug(
 		"%s:%d %s self_id=%s u5bytes=%s hrpu8=%s",
@@ -597,12 +611,13 @@ proxy_stat proxy_handle_sign_invoice(
 	SignInvoiceReply rsp;
 	Status status = stub->SignInvoice(&context, req, &rsp);
 	if (status.ok()) {
-		*o_sig = tal_dup_arr(tmpctx, u8, (const u8*) rsp.sig().data(),
-				     rsp.sig().size(), 0);
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_ecdsa_recoverable_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_hex(*o_sig, tal_count(*o_sig)).c_str());
+			     dump_secp256k1_ecdsa_recoverable_signature(
+				     o_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
