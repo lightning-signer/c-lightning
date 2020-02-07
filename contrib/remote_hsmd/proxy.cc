@@ -91,6 +91,17 @@ void output_bitcoin_signature(BitcoinSignature const &bs,
 	assert(ok);
 }
 
+void output_ecdsa_signature(ECDSASignature const &es,
+			    secp256k1_ecdsa_signature *o_sig)
+{
+	int ok = secp256k1_ecdsa_signature_parse_der(
+		secp256k1_ctx,
+		o_sig,
+		(const u8*)es.data().data(),
+		es.data().size());
+	assert(ok);
+}
+
 void output_witnesses(RepeatedPtrField<WitnessStack> const &wits,
 		      u8 ****o_sigs)
 {
@@ -658,10 +669,8 @@ proxy_stat proxy_handle_channel_update_sig(
 	ChannelUpdateSigReply rsp;
 	Status status = stub->ChannelUpdateSig(&context, req, &rsp);
 	if (status.ok()) {
-		// FIXME - UNCOMMENT RETURN VALUE WHEN IMPLEMENTED
-		// assert(rsp.sig().size() == sizeof(o_sig->data));
-		// memcpy(o_sig->data, (const u8*) rsp.sig().data(),
-		//        sizeof(o_sig->data));
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_ecdsa_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
@@ -881,15 +890,9 @@ proxy_stat proxy_handle_cannouncement_sig(
 	ChannelAnnouncementSigReply rsp;
 	Status status = stub->ChannelAnnouncementSig(&context, req, &rsp);
 	if (status.ok()) {
-		/* FIXME - Uncomment these when real value returned */
-#if 1
-		/* For now just make valgrind happy */
-		memset(o_node_sig, '\0', sizeof(*o_node_sig));
-		memset(o_bitcoin_sig, '\0', sizeof(*o_bitcoin_sig));
-#else
-		/* FIXME - return these values here */
-		assert(false);
-#endif
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_ecdsa_signature(rsp.node_signature(), o_node_sig);
+		// output_ecdsa_signature(rsp.bitcoin_signature(), o_bitcoin_sig);
 		status_debug("%s:%d %s self_id=%s node_sig=%s bitcoin_sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
@@ -931,14 +934,8 @@ proxy_stat proxy_handle_sign_node_announcement(
 	NodeAnnouncementSigReply rsp;
 	Status status = stub->NodeAnnouncementSig(&context, req, &rsp);
 	if (status.ok()) {
-		/* FIXME - Uncomment these when real value returned */
-#if 1
-		/* For now just make valgrind happy */
-		memset(o_sig, '\0', sizeof(*o_sig));
-#else
-		/* FIXME - return these values here */
-		assert(false);
-#endif
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_ecdsa_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s node_sig=%s bitcoin_sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),

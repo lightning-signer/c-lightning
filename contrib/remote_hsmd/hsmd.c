@@ -1036,11 +1036,10 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 	 * you'll crash if you assume it's there and you're wrong.) */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
-	u8 *** sigs;
 	proxy_stat rv = proxy_handle_sign_commitment_tx(
 		tx, &remote_funding_pubkey, &funding,
 		&c->id, c->dbid,
-		&sigs);
+		&sig);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
@@ -1052,10 +1051,6 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 	g_proxy_impl = PROXY_IMPL_MARSHALED;
 
 #if 0
-	assert(tal_count(sigs) == 1);
-
-	bool ok = signature_from_der(sigs[0][0], tal_count(sigs[0][0]), &sig);
-	assert(ok);
 	status_debug("%s:%d %s: signature: %s",
 		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct bitcoin_signature, &sig));
@@ -1690,11 +1685,10 @@ static struct io_plan *handle_sign_mutual_close_tx(struct io_conn *conn,
 	/* Need input amount for signing */
 	tx->input_amounts[0] = tal_dup(tx, struct amount_sat, &funding);
 
-	u8 *** sigs;
 	proxy_stat rv = proxy_handle_sign_mutual_close_tx(
 		tx, &remote_funding_pubkey, &funding,
 		&c->id, c->dbid,
-		&sigs);
+		&sig);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
