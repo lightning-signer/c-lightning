@@ -685,11 +685,15 @@ proxy_stat proxy_handle_channel_update_sig(
 	Status status = stub->ChannelUpdateSig(&context, req, &rsp);
 	if (status.ok()) {
 		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-		// output_ecdsa_signature(rsp.signature(), o_sig);
+#if 0
+		output_ecdsa_signature(rsp.signature(), o_sig);
+#else
+		memset(o_sig->data, '\0', sizeof(o_sig->data));
+#endif
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_hex(o_sig, sizeof(o_sig->data)).c_str());
+			     dump_secp256k1_ecdsa_signature(o_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -810,10 +814,15 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 	Status status = stub->SignMutualCloseTx(&context, req, &rsp);
 	if (status.ok()) {
 		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-		// output_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s",
+#if 0
+		output_bitcoin_signature(rsp.signature(), o_sig);
+#else
+		memset(o_sig, '\0', sizeof(*o_sig));
+#endif
+		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
-			     dump_node_id(&self_id).c_str());
+			     dump_node_id(&self_id).c_str(),
+			     dump_bitcoin_signature(o_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -861,10 +870,15 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	Status status = stub->SignCommitmentTx(&context, req, &rsp);
 	if (status.ok()) {
 		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-		// output_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s",
+#if 0
+		output_bitcoin_signature(rsp.signature(), o_sig);
+#else
+		memset(o_sig, '\0', sizeof(*o_sig));
+#endif
+		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
-			     dump_node_id(&self_id).c_str());
+			     dump_node_id(&self_id).c_str(),
+			     dump_bitcoin_signature(o_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -906,15 +920,18 @@ proxy_stat proxy_handle_cannouncement_sig(
 	Status status = stub->ChannelAnnouncementSig(&context, req, &rsp);
 	if (status.ok()) {
 		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-		// output_ecdsa_signature(rsp.node_signature(), o_node_sig);
-		// output_ecdsa_signature(rsp.bitcoin_signature(), o_bitcoin_sig);
+#if 0
+		output_ecdsa_signature(rsp.node_signature(), o_node_sig);
+		output_ecdsa_signature(rsp.bitcoin_signature(), o_bitcoin_sig);
+#else
+		memset(o_node_sig->data, '\0', sizeof(o_node_sig->data));
+		memset(o_bitcoin_sig->data, '\0', sizeof(o_bitcoin_sig->data));
+#endif
 		status_debug("%s:%d %s self_id=%s node_sig=%s bitcoin_sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_hex(o_node_sig,
-				      sizeof(o_node_sig->data)).c_str(),
-			     dump_hex(o_bitcoin_sig,
-				      sizeof(o_bitcoin_sig->data)).c_str());
+			     dump_secp256k1_ecdsa_signature(o_node_sig).c_str(),
+			     dump_secp256k1_ecdsa_signature(o_bitcoin_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -950,11 +967,15 @@ proxy_stat proxy_handle_sign_node_announcement(
 	Status status = stub->NodeAnnouncementSig(&context, req, &rsp);
 	if (status.ok()) {
 		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-		// output_ecdsa_signature(rsp.signature(), o_sig);
+#if 0
+		output_ecdsa_signature(rsp.signature(), o_sig);
+#else
+		memset(o_sig->data, '\0', sizeof(o_sig->data));
+#endif
 		status_debug("%s:%d %s self_id=%s node_sig=%s bitcoin_sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_hex(o_sig, sizeof(o_sig->data)).c_str());
+			     dump_secp256k1_ecdsa_signature(o_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -1061,12 +1082,15 @@ proxy_stat proxy_handle_sign_remote_htlc_tx(
 	Status status = stub->SignRemoteHTLCTx(&context, req, &rsp);
 	if (status.ok()) {
 		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-		// output_bitcoin_signature(rsp.signature(), o_sig);
+#if 0
+		output_bitcoin_signature(rsp.signature(), o_sig);
+#else
+		memset(o_sig, '\0', sizeof(*o_sig));
+#endif
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_bitcoin_signature(o_sig).c_str()
-			);
+			     dump_bitcoin_signature(o_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -1115,12 +1139,15 @@ proxy_stat proxy_handle_sign_delayed_payment_to_us(
 	Status status = stub->SignDelayedPaymentToUs(&context, req, &rsp);
 	if (status.ok()) {
 		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-		// output_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s privkey=%s",
+#if 0
+		output_bitcoin_signature(rsp.signature(), o_sig);
+#else
+		memset(o_sig, '\0', sizeof(*o_sig));
+#endif
+		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_bitcoin_signature(o_sig).c_str()
-			);
+			     dump_bitcoin_signature(o_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -1168,12 +1195,15 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 	Status status = stub->SignRemoteHTLCToUs(&context, req, &rsp);
 	if (status.ok()) {
 		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-		// output_bitcoin_signature(rsp.signature(), o_sig);
+#if 0
+		output_bitcoin_signature(rsp.signature(), o_sig);
+#else
+		memset(o_sig, '\0', sizeof(*o_sig));
+#endif
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_bitcoin_signature(o_sig).c_str()
-			);
+			     dump_bitcoin_signature(o_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
@@ -1224,12 +1254,15 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 	Status status = stub->SignPenaltyToUs(&context, req, &rsp);
 	if (status.ok()) {
 		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-		// output_bitcoin_signature(rsp.signature(), o_sig);
+#if 0
+		output_bitcoin_signature(rsp.signature(), o_sig);
+#else
+		memset(o_sig, '\0', sizeof(*o_sig));
+#endif
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_bitcoin_signature(o_sig).c_str()
-			);
+			     dump_bitcoin_signature(o_sig).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
