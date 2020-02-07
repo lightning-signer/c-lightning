@@ -40,51 +40,9 @@ using grpc::ClientContext;
 using grpc::Status;
 using grpc::StatusCode;
 
-using remotesigner::ChannelAnnouncementSigRequest;
-using remotesigner::ChannelAnnouncementSigReply;
-using remotesigner::ChannelUpdateSigRequest;
-using remotesigner::ChannelUpdateSigReply;
-using remotesigner::CheckFutureSecretRequest;
-using remotesigner::CheckFutureSecretReply;
-using remotesigner::ECDHRequest;
-using remotesigner::ECDHReply;
-using remotesigner::GetChannelBasepointsRequest;
-using remotesigner::GetChannelBasepointsReply;
-using remotesigner::GetPerCommitmentPointRequest;
-using remotesigner::GetPerCommitmentPointReply;
-using remotesigner::InitRequest;
-using remotesigner::InitReply;
-using remotesigner::KeyLocator;
-using remotesigner::NodeAnnouncementSigRequest;
-using remotesigner::NodeAnnouncementSigReply;
-using remotesigner::NewChannelRequest;
-using remotesigner::NewChannelReply;
-using remotesigner::SignCommitmentTxRequest;
-using remotesigner::SignCommitmentTxReply;
-using remotesigner::SignDelayedPaymentToUsRequest;
-using remotesigner::SignDelayedPaymentToUsReply;
-using remotesigner::SignDescriptor;
-using remotesigner::SignInvoiceRequest;
-using remotesigner::SignInvoiceReply;
-using remotesigner::SignLocalHTLCTxRequest;
-using remotesigner::SignLocalHTLCTxReply;
-using remotesigner::SignMutualCloseTxRequest;
-using remotesigner::SignMutualCloseTxReply;
-using remotesigner::SignPenaltyToUsRequest;
-using remotesigner::SignPenaltyToUsReply;
-using remotesigner::SignRemoteCommitmentTxRequest;
-using remotesigner::SignRemoteCommitmentTxReply;
-using remotesigner::SignRemoteHTLCToUsRequest;
-using remotesigner::SignRemoteHTLCToUsReply;
-using remotesigner::SignRemoteHTLCTxRequest;
-using remotesigner::SignRemoteHTLCTxReply;
-using remotesigner::SignFundingTxRequest;
-using remotesigner::SignFundingTxReply;
-using remotesigner::Signature;
-using remotesigner::Signer;
-using remotesigner::Transaction;
-
 using ::google::protobuf::RepeatedPtrField;
+
+using namespace remotesigner;
 
 namespace {
 unique_ptr<Signer::Stub> stub;
@@ -123,14 +81,25 @@ string channel_nonce(struct node_id *peer_id, u64 dbid)
 		string((char const *)&dbid, sizeof(dbid));
 }
 
-u8 ***return_sigs(RepeatedPtrField< ::remotesigner::Signature > const &isigs)
+void output_bitcoin_signature(BitcoinSignature const &bs,
+			      struct bitcoin_signature *o_sig)
+{
+	bool ok = signature_from_der(
+		(const u8*)bs.data().data(),
+		bs.data().size(),
+		o_sig);
+	assert(ok);
+}
+
+void output_witnesses(RepeatedPtrField<WitnessStack> const &wits,
+		      u8 ****o_sigs)
 {
 	u8 ***osigs = NULL;
-	int nsigs = isigs.size();
+	int nsigs = wits.size();
 	if (nsigs > 0) {
 		osigs = tal_arrz(tmpctx, u8**, nsigs);
 		for (size_t ii = 0; ii < nsigs; ++ii) {
-			Signature const &sig = isigs[ii];
+			WitnessStack const &sig = wits[ii];
 			int nelem = sig.item_size();
 			osigs[ii] = tal_arrz(osigs, u8*, nelem);
 			for (size_t jj = 0; jj < nelem; ++jj) {
@@ -141,7 +110,7 @@ u8 ***return_sigs(RepeatedPtrField< ::remotesigner::Signature > const &isigs)
 			}
 		}
 	}
-	return osigs;
+	*o_sigs = osigs;
 }
 
 bool return_pubkey(const string &i_pubkey, struct pubkey *o_pubkey)
@@ -447,7 +416,7 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	SignFundingTxReply rsp;
 	Status status = stub->SignFundingTx(&context, req, &rsp);
 	if (status.ok()) {
-		*o_sigs = return_sigs(rsp.sigs());
+		output_witnesses(rsp.witnesses(), o_sigs);
 		status_debug("%s:%d %s self_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str());
@@ -472,7 +441,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct witscript const **output_witscripts,
 	const struct pubkey *remote_per_commit,
 	bool option_static_remotekey,
-	u8 ****o_sigs)
+	struct bitcoin_signature *o_sig)
 {
 	status_debug(
 		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
@@ -516,7 +485,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	SignRemoteCommitmentTxReply rsp;
 	Status status = stub->SignRemoteCommitmentTx(&context, req, &rsp);
 	if (status.ok()) {
-		*o_sigs = return_sigs(rsp.sigs());
+		output_bitcoin_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str());
@@ -788,7 +757,7 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 	struct amount_sat *funding,
 	struct node_id *peer_id,
 	u64 dbid,
-	u8 ****o_sigs)
+	struct bitcoin_signature *o_sig)
 {
 	status_debug(
 		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
@@ -816,7 +785,8 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 	SignMutualCloseTxReply rsp;
 	Status status = stub->SignMutualCloseTx(&context, req, &rsp);
 	if (status.ok()) {
-		*o_sigs = return_sigs(rsp.sigs());
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_bitcoin_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str());
@@ -838,7 +808,7 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	struct amount_sat *funding,
 	struct node_id *peer_id,
 	u64 dbid,
-	u8 ****o_sigs)
+	struct bitcoin_signature *o_sig)
 {
 	status_debug(
 		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
@@ -866,7 +836,8 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	SignCommitmentTxReply rsp;
 	Status status = stub->SignCommitmentTx(&context, req, &rsp);
 	if (status.ok()) {
-		*o_sigs = return_sigs(rsp.sigs());
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_bitcoin_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str());
@@ -1077,13 +1048,8 @@ proxy_stat proxy_handle_sign_remote_htlc_tx(
 	SignRemoteHTLCTxReply rsp;
 	Status status = stub->SignRemoteHTLCTx(&context, req, &rsp);
 	if (status.ok()) {
-#if 1
-		/* For now just make valgrind happy */
-		memset(o_sig->s.data, '\0', sizeof(o_sig->s.data));
-#else
-		assert(rsp.sig().length() == sizeof(o_sig->s.data));
-		memcpy(o_sig->s.data, rsp.sig().data(), sizeof(o_sig->s.data));
-#endif
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_bitcoin_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
@@ -1136,13 +1102,8 @@ proxy_stat proxy_handle_sign_delayed_payment_to_us(
 	SignDelayedPaymentToUsReply rsp;
 	Status status = stub->SignDelayedPaymentToUs(&context, req, &rsp);
 	if (status.ok()) {
-#if 1
-		/* For now just make valgrind happy */
-		memset(o_sig, '\0', sizeof(*o_sig));
-#else
-		/* FIXME - return these values here */
-		assert(false);
-#endif
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_bitcoin_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s privkey=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
@@ -1194,13 +1155,8 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 	SignRemoteHTLCToUsReply rsp;
 	Status status = stub->SignRemoteHTLCToUs(&context, req, &rsp);
 	if (status.ok()) {
-#if 1
-		/* For now just make valgrind happy */
-		memset(o_sig->s.data, '\0', sizeof(o_sig->s.data));
-#else
-		assert(rsp.sig().length() == sizeof(o_sig->s.data));
-		memcpy(o_sig->s.data, rsp.sig().data(), sizeof(o_sig->s.data));
-#endif
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_bitcoin_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
@@ -1255,13 +1211,8 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 	SignPenaltyToUsReply rsp;
 	Status status = stub->SignPenaltyToUs(&context, req, &rsp);
 	if (status.ok()) {
-#if 1
-		/* For now just make valgrind happy */
-		memset(o_sig->s.data, '\0', sizeof(o_sig->s.data));
-#else
-		assert(rsp.sig().length() == sizeof(o_sig->s.data));
-		memcpy(o_sig->s.data, rsp.sig().data(), sizeof(o_sig->s.data));
-#endif
+		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
+		// output_bitcoin_signature(rsp.signature(), o_sig);
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),

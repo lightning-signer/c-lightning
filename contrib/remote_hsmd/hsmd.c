@@ -1139,14 +1139,13 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 		      SIGHASH_ALL,
 		      &sig);
 */
-	u8 *** sigs;
 	proxy_stat rv = proxy_handle_sign_remote_commitment_tx(
 		tx, &remote_funding_pubkey, &funding,
 		&c->id, c->dbid,
 		(const struct witscript **) output_witscripts,
 		&remote_per_commit,
 		option_static_remotekey,
-		&sigs);
+		&sig);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
@@ -1155,11 +1154,8 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in,
 				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
-	assert(tal_count(sigs) == 1);
 	g_proxy_impl = PROXY_IMPL_COMPLETE;
 
-	bool ok = signature_from_der(sigs[0][0], tal_count(sigs[0][0]), &sig);
-	assert(ok);
 	status_debug("%s:%d %s: signature: %s",
 		     __FILE__, __LINE__, __FUNCTION__,
 		     type_to_string(tmpctx, struct bitcoin_signature, &sig));
