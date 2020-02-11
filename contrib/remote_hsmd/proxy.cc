@@ -704,21 +704,20 @@ proxy_stat proxy_handle_channel_update_sig(
 		dump_node_id(&self_id).c_str(),
 		dump_hex(channel_update, tal_count(channel_update)).c_str());
 
+	/* Skip the portion of the channel_update that we don't sign */
+	size_t offset = 2 + 64;	/* sizeof(type) + sizeof(signature) */
+	size_t cusz = tal_count(channel_update);
+
 	last_message = "";
 	SignChannelUpdateRequest req;
 	marshal_node_id(&self_id, req.mutable_self_node_id());
-	req.set_channel_update(channel_update, tal_count(channel_update));
+	req.set_channel_update(channel_update + offset, cusz - offset);
 
 	ClientContext context;
 	SignChannelUpdateReply rsp;
 	Status status = stub->SignChannelUpdate(&context, req, &rsp);
 	if (status.ok()) {
-		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-#if 0
 		output_ecdsa_signature(rsp.signature(), o_sig);
-#else
-		memset(o_sig->data, '\0', sizeof(o_sig->data));
-#endif
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
