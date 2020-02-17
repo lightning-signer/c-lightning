@@ -1043,12 +1043,7 @@ proxy_stat proxy_handle_sign_remote_htlc_tx(
 	SignatureReply rsp;
 	Status status = stub->SignRemoteHTLCTx(&context, req, &rsp);
 	if (status.ok()) {
-		// FIXME - UNCOMMENT WHEN SERVER IMPLEMENTS:
-#if 0
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
-#else
-		memset(o_sig, '\0', sizeof(*o_sig));
-#endif
 		status_debug("%s:%d %s self_id=%s sig=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),

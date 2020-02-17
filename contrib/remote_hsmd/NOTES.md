@@ -31,14 +31,19 @@ VALGRIND=0 \
 SLOW_MACHINE=1 \
 SUBDAEMON='hsmd:remote_hsmd' \
 pytest \
-tests/test_connection.py::test_balance \
+$THETEST \
 -v --timeout=550 --timeout_method=thread -x -s \
 |& tee log
 ```
 
+Some popular tests:
+
+    export THETEST=tests/test_connection.py::test_balance
+    export THETEST=tests/test_pay.py::test_sendpay
+
+
 Tests remote_commitment:
 
-    tests/test_pay.py::test_sendpay
 
 rust-lightning-signer
 ----------------------------------------------------------------

@@ -6,6 +6,7 @@ API Coverage
 
 # intermittent
 tests/test_connection.py::test_funding_cancel_race
+tests/test_misc.py::test_bad_onion_immediate_peer
 
 ## Proxy Scoreboard
 
