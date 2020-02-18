@@ -40,6 +40,7 @@ Some popular tests:
 
     export THETEST=tests/test_connection.py::test_balance
     export THETEST=tests/test_pay.py::test_sendpay
+    export THETEST=tests/test_pay.py::test_pay
 
 
 Tests remote_commitment:
