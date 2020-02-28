@@ -42,6 +42,10 @@ Some popular tests:
     export THETEST=tests/test_pay.py::test_sendpay
     export THETEST=tests/test_pay.py::test_pay
     export THETEST=tests/test_closing.py::test_onchain_different_fees
+    export THETEST=tests/test_closing.py::test_onchain_multihtlc_our_unilateral 
+    export THETEST=tests/test_closing.py::test_onchain_multihtlc_their_unilateral 
+    export THETEST=tests/test_closing.py::test_permfail_htlc_in 
+    export THETEST=tests/test_closing.py::test_permfail_htlc_out 
 
 Tests remote_commitment:
 
