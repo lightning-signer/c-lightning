@@ -62,8 +62,8 @@ Some popular tests:
     export THETEST=tests/test_closing.py::test_penalty_outhtlc
     export THETEST=tests/test_closing.py::test_closing
 
-Tests remote_commitment:
-
+    # sign-mutual-close
+    export THETEST=tests/test_closing.py::test_closing
 
 rust-lightning-signer
 ----------------------------------------------------------------
