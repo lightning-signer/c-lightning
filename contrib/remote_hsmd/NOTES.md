@@ -68,6 +68,9 @@ Some popular tests:
     # check-future-secret
     export THETEST=tests/test_connection.py::test_dataloss_protection
 
+    # sign-channel-announcement
+    export THETEST=tests/test_closing.py::test_closing_different_fees
+
 rust-lightning-signer
 ----------------------------------------------------------------
 
