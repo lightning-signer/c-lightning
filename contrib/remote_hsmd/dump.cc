@@ -7,6 +7,7 @@ extern "C" {
 #include <bitcoin/signature.h>
 #include <bitcoin/tx.h>
 #include <common/derive_basepoints.h>
+#include <common/hash_u5.h>
 #include <common/node_id.h>
 #include <common/status.h>
 #include <common/utils.h>
@@ -14,6 +15,7 @@ extern "C" {
 #include <secp256k1_recovery.h>
 }
 
+#include "contrib/remote_hsmd/proxy.h"
 #include "contrib/remote_hsmd/dump.h"
 
 using std::ostringstream;
@@ -75,23 +77,30 @@ string dump_pubkey(const struct pubkey *kp)
 	return dump_hex(kp->pubkey.data, sizeof(kp->pubkey.data));
 }
 
-string dump_witnesses(const u8 ***wp)
+string dump_witnesses(const struct witness *wp)
 {
 	ostringstream ostrm;
  	ostrm << "[";
 	for (size_t input_ndx = 0; input_ndx < tal_count(wp); ++input_ndx) {
 		if (input_ndx != 0)
 			ostrm << " ";
-		ostrm << "[";
-		u8 const **stack = wp[input_ndx];
-		for (size_t item_ndx = 0; item_ndx < tal_count(stack);
-		     ++item_ndx) {
-			if (item_ndx != 0)
-				ostrm << " ";
-			u8 const *item = stack[item_ndx];
-			ostrm << dump_hex(item, tal_count(item));
+		if (wp[input_ndx].stack != NULL) {
+			/* This is a segregated witness stack. */
+			ostrm << "[";
+			u8 const **stack = (u8 const **) wp[input_ndx].stack;
+			for (size_t item_ndx = 0; item_ndx < tal_count(stack);
+			     ++item_ndx) {
+				if (item_ndx != 0)
+					ostrm << " ";
+				u8 const *item = stack[item_ndx];
+				ostrm << dump_hex(item, tal_count(item));
+			}
+			ostrm << "]";
+		} else {
+			/* This is a legacy script sig. */
+			u8 const *scriptsig = wp[input_ndx].scriptsig;
+			ostrm << dump_hex(scriptsig, tal_count(scriptsig));
 		}
-		ostrm << "]";
 	}
  	ostrm << "]";
 	return ostrm.str();

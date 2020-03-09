@@ -757,7 +757,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
 	}
-	g_proxy_impl = PROXY_IMPL_MARSHALED;
+	g_proxy_impl = PROXY_IMPL_IGNORE;
 
 	/*~ We don't need the hsm_secret encryption key anymore.
 	 * Note that sodium_munlock() also zeroes the memory. */
@@ -1021,7 +1021,7 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in,
 				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
-	g_proxy_impl = PROXY_IMPL_MARSHALED;
+	g_proxy_impl = PROXY_IMPL_COMPLETE;
 
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_commitment_tx_reply(NULL, &sig)));
@@ -1171,7 +1171,7 @@ static struct io_plan *handle_sign_delayed_payment_to_us(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in,
 				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
-	g_proxy_impl = PROXY_IMPL_MARSHALED;
+	g_proxy_impl = PROXY_IMPL_COMPLETE;
 
 	return req_reply(conn, c, take(towire_hsm_sign_tx_reply(NULL, &sig)));
 }
@@ -1655,11 +1655,11 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			 cast_const2(const struct utxo **, utxos), outputs,
 			 &changekey, change_out, NULL, NULL, nlocktime);
 
-	u8 *** sigs;
+	struct witness *witnesses;
 	proxy_stat rv = proxy_handle_sign_withdrawal_tx(
 		&c->id, c->dbid, &satoshi_out,
 		&change_out, change_keyindex,
-		outputs, utxos, tx, &sigs);
+		outputs, utxos, tx, &witnesses);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
@@ -1668,34 +1668,46 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in,
 				   "proxy_%s error: %s", __FUNCTION__,
 				   proxy_last_message());
+	g_proxy_impl = PROXY_IMPL_COMPLETE;
 
-	/* FIXME - There are two things we can't do remotely yet:
-	 * 1. Handle P2SH inputs.
-	 * 2. Handle inputs w/ close_info.
-	 */
-	bool demure = false;
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++)
-		if (utxos[ii]->is_p2sh || utxos[ii]->close_info)
-			demure = true;
-	if (!demure) {
-		/* Sign w/ the remote lightning-signer. */
-		g_proxy_impl = PROXY_IMPL_COMPLETE;
-		assert(tal_count(sigs) == tal_count(utxos));
-		for (size_t ii = 0; ii < tal_count(sigs); ++ii) {
-			assert(tal_count(sigs[ii]) == 2);
-
+	assert(tal_count(witnesses) == tal_count(utxos));
+	for (size_t ii = 0; ii < tal_count(witnesses); ++ii) {
+		if (witnesses[ii].stack != NULL) {
+			/* This is a segregated witness stack. */
+			assert(tal_count(witnesses[ii].stack) == 2);
 			u8 **witness = tal_arr(tx, u8 *, 2);
-			witness[0] = tal_dup_arr(witness, u8, sigs[ii][0],
-						 tal_count(sigs[ii][0]), 0);
-			witness[1] = tal_dup_arr(witness, u8, sigs[ii][1],
-						 tal_count(sigs[ii][1]), 0);
+			witness[0] = tal_dup_arr(
+				witness, u8, witnesses[ii].stack[0],
+				tal_count(witnesses[ii].stack[0]), 0);
+			witness[1] = tal_dup_arr(
+				witness, u8, witnesses[ii].stack[1],
+				tal_count(witnesses[ii].stack[1]), 0);
+			bitcoin_tx_input_set_witness(tx, ii, take(witness));
+		} else {
+			/* This is a legacy script sig. */
+			/* Figure out keys to spend this. */
+			struct pubkey inkey;
+			u8 *script;
+			const struct utxo *in = utxos[ii];
+			hsm_key_for_utxo(NULL, &inkey, in);
+			/* For P2SH-wrapped Segwit, the (implied) redeemScript
+			 * is defined in BIP141 */
+			script = bitcoin_scriptsig_p2sh_p2wpkh(tx, &inkey);
+			bitcoin_tx_input_set_script(tx, ii, script);
+
+			assert(tal_count(witnesses[ii].scriptsig) > 0);
+			u8 **witness = tal_arr(tx, u8 *, 2);
+			witness[0] = tal_dup_arr(
+				witness, u8, witnesses[ii].scriptsig,
+				tal_count(witnesses[ii].scriptsig), 0);
+			u8 der[PUBKEY_CMPR_LEN];
+			pubkey_to_der(der, &inkey);
+			witness[1] =
+				tal_dup_arr(witness, u8, der, sizeof(der), 0);
 			bitcoin_tx_input_set_witness(tx, ii, take(witness));
 		}
-	} else {
-		/* It's P2SH, need to sign here */
-		g_proxy_impl = PROXY_IMPL_MARSHALED;
-		sign_all_inputs(tx, utxos);
 	}
+
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_withdrawal_reply(NULL, tx)));
 }
@@ -2048,10 +2060,9 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 		assert(false);
 		break;
 	case PROXY_IMPL_MARSHALED:
-		/*
 		fprintf(stderr, "PROXY_IMPL_MARSHALED %s\n",
 			hsm_wire_type_name(g_proxy_last));
-		*/
+		assert(false);
 		break;
 	case PROXY_IMPL_COMPLETE:
 	case PROXY_IMPL_IGNORE:

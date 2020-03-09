@@ -74,6 +74,17 @@ Some popular tests:
     # sign-channel-announcement
     export THETEST=tests/test_closing.py::test_closing_different_fees
 
+    # sign-funding-tx-p2sh-closeinfo 
+    # p2sh
+    export THETEST=tests/test_connection.py::test_funding_by_utxos
+    
+    export THETEST=tests/test_closing.py::test_onchain_first_commit
+    export THETEST=tests/test_closing.py::test_permfail
+    export THETEST=tests/test_closing.py::test_option_upfront_shutdown_script
+    export THETEST=tests/test_connection.py::test_disconnect_funder
+    export THETEST=tests/test_connection.py::test_disconnect_fundee
+    export THETEST=tests/test_connection.py::test_reconnect_signed
+    
 rust-lightning-signer
 ----------------------------------------------------------------
 

@@ -23,6 +23,12 @@ typedef enum proxy_status proxy_stat;
 #define PROXY_TRANSIENT(rv)	((rv) >= 32 && (rv) < 100)
 #define PROXY_PERMANENT(rv)	((rv) >= 100)
 
+struct witness {
+	/* Each witness is either a ScriptSig or a Stack */
+	u8 *scriptsig;
+	u8 **stack;
+};
+
 char const *proxy_last_message(void);
 
 void proxy_setup(void);
@@ -55,7 +61,7 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	struct bitcoin_tx_output **outputs,
 	struct utxo **utxos,
 	struct bitcoin_tx *tx,
-	u8 ****o_sigs);
+	struct witness **o_witnesses);
 
 proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct bitcoin_tx *tx,

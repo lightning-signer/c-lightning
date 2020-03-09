@@ -111,7 +111,7 @@ string serialized_tx(struct bitcoin_tx const *tx, bool bip144)
 }
 
 void marshal_channel_nonce(struct node_id *peer_id, u64 dbid,
-			     ChannelNonce *o_np)
+			   ChannelNonce *o_np)
 {
 	o_np->set_data(string((char const *)peer_id->k, sizeof(peer_id->k)) +
 		       string((char const *)&dbid, sizeof(dbid)));
@@ -173,6 +173,20 @@ void marshal_single_input_tx(struct bitcoin_tx const *tx,
 	}
 }
 
+void marshal_key_locator(struct utxo const *up, KeyLocator *o_kl)
+{
+	o_kl->set_key_index(up->keyindex);
+	if (up->close_info) {
+		UnilateralCloseInfo *uci = o_kl->mutable_close_info();
+		marshal_channel_nonce(&up->close_info->peer_id,
+				      up->close_info->channel_id,
+				      uci->mutable_channel_nonce());
+		if (up->close_info->commitment_point)
+			marshal_pubkey(up->close_info->commitment_point,
+				       uci->mutable_per_commitment_point());
+	}
+}
+
 void unmarshal_secret(Secret const &ss, struct secret *o_sp)
 {
 	assert(ss.data().size() == sizeof(o_sp->data));
@@ -227,26 +241,42 @@ void unmarshal_ecdsa_recoverable_signature(ECDSARecoverableSignature const &es,
 	assert(ok);
 }
 
-void unmarshal_witnesses(RepeatedPtrField<WitnessStack> const &wits,
-		      u8 ****o_sigs)
+void unmarshal_witnesses(RepeatedPtrField<Witness> const &wits,
+			 struct witness **o_witnesses)
 {
-	u8 ***osigs = NULL;
+	struct witness *owitnesses = NULL;
 	int nsigs = wits.size();
 	if (nsigs > 0) {
-		osigs = tal_arrz(tmpctx, u8**, nsigs);
+		owitnesses = tal_arrz(tmpctx, struct witness, nsigs);
 		for (size_t ii = 0; ii < nsigs; ++ii) {
-			WitnessStack const &sig = wits[ii];
-			int nelem = sig.item_size();
-			osigs[ii] = tal_arrz(osigs, u8*, nelem);
-			for (size_t jj = 0; jj < nelem; ++jj) {
-				string const &elem = sig.item(jj);
-				size_t elen = elem.size();
-				osigs[ii][jj] = tal_arr(osigs[ii], u8, elen);
-				memcpy(osigs[ii][jj], &elem[0], elen);
+			Witness const &ww = wits[ii];
+			if (ww.stack_size() > 0) {
+				/* This is a witness stack value */
+				int nelem = ww.stack_size();
+				owitnesses[ii].scriptsig = NULL;
+				owitnesses[ii].stack =
+					tal_arrz(owitnesses, u8*, nelem);
+				for (size_t jj = 0; jj < nelem; ++jj) {
+					string const &elem = ww.stack(jj);
+					size_t elen = elem.size();
+					owitnesses[ii].stack[jj] =
+						tal_arr(owitnesses[ii].stack,
+							u8, elen);
+					memcpy(owitnesses[ii].stack[jj],
+					       elem.data(), elen);
+				}
+			} else {
+				/* This is a script sig value */
+				size_t elen = ww.script_sig().size();
+				owitnesses[ii].stack = NULL;
+				owitnesses[ii].scriptsig =
+					tal_arr(owitnesses, u8, elen);
+				memcpy(owitnesses[ii].scriptsig,
+				       ww.script_sig().data(), elen);
 			}
 		}
 	}
-	*o_sigs = osigs;
+	*o_witnesses = owitnesses;
 }
 
 /* Copied from ccan/mem/mem.h which the c++ compiler doesn't like */
@@ -397,8 +427,25 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	struct bitcoin_tx_output **outputs,
 	struct utxo **utxos,
 	struct bitcoin_tx *tx,
-	u8 ****o_sigs)
+	struct witness **o_witnesses)
 {
+	fprintf(stderr,
+		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
+		"satoshi_out=%" PRIu64 " change_out=%" PRIu64 " "
+		"change_keyindex=%u utxos=%s outputs=%s tx=%s\n",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		satoshi_out->satoshis,
+		change_out->satoshis,
+		change_keyindex,
+		dump_utxos((const struct utxo **)utxos).c_str(),
+		dump_bitcoin_tx_outputs(
+			(const struct bitcoin_tx_output **)outputs).c_str(),
+		dump_tx(tx).c_str()
+		);
+
 	status_debug(
 		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
 		"satoshi_out=%" PRIu64 " change_out=%" PRIu64 " "
@@ -424,22 +471,20 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	req.mutable_tx()->set_raw_tx_bytes(serialized_tx(tx, true));
 	assert(tx->wtx->num_inputs == tal_count(utxos));
 	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-	 	const struct utxo *in = utxos[ii];
-		/* Fails in tests/test_closing.py::test_onchain_first_commit */
-		/* assert(!in->is_p2sh); */
+		const struct utxo *in = utxos[ii];
 		SignDescriptor *desc = req.mutable_tx()->add_input_descs();
-		desc->mutable_key_loc()->set_key_index(in->keyindex);
+		marshal_key_locator(in, desc->mutable_key_loc());
 		desc->mutable_output()->set_value(in->amount.satoshis);
 	}
 
 	/* We expect exactly two total ouputs, with one non-change. */
 	/* FIXME - next assert fails in
 	   tests/test_closing.py::test_onchain_unwatch with num_outputs == 1
-        assert(tx->wtx->num_outputs == 2);
+	assert(tx->wtx->num_outputs == 2);
 	*/
 	assert(tal_count(outputs) == 1);
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
-	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
+		const struct wally_tx_output *out = &tx->wtx->outputs[ii];
 		SignDescriptor *desc = req.mutable_tx()->add_output_descs();
 		/* Does this output match the funding output? */
 		if (memeq(out->script, out->script_len,
@@ -457,15 +502,23 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	SignFundingTxReply rsp;
 	Status status = stub->SignFundingTx(&context, req, &rsp);
 	if (status.ok()) {
-		unmarshal_witnesses(rsp.witnesses(), o_sigs);
+		unmarshal_witnesses(rsp.witnesses(), o_witnesses);
 		status_debug("%s:%d %s self_id=%s witnesses=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_witnesses((u8 const ***) *o_sigs).c_str());
+			     dump_witnesses(*o_witnesses).c_str());
+		fprintf(stderr, "%s:%d %s self_id=%s witnesses=%s\n",
+			__FILE__, __LINE__, __FUNCTION__,
+			dump_node_id(&self_id).c_str(),
+			dump_witnesses(*o_witnesses).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
 		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		fprintf(stderr, "%s:%d %s: self_id=%s %s\n",
 			       __FILE__, __LINE__, __FUNCTION__,
 			       dump_node_id(&self_id).c_str(),
 			       status.error_message().c_str());
@@ -541,6 +594,15 @@ proxy_stat proxy_handle_get_per_commitment_point(
 	struct pubkey *o_per_commitment_point,
 	struct secret **o_old_secret)
 {
+	fprintf(stderr,
+		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
+		"n=%" PRIu64 "\n",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		n
+		);
 	status_debug(
 		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
 		"n=%" PRIu64 "",
@@ -562,13 +624,20 @@ proxy_stat proxy_handle_get_per_commitment_point(
 	Status status = stub->GetPerCommitmentPoint(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_pubkey(rsp.per_commitment_point(),
-			      o_per_commitment_point);
+				 o_per_commitment_point);
 		if (rsp.old_secret().data().empty()) {
 			*o_old_secret = NULL;
 		} else {
 			*o_old_secret = tal_arr(tmpctx, struct secret, 1);
 			unmarshal_secret(rsp.old_secret(), *o_old_secret);
 		}
+		fprintf(stderr, "%s:%d %s self_id=%s "
+			"per_commitment_point=%s old_secret=%s\n",
+			__FILE__, __LINE__, __FUNCTION__,
+			dump_node_id(&self_id).c_str(),
+			dump_pubkey(o_per_commitment_point).c_str(),
+			(*o_old_secret ?
+			 dump_secret(*o_old_secret).c_str() : "<none>"));
 		status_debug("%s:%d %s self_id=%s "
 			     "per_commitment_point=%s old_secret=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
@@ -579,6 +648,10 @@ proxy_stat proxy_handle_get_per_commitment_point(
 		last_message = "success";
 		return PROXY_OK;
 	} else {
+		fprintf(stderr, "%s:%d %s: self_id=%s %s\n",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
 		status_unusual("%s:%d %s: self_id=%s %s",
 			       __FILE__, __LINE__, __FUNCTION__,
 			       dump_node_id(&self_id).c_str(),
