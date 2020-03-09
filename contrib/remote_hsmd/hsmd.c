@@ -1672,18 +1672,7 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 
 	assert(tal_count(witnesses) == tal_count(utxos));
 	for (size_t ii = 0; ii < tal_count(witnesses); ++ii) {
-		if (witnesses[ii].stack != NULL) {
-			/* This is a segregated witness stack. */
-			assert(tal_count(witnesses[ii].stack) == 2);
-			u8 **witness = tal_arr(tx, u8 *, 2);
-			witness[0] = tal_dup_arr(
-				witness, u8, witnesses[ii].stack[0],
-				tal_count(witnesses[ii].stack[0]), 0);
-			witness[1] = tal_dup_arr(
-				witness, u8, witnesses[ii].stack[1],
-				tal_count(witnesses[ii].stack[1]), 0);
-			bitcoin_tx_input_set_witness(tx, ii, take(witness));
-		} else {
+		if (witnesses[ii].scriptsig != NULL) {
 			/* This is a legacy script sig. */
 			/* Figure out keys to spend this. */
 			struct pubkey inkey;
@@ -1704,6 +1693,18 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			pubkey_to_der(der, &inkey);
 			witness[1] =
 				tal_dup_arr(witness, u8, der, sizeof(der), 0);
+			bitcoin_tx_input_set_witness(tx, ii, take(witness));
+		} else {
+			/* This is a segregated witness stack. */
+			assert(tal_count(witnesses[ii].stack) == 2);
+			u8 **witness = tal_arr(tx, u8 *, 2);
+			witness[0] = tal_dup_arr(
+				witness, u8, witnesses[ii].stack[0],
+				tal_count(witnesses[ii].stack[0]), 0);
+			witness[1] = tal_dup_arr(
+				witness, u8, witnesses[ii].stack[1],
+				tal_count(witnesses[ii].stack[1]), 0);
+			bitcoin_tx_input_set_script(tx, ii, NULL);
 			bitcoin_tx_input_set_witness(tx, ii, take(witness));
 		}
 	}

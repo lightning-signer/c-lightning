@@ -475,6 +475,7 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 		SignDescriptor *desc = req.mutable_tx()->add_input_descs();
 		marshal_key_locator(in, desc->mutable_key_loc());
 		desc->mutable_output()->set_value(in->amount.satoshis);
+		desc->set_is_p2sh(in->is_p2sh);
 	}
 
 	/* We expect exactly two total ouputs, with one non-change. */
