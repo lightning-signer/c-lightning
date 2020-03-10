@@ -1310,4 +1310,11 @@ proxy_stat proxy_handle_sign_node_announcement(
 	}
 }
 
+// FIXME - This routine allows us to pretty print the tx to stderr
+// from C code.  Probably should remove it in production ...
+void print_tx(char const *tag, struct bitcoin_tx const *tx)
+{
+	fprintf(stderr, "%s: tx=%s\n", tag, dump_tx(tx).c_str());
+}
+
 } /* extern "C" */

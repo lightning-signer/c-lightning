@@ -1638,6 +1638,7 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 	u32 change_keyindex;
 	struct utxo **utxos;
 	struct bitcoin_tx *tx;
+	struct bitcoin_tx *tx2;	// REF
 	struct pubkey changekey;
 	struct bitcoin_tx_output **outputs;
 	u32 nlocktime;
@@ -1708,6 +1709,15 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 			bitcoin_tx_input_set_witness(tx, ii, take(witness));
 		}
 	}
+
+	tx2 = withdraw_tx(tmpctx, c->chainparams,
+			  cast_const2(const struct utxo **, utxos), outputs,
+			  &changekey, change_out, NULL, NULL, nlocktime);
+
+	sign_all_inputs(tx2, utxos);
+
+	print_tx("REF", tx2);
+	print_tx("RLS", tx);
 
 	return req_reply(conn, c,
 			 take(towire_hsm_sign_withdrawal_reply(NULL, tx)));

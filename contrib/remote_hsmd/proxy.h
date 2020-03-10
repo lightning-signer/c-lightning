@@ -172,6 +172,9 @@ proxy_stat proxy_handle_sign_node_announcement(
 	u8 *node_announcement,
 	secp256k1_ecdsa_signature *o_sig);
 
+// FIXME - For debugging, remove for production.
+void print_tx(char const *tag, struct bitcoin_tx const *tx);
+
 #ifdef __cplusplus
 } /* extern C */
 #endif
