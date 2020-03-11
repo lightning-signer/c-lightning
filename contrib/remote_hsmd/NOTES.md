@@ -89,3 +89,16 @@ rust-lightning-signer
 ----------------------------------------------------------------
 
     cargo run --bin server |& tee log3
+
+Signing Formats
+----------------------------------------------------------------
+
+```
+rust-lightning	c-lightning
+p2pkh
+p2sh
+p2wpkh			p2wpkh
+p2shwpkh		p2sh-p2wpkh
+p2wsh
+p2shwsh
+```
