@@ -110,8 +110,8 @@ string serialized_tx(struct bitcoin_tx const *tx, bool bip144)
 	return retval;
 }
 
-void marshal_channel_nonce(struct node_id *peer_id, u64 dbid,
-			     ChannelNonce *o_np)
+void marshal_channel_nonce(struct node_id const *peer_id, u64 dbid,
+			   ChannelNonce *o_np)
 {
 	o_np->set_data(string((char const *)peer_id->k, sizeof(peer_id->k)) +
 		       string((char const *)&dbid, sizeof(dbid)));
@@ -130,6 +130,25 @@ void marshal_node_id(struct node_id const *np, NodeId *o_np)
 void marshal_pubkey(struct pubkey const *pp, PubKey *o_pp)
 {
 	o_pp->set_data(pp->pubkey.data, sizeof(pp->pubkey.data));
+}
+
+void marshal_utxo(struct utxo const *up, InputDescriptor *idesc)
+{
+	idesc->mutable_key_loc()->set_key_index(up->keyindex);
+	idesc->mutable_prev_output()->set_value(up->amount.satoshis);
+	/* FIXME - where does pk_script come from? */
+	idesc->set_spend_type(up->is_p2sh
+			      ? SpendType::P2SH_P2WPKH
+			      : SpendType::P2WPKH);
+	if (up->close_info) {
+		UnilateralCloseInfo *cinfo = idesc->mutable_close_info();
+		marshal_channel_nonce(&up->close_info->peer_id,
+				      up->close_info->channel_id,
+				      cinfo->mutable_channel_nonce());
+		if (up->close_info->commitment_point)
+			marshal_pubkey(up->close_info->commitment_point,
+				       cinfo->mutable_commitment_point());
+	}
 }
 
 void marshal_single_input_tx(struct bitcoin_tx const *tx,
@@ -436,17 +455,8 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 
 	req.mutable_tx()->set_raw_tx_bytes(serialized_tx(tx, true));
 	assert(tx->wtx->num_inputs == tal_count(utxos));
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++) {
-	 	const struct utxo *in = utxos[ii];
-		/* Fails in tests/test_closing.py::test_onchain_first_commit */
-		/* assert(!in->is_p2sh); */
-		InputDescriptor *idesc = req.mutable_tx()->add_input_descs();
-		idesc->mutable_key_loc()->set_key_index(in->keyindex);
-		idesc->mutable_prev_output()->set_value(in->amount.satoshis);
-		idesc->set_spend_type(in->is_p2sh
-				      ? SpendType::P2SH_P2WPKH
-				      : SpendType::P2WPKH);
-	}
+	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++)
+		marshal_utxo(utxos[ii], req.mutable_tx()->add_input_descs());
 
 	/* We expect exactly two total ouputs, with one non-change. */
 	/* FIXME - next assert fails in
