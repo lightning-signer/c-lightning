@@ -82,9 +82,10 @@ Some popular tests:
     export THETEST=tests/test_connection.py::test_reconnect_openingd 
     export THETEST=tests/test_connection.py::test_shutdown_awaiting_lockin
     
-    # unilateral_close_info
+    # unilateral_close_info option_static_remotekey
     export THETEST=tests/test_connection.py::test_fee_limits
     export THETEST=tests/test_closing.py::test_option_upfront_shutdown_script
+
 
 rust-lightning-signer
 ----------------------------------------------------------------
