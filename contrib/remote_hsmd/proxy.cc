@@ -248,20 +248,24 @@ void unmarshal_ecdsa_recoverable_signature(ECDSARecoverableSignature const &es,
 	assert(ok);
 }
 
-void unmarshal_signatures(RepeatedPtrField<BitcoinSignature> const &sigs,
-			  u8 ***o_sigs)
+void unmarshal_witnesses(RepeatedPtrField<Witness> const &wits, u8 ****o_wits)
 {
-	u8 **osigs = NULL;
-	int nsigs = sigs.size();
-	if (nsigs > 0) {
-		osigs = tal_arrz(tmpctx, u8*, nsigs);
-		for (size_t ii = 0; ii < nsigs; ++ii) {
-			BitcoinSignature const &bs = sigs[ii];
-			osigs[ii] = tal_arr(osigs, u8, bs.data().size());
-			memcpy(osigs[ii], bs.data().data(), bs.data().size());
+	u8 ***owits = NULL;
+	int nwits = wits.size();
+	if (nwits > 0) {
+		owits = tal_arrz(tmpctx, u8**, nwits);
+		for (size_t ii = 0; ii < nwits; ++ii) {
+			owits[ii] = tal_arrz(owits, u8*, 2);
+			Witness const &wit = wits[ii];
+			const string &sig = wit.signature().data();
+			const string &pubkey = wit.pubkey().data();
+			owits[ii][0] = tal_arr(owits[ii], u8, sig.size());
+			memcpy(owits[ii][0], sig.data(), sig.size());
+			owits[ii][1] = tal_arr(owits[ii], u8, pubkey.size());
+			memcpy(owits[ii][1], pubkey.data(), pubkey.size());
 		}
 	}
-	*o_sigs = osigs;
+	*o_wits = owits;
 }
 
 /* Copied from ccan/mem/mem.h which the c++ compiler doesn't like */
@@ -412,7 +416,7 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	struct bitcoin_tx_output **outputs,
 	struct utxo **utxos,
 	struct bitcoin_tx *tx,
-	u8 ***o_sigs)
+	u8 ****o_wits)
 {
 	fprintf(stderr,
 		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
@@ -484,15 +488,15 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	SignFundingTxReply rsp;
 	Status status = stub->SignFundingTx(&context, req, &rsp);
 	if (status.ok()) {
-		unmarshal_signatures(rsp.signatures(), o_sigs);
+		unmarshal_witnesses(rsp.witnesses(), o_wits);
 		fprintf(stderr, "%s:%d %s self_id=%s witnesses=%s\n",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_signatures((u8 const **) *o_sigs).c_str());
+			     dump_witnesses((u8 const ***) *o_wits).c_str());
 		status_debug("%s:%d %s self_id=%s witnesses=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
-			     dump_signatures((u8 const **) *o_sigs).c_str());
+			     dump_witnesses((u8 const ***) *o_wits).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
