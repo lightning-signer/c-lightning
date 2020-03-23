@@ -91,7 +91,7 @@ static int g_proxy_impl;
 static enum hsm_wire_type g_proxy_last;
 
 /* FIXME - REMOVE THIS WHEN NO LONGER NEEDED */
-#if 0
+#if 1
 static void print_hex(char const *tag, void const *vptr, size_t sz)
 {
 	fprintf(stderr, "%s: ", tag);
@@ -624,6 +624,32 @@ static void maybe_create_new_hsm(const struct secret *encryption_key,
 	status_unusual("HSM: created new hsm_secret file");
 }
 
+/* The c-lightning testing framework imbues the hsm_secret with a
+ * file created before hsmd starts.  For now we use the secret from
+ * the testing framework rather than generating in the remote signer.
+ */
+static void read_test_seed(struct secret *hsm_secret)
+{
+	struct stat st;
+	int fd = open("hsm_secret", O_RDONLY);
+	if (fd < 0)
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "opening: %s", strerror(errno));
+	if (stat("hsm_secret", &st) != 0)
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "stating: %s", strerror(errno));
+
+	/* If the seed is stored in clear. */
+	if (st.st_size > 32)
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "hsm_secret not in clear");
+
+	if (!read_all(fd, hsm_secret, sizeof(*hsm_secret)))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "reading: %s", strerror(errno));
+	close(fd);
+}
+
 /*~ We always load the HSM file, even if we just created it above.  This
  * both unifies the code paths, and provides a nice sanity check that the
  * file contents are as they will be for future invocations. */
@@ -659,6 +685,7 @@ static void load_hsm(const struct secret *encryption_key)
 				              "opening: %s", strerror(errno));
 		}
 	}
+
 	/*~ If an encryption key was passed and the `hsm_secret` is stored
 	 * encrypted, recover the seed from the cipher. */
 	if (encryption_key && st.st_size > 32) {
@@ -740,10 +767,31 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	maybe_create_new_hsm(hsm_encryption_key, true);
 	load_hsm(hsm_encryption_key);
 
+	fprintf(stderr,
+		"hsm_encryption_key=%p, privkey=%p, "
+		"seed=%p, secrets=%p, shaseed=%p\n",
+		hsm_encryption_key, privkey, seed,
+		secrets, shaseed);
+
+	/* Fail fast if these are set. */
+	assert(hsm_encryption_key == NULL);
+	assert(privkey == NULL);
+	assert(seed == NULL);
+	assert(secrets == NULL);
+	assert(shaseed == NULL);
+
+	/* The c-lightning testing framework imbues the hsm_secret
+	 * with a file created before hsmd starts.  For now we use the
+	 * secret from the testing framework rather than generating in
+	 * the remote signer.  The seed is NOT otherwise retained.
+	 */
+	struct secret hsm_secret;
+	read_test_seed(&hsm_secret);
+	print_hex("SECRET", &hsm_secret, sizeof(hsm_secret));
 	proxy_stat rv = proxy_init_hsm(&bip32_key_version, chainparams,
 				       hsm_encryption_key, privkey, seed,
 				       secrets, shaseed,
-				       &secretstuff.hsm_secret,
+				       &hsm_secret,
 				       &node_id);
 	if (PROXY_PERMANENT(rv)) {
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
