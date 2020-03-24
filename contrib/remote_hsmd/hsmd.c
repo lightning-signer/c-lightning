@@ -79,7 +79,7 @@ static struct secret *dev_force_bip32_seed;
 #endif
 
 /* FIXME - REMOVE THIS WHEN NO LONGER NEEDED */
-#if 1
+#if 0
 static void print_hex(char const *tag, void const *vptr, size_t sz)
 {
 	fprintf(stderr, "%s: ", tag);
@@ -381,12 +381,6 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	 * will use */
 	c->chainparams = chainparams;
 
-	fprintf(stderr,
-		"hsm_encryption_key=%p, privkey=%p, "
-		"seed=%p, secrets=%p, shaseed=%p\n",
-		hsm_encryption_key, privkey, seed,
-		secrets, shaseed);
-
 	/* Fail fast if these are set. */
 	assert(hsm_encryption_key == NULL);
 	assert(privkey == NULL);
@@ -403,7 +397,6 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	struct secret hsm_secret;
 	if (!read_test_seed(&hsm_secret))
 		randombytes_buf(&hsm_secret, sizeof(hsm_secret));
-	print_hex("SECRET", &hsm_secret, sizeof(hsm_secret));
 
 	proxy_stat rv = proxy_init_hsm(&bip32_key_version, chainparams,
 				       &hsm_secret, &node_id,
