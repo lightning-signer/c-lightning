@@ -37,6 +37,7 @@ RMTHSMD_COMMON_OBJS :=				\
 	common/amount.o				\
 	common/bigsize.o			\
 	common/bip32.o				\
+	common/channel_id.o			\
 	common/daemon.o				\
 	common/daemon_conn.o			\
 	common/derive_basepoints.o		\
@@ -48,6 +49,7 @@ RMTHSMD_COMMON_OBJS :=				\
 	common/msg_queue.o			\
 	common/node_id.o			\
 	common/permute_tx.o			\
+	common/setup.o				\
 	common/status.o				\
 	common/status_wire.o			\
 	common/subdaemon.o			\
@@ -58,8 +60,8 @@ RMTHSMD_COMMON_OBJS :=				\
 	common/withdraw_tx.o
 
 # For checking
-LIGHTNINGD_RMTHSM_ALLSRC_NOGEN := $(filter-out contrib/remote_hsmd/gen_%, $(LIGHTNINGD_RMTHSM_SRC) $(LIGHTNINGD_RMTHSM_SRC))
-LIGHTNINGD_RMTHSM_ALLHEADERS_NOGEN := $(filter-out contrib/remote_hsmd/gen_%, $(LIGHTNINGD_RMTHSM_HEADERS))
+LIGHTNINGD_RMTHSM_ALLSRC_NOGEN := $(filter-out contrib/remote_hsmd/gen_% contrib/remote_hsmd/remotesigner.%, $(LIGHTNINGD_RMTHSM_SRC) $(LIGHTNINGD_RMTHSM_SRC))
+LIGHTNINGD_RMTHSM_ALLHEADERS_NOGEN := $(filter-out contrib/remote_hsmd/gen_% contrib/remote_hsmd/remotesigner.%, $(LIGHTNINGD_RMTHSM_HEADERS))
 
 $(LIGHTNINGD_RMTHSM_OBJS): $(LIGHTNINGD_HEADERS)
 
