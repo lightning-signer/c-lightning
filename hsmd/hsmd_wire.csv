@@ -181,6 +181,9 @@ msgdata,hsmd_sign_remote_commitment_tx,tx,bitcoin_tx,
 msgdata,hsmd_sign_remote_commitment_tx,remote_funding_key,pubkey,
 msgdata,hsmd_sign_remote_commitment_tx,remote_per_commit,pubkey,
 msgdata,hsmd_sign_remote_commitment_tx,option_static_remotekey,bool,
+msgdata,hsmd_sign_remote_commitment_tx,num_htlc_rhash,u16,
+msgdata,hsmd_sign_remote_commitment_tx,htlc_rhash,sha256,num_htlc_rhash
+msgdata,hsmd_sign_remote_commitment_tx,commit_num,u64,
 
 # channeld asks HSM to sign remote HTLC tx.
 msgtype,hsmd_sign_remote_htlc_tx,20

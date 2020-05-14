@@ -1206,7 +1206,10 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 						   &state->channel->funding_pubkey[REMOTE],
 						   &state->first_per_commitment_point[REMOTE],
 						    channel_has(state->channel,
-								OPT_STATIC_REMOTEKEY));
+								OPT_STATIC_REMOTEKEY),
+						   commit_num,
+						   (const struct simple_htlc **) htlcs,
+						   feerate);
 
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
