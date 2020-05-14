@@ -1,18 +1,14 @@
 /* This needs to be first */
 #define __STDC_FORMAT_MACROS
-#include <inttypes.h>
 
-#include <sys/types.h>	/* These two only needed for sleep() and getpid() */
-#include <unistd.h>
-
-#include <iostream>
-#include <sstream>
-
-#include <grpc++/grpc++.h>
-
+#include "contrib/remote_hsmd/dump.hpp"
+#include "contrib/remote_hsmd/proxy.hpp"
+#include "contrib/remote_hsmd/remotesigner.grpc.pb.h"
+#include "contrib/remote_hsmd/remotesigner.pb.h"
 extern "C" {
 #include <bitcoin/chainparams.h>
 #include <bitcoin/privkey.h>
+#include <bitcoin/psbt.h>
 #include <bitcoin/short_channel_id.h>
 #include <bitcoin/tx.h>
 #include <common/derive_basepoints.h>
@@ -21,15 +17,20 @@ extern "C" {
 #include <common/status.h>
 #include <common/utils.h>
 #include <common/utxo.h>
+}
+#include <grpc++/grpc++.h>
+#include <inttypes.h>
+#include <iostream>
+extern "C" {
 #include <secp256k1_recovery.h>
+}
+#include <sstream>
+#include <sys/types.h>	/* These two only needed for sleep() and getpid() */
+#include <unistd.h>
+extern "C" {
 #include <wally_bip32.h>
 }
 
-#include "contrib/remote_hsmd/remotesigner.pb.h"
-#include "contrib/remote_hsmd/remotesigner.grpc.pb.h"
-
-#include "contrib/remote_hsmd/dump.h"
-#include "contrib/remote_hsmd/proxy.h"
 
 using std::cerr;
 using std::endl;
@@ -79,32 +80,32 @@ proxy_stat map_status(Status const & status)
 
 /* BIP144:
  * If the witness is empty, the old serialization format should be used. */
-bool uses_witness(const struct bitcoin_tx *tx)
+bool uses_witness(const struct wally_tx *wtx)
 {
 	size_t i;
-	for (i = 0; i < tx->wtx->num_inputs; i++) {
-		if (tx->wtx->inputs[i].witness)
+	for (i = 0; i < wtx->num_inputs; i++) {
+		if (wtx->inputs[i].witness)
 			return true;
 	}
 	return false;
 }
 
 
-string serialized_tx(struct bitcoin_tx const *tx, bool bip144)
+string serialized_wtx(struct wally_tx const *wtx, bool bip144)
 {
 	int res;
 	size_t len, written;
 	u8 *serialized;;
 	u8 flag = 0;
 
-	if (bip144 && uses_witness(tx))
+	if (bip144 && uses_witness(wtx))
 		flag |= WALLY_TX_FLAG_USE_WITNESS;
 
-	res = wally_tx_get_length(tx->wtx, flag, &len);
+	res = wally_tx_get_length(wtx, flag, &len);
 	assert(res == WALLY_OK);
 
 	string retval(len, '\0');
-	res = wally_tx_to_bytes(tx->wtx, flag, (unsigned char *)&retval[0],
+	res = wally_tx_to_bytes(wtx, flag, (unsigned char *)&retval[0],
 				retval.size(), &written);
 	assert(res == WALLY_OK);
 	assert(len == written);
@@ -123,6 +124,11 @@ void marshal_secret(struct secret const *ss, Secret *o_sp)
 	o_sp->set_data(ss->data, sizeof(ss->data));
 }
 
+void marshal_bip32seed(struct secret const *ss, BIP32Seed *o_sp)
+{
+	o_sp->set_data(ss->data, sizeof(ss->data));
+}
+
 void marshal_node_id(struct node_id const *np, NodeId *o_np)
 {
 	o_np->set_data(np->k, sizeof(np->k));
@@ -130,19 +136,22 @@ void marshal_node_id(struct node_id const *np, NodeId *o_np)
 
 void marshal_pubkey(struct pubkey const *pp, PubKey *o_pp)
 {
-	o_pp->set_data(pp->pubkey.data, sizeof(pp->pubkey.data));
+	u8 pubkey_der[PUBKEY_CMPR_LEN];
+	pubkey_to_der(pubkey_der, pp);
+
+	o_pp->set_data(pubkey_der, sizeof(pubkey_der));
 }
 
 void marshal_utxo(struct utxo const *up, InputDescriptor *idesc)
 {
-	idesc->mutable_key_loc()->set_key_index(up->keyindex);
-	idesc->mutable_prev_output()->set_value(up->amount.satoshis);
-	/* FIXME - where does pk_script come from? */
+	idesc->mutable_key_loc()->add_key_path(up->keyindex);
+	idesc->set_value_sat(up->amount.satoshis);
 	idesc->set_spend_type(up->is_p2sh
 			      ? SpendType::P2SH_P2WPKH
 			      : SpendType::P2WPKH);
 	if (up->close_info) {
-		UnilateralCloseInfo *cinfo = idesc->mutable_close_info();
+		UnilateralCloseInfo *cinfo =
+			idesc->mutable_key_loc()->mutable_close_info();
 		marshal_channel_nonce(&up->close_info->peer_id,
 				      up->close_info->channel_id,
 				      cinfo->mutable_channel_nonce());
@@ -152,46 +161,52 @@ void marshal_utxo(struct utxo const *up, InputDescriptor *idesc)
 	}
 }
 
+void marshal_outpoint(struct bitcoin_txid const *txid, u16 txout, Outpoint *o_op)
+{
+	o_op->set_txid(txid->shad.sha.u.u8, sizeof(txid->shad.sha.u.u8));
+	o_op->set_index(txout);
+}
+
+void marshal_script(u8 const *script, string *o_script)
+{
+	if (script)
+		o_script->assign((char const *)script, tal_count(script));
+}
+
+void marshal_basepoints(struct basepoints const *bps,
+			struct pubkey *funding_pubkey,
+			Basepoints * o_bps)
+{
+	marshal_pubkey(&bps->revocation, o_bps->mutable_revocation());
+	marshal_pubkey(&bps->payment, o_bps->mutable_payment());
+	marshal_pubkey(&bps->htlc, o_bps->mutable_htlc());
+	marshal_pubkey(&bps->delayed_payment, o_bps->mutable_delayed_payment());
+	marshal_pubkey(funding_pubkey, o_bps->mutable_funding_pubkey());
+}
+
 void marshal_single_input_tx(struct bitcoin_tx const *tx,
-			     u8 const *output_witscript,
-			     struct witscript const **output_witscripts,
+			     u8 const *redeem_script,
 			     Transaction *o_tp)
 {
-	if (output_witscript) {
-		/* Called with a single witscript. */
-		assert(tx->wtx->num_outputs == 1);
-	} else if (output_witscripts) {
-		/* Called with an array of witscripts. */
-		assert(tal_count(output_witscripts) == tx->wtx->num_outputs);
-	}
+	assert(tx->psbt->num_outputs == tx->wtx->num_outputs);
 
-	o_tp->set_raw_tx_bytes(serialized_tx(tx, true));
+	o_tp->set_raw_tx_bytes(serialized_wtx(tx->wtx, true));
 
 	assert(tx->wtx->num_inputs == 1);
+	assert(tx->psbt->num_inputs == 1);
 	InputDescriptor *idesc = o_tp->add_input_descs();
-	idesc->mutable_prev_output()->set_value(tx->input_amounts[0]->satoshis);
-	/* FIXME - What else needs to be set? */
+	idesc->set_value_sat(psbt_input_get_amount(tx->psbt, 0).satoshis);
+	if (redeem_script)
+		idesc->set_redeem_script((const char *) redeem_script,
+					 tal_count(redeem_script));
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 		OutputDescriptor *odesc = o_tp->add_output_descs();
-		if (output_witscript) {
-			/* We have a single witscript. */
-			odesc->set_witscript((const char *) output_witscript,
-					     tal_count(output_witscript));
-		} else if (output_witscripts) {
-			/* We have an array of witscripts. */
-			if (output_witscripts[ii])
-				odesc->set_witscript(
-					(const char *)
-					output_witscripts[ii]->ptr,
-					tal_count(output_witscripts[ii]->ptr));
-			else
-				odesc->set_witscript("");
-		} else {
-			/* Called w/ no witscripts. */
-			odesc->set_witscript("");
-		}
-
+		if (tx->psbt->outputs[ii].witness_script_len)
+			odesc->set_witscript(
+				(const char *)
+				tx->psbt->outputs[ii].witness_script,
+				tx->psbt->outputs[ii].witness_script_len);
 	}
 }
 
@@ -263,7 +278,7 @@ void unmarshal_witnesses(RepeatedPtrField<Witness> const &wits, u8 ****o_wits)
 		owits = tal_arrz(tmpctx, u8**, nwits);
 		for (size_t ii = 0; ii < nwits; ++ii) {
 			owits[ii] = tal_arrz(owits, u8*, 2);
-			Witness const &wit = wits[ii];
+			Witness const &wit = wits.Get(ii);
 			const string &sig = wit.signature().data();
 			const string &pubkey = wit.pubkey().data();
 			owits[ii][0] = tal_arr(owits[ii], u8, sig.size());
@@ -291,7 +306,7 @@ const char *proxy_last_message(void)
 
 void proxy_setup()
 {
-	status_debug("%s:%d %s", __FILE__, __LINE__, __FUNCTION__);
+	STATUS_DEBUG("%s:%d %s", __FILE__, __LINE__, __FUNCTION__);
 	auto channel = grpc::CreateChannel("localhost:50051",
 					   grpc::InsecureChannelCredentials());
 	stub = Signer::NewStub(channel);
@@ -300,14 +315,16 @@ void proxy_setup()
 
 proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 			  struct chainparams const *chainparams,
+			  bool coldstart,
 			  struct secret *hsm_secret,
 			  struct node_id *o_node_id,
 			  struct ext_key *o_ext_pubkey)
 {
-	status_debug(
-		"%s:%d %s hsm_secret=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { \"hsm_secret\":%s, \"coldstart\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
-		dump_secret(hsm_secret).c_str()
+		dump_secret(hsm_secret).c_str(),
+		coldstart ? "true" : "false"
 		);
 
 	/* First we make the Init call to create the Node. */
@@ -315,12 +332,17 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 		last_message = "";
 		InitRequest req;
 
+		auto nc = req.mutable_node_config();
+		nc->set_key_derivation_style(NodeConfig::NATIVE);
+
 		auto cp = req.mutable_chainparams();
 		cp->set_network_name(chainparams->network_name);
 
+		req.set_coldstart(coldstart);
+
 		/* FIXME - Sending the secret instead of generating on
 		 * the remote. */
-		marshal_secret(hsm_secret, req.mutable_hsm_secret());
+		marshal_bip32seed(hsm_secret, req.mutable_hsm_secret());
 
 		ClientContext context;
 		InitReply rsp;
@@ -328,7 +350,7 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 		if (status.ok()) {
 			unmarshal_node_id(rsp.node_id(), o_node_id);
 			unmarshal_node_id(rsp.node_id(), &self_id);
-			status_debug("%s:%d %s node_id=%s",
+			STATUS_DEBUG("%s:%d %s { \"node_id\":%s }",
 				     __FILE__, __LINE__, __FUNCTION__,
 				     dump_node_id(o_node_id).c_str());
 			last_message = "success";
@@ -354,7 +376,8 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 		Status status = stub->GetExtPubKey(&context, req, &rsp);
 		if (status.ok()) {
 			unmarshal_ext_pubkey(rsp.xpub(), o_ext_pubkey);
-			status_debug("%s:%d %s node_id=%s ext_pubkey=%s",
+			STATUS_DEBUG("%s:%d %s "
+				     "{ \"node_id\":%s, \"ext_pubkey\":%s }",
 				     __FILE__, __LINE__, __FUNCTION__,
 				     dump_node_id(&self_id).c_str(),
 				     dump_ext_pubkey(o_ext_pubkey).c_str());
@@ -373,8 +396,8 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 proxy_stat proxy_handle_ecdh(const struct pubkey *point,
 			     struct secret *o_ss)
 {
-	status_debug(
-		"%s:%d %s self_id=%s point=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { \"self_id\":%s, \"point\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_pubkey(point).c_str()
@@ -390,7 +413,7 @@ proxy_stat proxy_handle_ecdh(const struct pubkey *point,
 	Status status = stub->ECDH(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_secret(rsp.shared_secret(), o_ss);
-		status_debug("%s:%d %s self_id=%s ss=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"ss\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_secret(o_ss).c_str());
@@ -411,9 +434,10 @@ proxy_stat proxy_handle_pass_client_hsmfd(
 	u64 dbid,
 	u64 capabilities)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"capabilities=%" PRIu64 "",
+	STATUS_DEBUG(
+		"%s:%d %s "
+		"{ \"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"capabilities\":%" PRIu64 " }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -421,6 +445,9 @@ proxy_stat proxy_handle_pass_client_hsmfd(
 		capabilities
 		);
 
+/* We used to synthesize NewChannel here, but now have an explicit
+ * interface.  This whole method can go away. */
+#if 0
 	last_message = "";
 	NewChannelRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
@@ -430,7 +457,136 @@ proxy_stat proxy_handle_pass_client_hsmfd(
 	NewChannelReply rsp;
 	Status status = stub->NewChannel(&context, req, &rsp);
 	if (status.ok()) {
-		status_debug("%s:%d %s self_id=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s }",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status);
+	}
+#else
+	last_message = "success";
+	return PROXY_OK;
+#endif
+}
+
+proxy_stat proxy_handle_new_channel(
+	struct node_id *peer_id,
+	u64 dbid)
+{
+	STATUS_DEBUG(
+		"%s:%d %s "
+		"{ \"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 " }",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid);
+
+	last_message = "";
+	NewChannelRequest req;
+	marshal_node_id(&self_id, req.mutable_node_id());
+	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce0());
+
+	ClientContext context;
+	NewChannelReply rsp;
+	Status status = stub->NewChannel(&context, req, &rsp);
+	if (status.ok()) {
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s }",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status);
+	}
+}
+
+proxy_stat proxy_handle_ready_channel(
+	struct node_id *peer_id,
+	u64 dbid,
+	bool is_outbound,
+	struct amount_sat *channel_value,
+	struct amount_msat *push_value,
+	struct bitcoin_txid *funding_txid,
+	u16 funding_txout,
+	u16 holder_to_self_delay,
+	u8 *holder_shutdown_script,
+	struct basepoints *counterparty_basepoints,
+	struct pubkey *counterparty_funding_pubkey,
+	u16 counterparty_to_self_delay,
+	u8 *counterparty_shutdown_script,
+	bool option_static_remotekey)
+{
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"is_outbound\":%s, \"channel_value\":%" PRIu64 ", "
+		"\"push_value\":%" PRIu64 ", "
+		"\"funding_txid\":%s, \"funding_txout\":%d, "
+		"\"holder_to_self_delay\":%d, \"holder_shutdown_script\":%s, "
+		"\"counterparty_basepoints\":%s, "
+		"\"counterparty_funding_pubkey\":%s, "
+		"\"counterparty_to_self_delay\":%d, "
+		"\"counterparty_shutdown_script\":%s, "
+		"\"option_static_remotekey\":%s }",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		(is_outbound ? "true" : "false"),
+		channel_value->satoshis,
+		push_value->millisatoshis,
+		dump_bitcoin_txid(funding_txid).c_str(),
+		funding_txout,
+		holder_to_self_delay,
+		dump_hex(holder_shutdown_script,
+			 tal_count(holder_shutdown_script)).c_str(),
+		dump_basepoints(counterparty_basepoints).c_str(),
+		dump_pubkey(counterparty_funding_pubkey).c_str(),
+		counterparty_to_self_delay,
+		dump_hex(counterparty_shutdown_script,
+			 tal_count(counterparty_shutdown_script)).c_str(),
+		(option_static_remotekey ? "true" : "false")
+		);
+
+	last_message = "";
+	ReadyChannelRequest req;
+	marshal_node_id(&self_id, req.mutable_node_id());
+	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce0());
+	req.set_is_outbound(is_outbound);
+	req.set_channel_value_sat(channel_value->satoshis);
+	req.set_push_value_msat(push_value->millisatoshis);
+	marshal_outpoint(funding_txid,
+			 funding_txout, req.mutable_funding_outpoint());
+	req.set_holder_to_self_delay(holder_to_self_delay);
+	marshal_script(holder_shutdown_script,
+		       req.mutable_holder_shutdown_script());
+	marshal_basepoints(counterparty_basepoints, counterparty_funding_pubkey,
+			   req.mutable_counterparty_basepoints());
+	req.set_counterparty_to_self_delay(counterparty_to_self_delay);
+	marshal_script(counterparty_shutdown_script,
+		       req.mutable_counterparty_shutdown_script());
+	req.set_commitment_type(
+		option_static_remotekey ?
+		ReadyChannelRequest_CommitmentType_STATIC_REMOTEKEY :
+		ReadyChannelRequest_CommitmentType_LEGACY);
+
+	ClientContext context;
+	ReadyChannelReply rsp;
+	Status status = stub->ReadyChannel(&context, req, &rsp);
+	if (status.ok()) {
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str());
 		last_message = "success";
@@ -448,46 +604,23 @@ proxy_stat proxy_handle_pass_client_hsmfd(
 proxy_stat proxy_handle_sign_withdrawal_tx(
 	struct node_id *peer_id,
 	u64 dbid,
-	struct amount_sat *satoshi_out,
-	struct amount_sat *change_out,
-	u32 change_keyindex,
 	struct bitcoin_tx_output **outputs,
 	struct utxo **utxos,
-	struct bitcoin_tx *tx,
+	struct wally_psbt *psbt,
 	u8 ****o_wits)
 {
-	fprintf(stderr,
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"satoshi_out=%" PRIu64 " change_out=%" PRIu64 " "
-		"change_keyindex=%u utxos=%s outputs=%s tx=%s\n",
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"utxos\":%s, \"outputs\":%s, \"psbt\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		satoshi_out->satoshis,
-		change_out->satoshis,
-		change_keyindex,
 		dump_utxos((const struct utxo **)utxos).c_str(),
 		dump_bitcoin_tx_outputs(
 			(const struct bitcoin_tx_output **)outputs).c_str(),
-		dump_tx(tx).c_str()
-		);
-
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"satoshi_out=%" PRIu64 " change_out=%" PRIu64 " "
-		"change_keyindex=%u utxos=%s outputs=%s tx=%s",
-		__FILE__, __LINE__, __FUNCTION__,
-		dump_node_id(&self_id).c_str(),
-		dump_node_id(peer_id).c_str(),
-		dbid,
-		satoshi_out->satoshis,
-		change_out->satoshis,
-		change_keyindex,
-		dump_utxos((const struct utxo **)utxos).c_str(),
-		dump_bitcoin_tx_outputs(
-			(const struct bitcoin_tx_output **)outputs).c_str(),
-		dump_tx(tx).c_str()
+		dump_wally_psbt(psbt).c_str()
 		);
 
 	last_message = "";
@@ -495,53 +628,33 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 
-	req.mutable_tx()->set_raw_tx_bytes(serialized_tx(tx, true));
-	assert(tx->wtx->num_inputs == tal_count(utxos));
-	for (size_t ii = 0; ii < tx->wtx->num_inputs; ii++)
-		marshal_utxo(utxos[ii], req.mutable_tx()->add_input_descs());
-
-	/* We expect exactly two total ouputs, with one non-change. */
-	/* FIXME - next assert fails in
-	   tests/test_closing.py::test_onchain_unwatch with num_outputs == 1
-        assert(tx->wtx->num_outputs == 2);
-	*/
-	assert(tal_count(outputs) == 1);
-	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
-	 	const struct wally_tx_output *out = &tx->wtx->outputs[ii];
-		OutputDescriptor *odesc = req.mutable_tx()->add_output_descs();
-		/* Does this output match the funding output? */
-		if (memeq(out->script, out->script_len,
-			  outputs[0]->script, tal_count(outputs[0]->script))) {
-			/* Yes, this is the funding output. */
-			/* FIXME - we don't set anything? */
-		} else {
-			/* Nope, this must be the change output. */
-			assert(out->satoshi == change_out->satoshis);
-			odesc->mutable_key_loc()->
-				set_key_index(change_keyindex);
+	req.mutable_tx()->set_raw_tx_bytes(serialized_wtx(psbt->tx, true));
+	assert(psbt->tx->num_inputs >= tal_count(utxos));
+	size_t uu = 0;
+	for (size_t ii = 0; ii < psbt->tx->num_inputs; ++ii) {
+		InputDescriptor *idesc = req.mutable_tx()->add_input_descs();
+		if (uu < tal_count(utxos) &&
+		    wally_tx_input_spends(&psbt->tx->inputs[ii],
+					  &utxos[uu]->txid,
+					  utxos[uu]->outnum)) {
+			marshal_utxo(utxos[uu], idesc);
+			++uu;
 		}
 	}
+	assert(uu == tal_count(utxos));
 
 	ClientContext context;
 	SignFundingTxReply rsp;
 	Status status = stub->SignFundingTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_witnesses(rsp.witnesses(), o_wits);
-		fprintf(stderr, "%s:%d %s self_id=%s witnesses=%s\n",
-			     __FILE__, __LINE__, __FUNCTION__,
-			     dump_node_id(&self_id).c_str(),
-			     dump_witnesses((u8 const ***) *o_wits).c_str());
-		status_debug("%s:%d %s self_id=%s witnesses=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"witnesses\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_witnesses((u8 const ***) *o_wits).c_str());
 		last_message = "success";
 		return PROXY_OK;
 	} else {
-		fprintf(stderr, "%s:%d %s: self_id=%s %s\n",
-			       __FILE__, __LINE__, __FUNCTION__,
-			       dump_node_id(&self_id).c_str(),
-			       status.error_message().c_str());
 		status_unusual("%s:%d %s: self_id=%s %s",
 			       __FILE__, __LINE__, __FUNCTION__,
 			       dump_node_id(&self_id).c_str(),
@@ -553,49 +666,43 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 
 proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct bitcoin_tx *tx,
-	const struct pubkey *remote_funding_pubkey,
-	struct amount_sat *funding,
+	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct witscript const **output_witscripts,
 	const struct pubkey *remote_per_commit,
 	bool option_static_remotekey,
 	struct bitcoin_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"funding=%" PRIu64 " remote_funding_pubkey=%s "
-		"output_witscripts=%s remote_per_commit=%s "
-		"option_static_remotekey=%s  tx=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"counterparty_funding_pubkey\":%s, "
+		"\"remote_per_commit\":%s, "
+		"\"option_static_remotekey\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		funding->satoshis,
-		dump_pubkey(remote_funding_pubkey).c_str(),
-		dump_output_witscripts(output_witscripts).c_str(),
+		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_pubkey(remote_per_commit).c_str(),
 		(option_static_remotekey ? "true" : "false"),
 		dump_tx(tx).c_str()
 		);
 
 	last_message = "";
-	SignRemoteCommitmentTxRequest req;
+	SignCounterpartyCommitmentTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
-	marshal_pubkey(remote_funding_pubkey,
-		       req.mutable_remote_funding_pubkey());
 	marshal_pubkey(remote_per_commit,
 		       req.mutable_remote_per_commit_point());
-	req.set_option_static_remotekey(option_static_remotekey);
-	marshal_single_input_tx(tx, NULL, output_witscripts, req.mutable_tx());
+	marshal_single_input_tx(tx, NULL, req.mutable_tx());
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignRemoteCommitmentTx(&context, req, &rsp);
+	Status status = stub->SignCounterpartyCommitmentTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str());
@@ -618,14 +725,14 @@ proxy_stat proxy_handle_get_per_commitment_point(
 	struct pubkey *o_per_commitment_point,
 	struct secret **o_old_secret)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"n=%" PRIu64 "",
-		__FILE__, __LINE__, __FUNCTION__,
-		dump_node_id(&self_id).c_str(),
-		dump_node_id(peer_id).c_str(),
-		dbid,
-		n
+	STATUS_DEBUG("%s:%d %s { "
+		     "\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		     "\"n\":%" PRIu64 " }",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     dump_node_id(&self_id).c_str(),
+		     dump_node_id(peer_id).c_str(),
+		     dbid,
+		     n
 		);
 
 	last_message = "";
@@ -646,8 +753,9 @@ proxy_stat proxy_handle_get_per_commitment_point(
 			*o_old_secret = tal_arr(tmpctx, struct secret, 1);
 			unmarshal_secret(rsp.old_secret(), *o_old_secret);
 		}
-		status_debug("%s:%d %s self_id=%s "
-			     "per_commitment_point=%s old_secret=%s",
+		STATUS_DEBUG("%s:%d %s { "
+			     "\"self_id\":%s, \"per_commitment_point\":%s, "
+			     "\"old_secret\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_pubkey(o_per_commitment_point).c_str(),
@@ -670,12 +778,12 @@ proxy_stat proxy_handle_sign_invoice(
 	u8 *hrpu8,
 	secp256k1_ecdsa_recoverable_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s u5bytes=%s hrpu8=%s",
-		__FILE__, __LINE__, __FUNCTION__,
-		dump_node_id(&self_id).c_str(),
-		dump_hex(u5bytes, tal_count(u5bytes)).c_str(),
-		string((const char *)hrpu8, tal_count(hrpu8)).c_str()
+	STATUS_DEBUG("%s:%d %s { "
+		     "\"self_id\":%s, \"u5bytes\":%s \"hrpu8\":%s }",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     dump_node_id(&self_id).c_str(),
+		     dump_hex(u5bytes, tal_count(u5bytes)).c_str(),
+		     string((const char *)hrpu8, tal_count(hrpu8)).c_str()
 		);
 
 	last_message = "";
@@ -689,7 +797,7 @@ proxy_stat proxy_handle_sign_invoice(
 	Status status = stub->SignInvoice(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_ecdsa_recoverable_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_secp256k1_ecdsa_recoverable_signature(
@@ -710,8 +818,8 @@ proxy_stat proxy_handle_sign_message(
 	u8 *msg,
 	secp256k1_ecdsa_recoverable_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s msg=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { \"self_id\":%s, \"msg\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_hex(msg, tal_count(msg)).c_str()
@@ -727,7 +835,7 @@ proxy_stat proxy_handle_sign_message(
 	Status status = stub->SignMessage(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_ecdsa_recoverable_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_secp256k1_ecdsa_recoverable_signature(
@@ -748,9 +856,8 @@ proxy_stat proxy_handle_channel_update_sig(
 	u8 *channel_update,
 	secp256k1_ecdsa_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s "
-		"channel_update=%s",
+	STATUS_DEBUG("%s:%d %s { "
+		     "\"self_id\":%s, \"channel_update\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_hex(channel_update, tal_count(channel_update)).c_str());
@@ -769,7 +876,7 @@ proxy_stat proxy_handle_channel_update_sig(
 	Status status = stub->SignChannelUpdate(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_ecdsa_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_secp256k1_ecdsa_signature(o_sig).c_str());
@@ -791,12 +898,12 @@ proxy_stat proxy_handle_get_channel_basepoints(
 	struct basepoints *o_basepoints,
 	struct pubkey *o_funding_pubkey)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 "",
-		__FILE__, __LINE__, __FUNCTION__,
-		dump_node_id(&self_id).c_str(),
-		dump_node_id(peer_id).c_str(),
-		dbid
+	STATUS_DEBUG("%s:%d %s { "
+		     "\"self_id\":%s, \"peer_id\":%s \"dbid\":%" PRIu64 " }",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     dump_node_id(&self_id).c_str(),
+		     dump_node_id(peer_id).c_str(),
+		     dbid
 		);
 
 	last_message = "";
@@ -815,7 +922,9 @@ proxy_stat proxy_handle_get_channel_basepoints(
 		unmarshal_pubkey(bps.delayed_payment(),
 				 &o_basepoints->delayed_payment);
 		unmarshal_pubkey(bps.funding_pubkey(), o_funding_pubkey);
-		status_debug("%s:%d %s self_id=%s",
+		STATUS_DEBUG("%s:%d %s { "
+			     "\"self_id\":%s, \"basepoints\":%s, "
+			     "\"pubkey\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_basepoints(o_basepoints).c_str(),
@@ -835,19 +944,20 @@ proxy_stat proxy_handle_get_channel_basepoints(
 
 proxy_stat proxy_handle_sign_mutual_close_tx(
 	struct bitcoin_tx *tx,
-	const struct pubkey *remote_funding_pubkey,
+	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
 	struct bitcoin_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"remote_funding_pubkey=%s tx=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"counterparty_funding_pubkey\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		dump_pubkey(remote_funding_pubkey).c_str(),
+		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_tx(tx).c_str()
 		);
 
@@ -855,16 +965,14 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 	SignMutualCloseTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
-	marshal_pubkey(remote_funding_pubkey,
-		       req.mutable_remote_funding_pubkey());
-	marshal_single_input_tx(tx, NULL, NULL, req.mutable_tx());
+	marshal_single_input_tx(tx, NULL, req.mutable_tx());
 
 	ClientContext context;
 	SignatureReply rsp;
 	Status status = stub->SignMutualCloseTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str());
@@ -882,36 +990,35 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 
 proxy_stat proxy_handle_sign_commitment_tx(
 	struct bitcoin_tx *tx,
-	const struct pubkey *remote_funding_pubkey,
+	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
 	struct bitcoin_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"remote_funding_pubkey=%s tx=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"counterparty_funding_pubkey\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		dump_pubkey(remote_funding_pubkey).c_str(),
+		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_tx(tx).c_str()
 		);
 
 	last_message = "";
-	SignCommitmentTxRequest req;
+	SignHolderCommitmentTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
-	marshal_pubkey(remote_funding_pubkey,
-		       req.mutable_remote_funding_pubkey());
-	marshal_single_input_tx(tx, NULL, NULL, req.mutable_tx());
+	marshal_single_input_tx(tx, NULL, req.mutable_tx());
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignCommitmentTx(&context, req, &rsp);
+	Status status = stub->SignHolderCommitmentTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str());
@@ -934,8 +1041,10 @@ proxy_stat proxy_handle_cannouncement_sig(
 	secp256k1_ecdsa_signature *o_node_sig,
 	secp256k1_ecdsa_signature *o_bitcoin_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " ca=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"ca\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -961,7 +1070,9 @@ proxy_stat proxy_handle_cannouncement_sig(
 	if (status.ok()) {
 		unmarshal_ecdsa_signature(rsp.node_signature(), o_node_sig);
 		unmarshal_ecdsa_signature(rsp.bitcoin_signature(), o_bitcoin_sig);
-		status_debug("%s:%d %s self_id=%s node_sig=%s bitcoin_sig=%s",
+		STATUS_DEBUG("%s:%d %s { "
+			     "\"self_id\":%s, \"node_sig\":%s, "
+			     "\"bitcoin_sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_secp256k1_ecdsa_signature(o_node_sig).c_str(),
@@ -986,11 +1097,10 @@ proxy_stat proxy_handle_sign_local_htlc_tx(
 	u64 dbid,
 	struct bitcoin_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"commit_num==%" PRIu64 " "
-		"wscript=%s "
-		"tx=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"commit_num\":%" PRIu64 ", \"wscript\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -1001,18 +1111,18 @@ proxy_stat proxy_handle_sign_local_htlc_tx(
 		);
 
 	last_message = "";
-	SignLocalHTLCTxRequest req;
+	SignHolderHTLCTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	req.set_n(commit_num);
-	marshal_single_input_tx(tx, wscript, NULL, req.mutable_tx());
+	marshal_single_input_tx(tx, wscript, req.mutable_tx());
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignLocalHTLCTx(&context, req, &rsp);
+	Status status = stub->SignHolderHTLCTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str()
@@ -1037,31 +1147,31 @@ proxy_stat proxy_handle_sign_remote_htlc_tx(
 	u64 dbid,
 	struct bitcoin_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"wscript=%s tx=%s",
-		__FILE__, __LINE__, __FUNCTION__,
-		dump_node_id(&self_id).c_str(),
-		dump_node_id(peer_id).c_str(),
-		dbid,
-		dump_hex(wscript, tal_count(wscript)).c_str(),
-		dump_tx(tx).c_str()
+	STATUS_DEBUG("%s:%d %s { "
+		     "\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		     "\"wscript\":%s, \"tx\":%s }",
+		     __FILE__, __LINE__, __FUNCTION__,
+		     dump_node_id(&self_id).c_str(),
+		     dump_node_id(peer_id).c_str(),
+		     dbid,
+		     dump_hex(wscript, tal_count(wscript)).c_str(),
+		     dump_tx(tx).c_str()
 		);
 
 	last_message = "";
-	SignRemoteHTLCTxRequest req;
+	SignCounterpartyHTLCTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_pubkey(remote_per_commit_point,
 		       req.mutable_remote_per_commit_point());
-	marshal_single_input_tx(tx, wscript, NULL, req.mutable_tx());
+	marshal_single_input_tx(tx, wscript, req.mutable_tx());
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignRemoteHTLCTx(&context, req, &rsp);
+	Status status = stub->SignCounterpartyHTLCTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s. \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str());
@@ -1085,11 +1195,10 @@ proxy_stat proxy_handle_sign_delayed_payment_to_us(
 	u64 dbid,
 	struct bitcoin_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"commit_num==%" PRIu64 " "
-		"wscript=%s "
-		"tx=%s",
+	STATUS_DEBUG("%s:%d %s { "
+		     "\"self_id\":%s, \"peer_id\":%s, dbid=%" PRIu64 ", "
+		     "\"commit_num\":=%" PRIu64 ", "
+		     "\"wscript\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -1100,18 +1209,19 @@ proxy_stat proxy_handle_sign_delayed_payment_to_us(
 		);
 
 	last_message = "";
-	SignDelayedPaymentToUsRequest req;
+	SignDelayedSweepRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
-	req.set_n(commit_num);
-	marshal_single_input_tx(tx, wscript, NULL, req.mutable_tx());
+	req.set_input(0);
+	req.set_commitment_number(commit_num);
+	marshal_single_input_tx(tx, wscript, req.mutable_tx());
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignDelayedPaymentToUs(&context, req, &rsp);
+	Status status = stub->SignDelayedSweep(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str());
@@ -1135,9 +1245,9 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 	u64 dbid,
 	struct bitcoin_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"wscript=%s tx=%s",
+	STATUS_DEBUG("%s:%d %s { "
+		     "\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		     "\"wscript\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -1147,19 +1257,20 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 		);
 
 	last_message = "";
-	SignRemoteHTLCToUsRequest req;
+	SignCounterpartyHTLCSweepRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
+	req.set_input(0);
 	marshal_pubkey(remote_per_commit_point,
 		       req.mutable_remote_per_commit_point());
-	marshal_single_input_tx(tx, wscript, NULL, req.mutable_tx());
+	marshal_single_input_tx(tx, wscript, req.mutable_tx());
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignRemoteHTLCToUs(&context, req, &rsp);
+	Status status = stub->SignCounterpartyHTLCSweep(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str());
@@ -1183,11 +1294,10 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 	u64 dbid,
 	struct bitcoin_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"revocation_secret=%s "
-		"wscript=%s "
-		"tx=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"revocation_secret\":%s, \"wscript\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -1199,18 +1309,19 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 		);
 
 	last_message = "";
-	SignPenaltyToUsRequest req;
+	SignJusticeSweepRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_secret(revocation_secret, req.mutable_revocation_secret());
-	marshal_single_input_tx(tx, wscript, NULL, req.mutable_tx());
+	req.set_input(0);
+	marshal_single_input_tx(tx, wscript, req.mutable_tx());
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignPenaltyToUs(&context, req, &rsp);
+	Status status = stub->SignJusticeSweep(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str());
@@ -1233,9 +1344,10 @@ proxy_stat proxy_handle_check_future_secret(
 	struct secret *suggested,
 	bool *o_correct)
 {
-	status_debug(
-		"%s:%d %s self_id=%s peer_id=%s dbid=%" PRIu64 " "
-		"n=%" PRIu64 " suggested=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { \"self_id\":%s, \"peer_id\":%s, "
+		"\"dbid\":%" PRIu64 ", "
+		"\"n\":%" PRIu64 ", \"suggested\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -1256,7 +1368,7 @@ proxy_stat proxy_handle_check_future_secret(
 	Status status = stub->CheckFutureSecret(&context, req, &rsp);
 	if (status.ok()) {
 		*o_correct = rsp.correct();
-		status_debug("%s:%d %s self_id=%s correct=%d",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"correct\":%d }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(), int(*o_correct));
 		last_message = "success";
@@ -1275,8 +1387,8 @@ proxy_stat proxy_handle_sign_node_announcement(
 	u8 *node_announcement,
 	secp256k1_ecdsa_signature *o_sig)
 {
-	status_debug(
-		"%s:%d %s self_id=%s ann=%s",
+	STATUS_DEBUG(
+		"%s:%d %s { \"self_id\":%s, \"ann\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_hex(node_announcement,
@@ -1297,7 +1409,7 @@ proxy_stat proxy_handle_sign_node_announcement(
 	Status status = stub->SignNodeAnnouncement(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_ecdsa_signature(rsp.signature(), o_sig);
-		status_debug("%s:%d %s self_id=%s sig=%s",
+		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_secp256k1_ecdsa_signature(o_sig).c_str());
@@ -1313,11 +1425,18 @@ proxy_stat proxy_handle_sign_node_announcement(
 	}
 }
 
-// FIXME - This routine allows us to pretty print the tx to stderr
-// from C code.  Probably should remove it in production ...
+// FIXME - These routines allows us to pretty print to stderr from C
+// code.  Probably should remove it in production ...
+
 void print_tx(char const *tag, struct bitcoin_tx const *tx)
 {
-	fprintf(stderr, "%s: tx=%s\n", tag, dump_tx(tx).c_str());
+	fprintf(stderr, "%s: bitcoin_tx=%s\n", tag, dump_tx(tx).c_str());
+}
+
+void print_psbt(char const *tag, const struct wally_psbt *psbt)
+{
+	fprintf(stderr, "%s: wally_psbt=%s\n",
+		tag, dump_wally_psbt(psbt).c_str());
 }
 
 } /* extern "C" */
