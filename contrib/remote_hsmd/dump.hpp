@@ -1,3 +1,10 @@
+#ifndef LIGHTNING_CONTRIB_REMOTE_HSMD_DUMP_H
+#define LIGHTNING_CONTRIB_REMOTE_HSMD_DUMP_H
+
+extern "C" {
+#include <ccan/short_types/short_types.h>
+#include <secp256k1_recovery.h>
+}
 #include <string>
 
 std::string dump_hex(const void *vptr, size_t sz);
@@ -16,8 +23,10 @@ std::string dump_utxo(const struct utxo *in);
 std::string dump_utxos(const struct utxo **utxos);
 std::string dump_bitcoin_tx_output(const struct bitcoin_tx_output *op);
 std::string dump_bitcoin_tx_outputs(const struct bitcoin_tx_output **outputs);
-std::string dump_input_amounts(const struct amount_sat **ias);
 std::string dump_wally_tx_witness_stack(const struct wally_tx_witness_stack *sp);
+std::string dump_wally_keypath_map(const struct wally_keypath_map *mp);
+std::string dump_wally_partial_sigs_map(const struct wally_partial_sigs_map *mp);
+std::string dump_wally_unknowns_map(const struct wally_unknowns_map *mp);
 std::string dump_wally_tx_input(const struct wally_tx_input *in);
 std::string dump_wally_tx_inputs(const struct wally_tx_input *inputs,
 				 size_t num_inputs);
@@ -25,5 +34,7 @@ std::string dump_wally_tx_output(const struct wally_tx_output *out);
 std::string dump_wally_tx_outputs(const struct wally_tx_output *outputs,
 				  size_t num_outputs);
 std::string dump_wally_tx(const struct wally_tx *wtx);
-std::string dump_output_witscripts(const struct witscript **wp);
+std::string dump_wally_psbt(const struct wally_psbt *psbt);
 std::string dump_tx(const struct bitcoin_tx *tx);
+
+#endif /* LIGHTNING_CONTRIB_REMOTE_HSMD_DUMP_H */
