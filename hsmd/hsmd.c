@@ -1545,6 +1545,53 @@ static struct io_plan *pass_client_hsmfd(struct io_conn *conn,
 			     send_pending_client_fd, c);
 }
 
+/*~ This is used to declare a new channel. */
+static struct io_plan *handle_new_channel(struct io_conn *conn,
+					  struct client *c,
+					  const u8 *msg_in)
+{
+	struct node_id peer_id;
+	u64 dbid;
+
+	if (!fromwire_hsm_new_channel(msg_in, &peer_id, &dbid))
+		return bad_req(conn, c, msg_in);
+
+	return req_reply(conn, c,
+			 take(towire_hsm_new_channel_reply(NULL)));
+}
+
+/*~ This is used to provide all unchanging public channel parameters. */
+static struct io_plan *handle_ready_channel(struct io_conn *conn,
+					    struct client *c,
+					    const u8 *msg_in)
+{
+	bool is_outbound;
+	struct amount_sat channel_value;
+	struct bitcoin_txid funding_txid;
+	u16 funding_txout;
+	u16 local_to_self_delay;
+	u8 *local_shutdown_script;
+	struct basepoints remote_basepoints;
+	struct pubkey remote_funding_pubkey;
+	u16 remote_to_self_delay;
+	u8 *remote_shutdown_script;
+	bool option_static_remotekey;
+
+	if (!fromwire_hsm_ready_channel(tmpctx, msg_in, &is_outbound,
+					&channel_value, &funding_txid,
+					&funding_txout, &local_to_self_delay,
+					&local_shutdown_script,
+					&remote_basepoints,
+					&remote_funding_pubkey,
+					&remote_to_self_delay,
+					&remote_shutdown_script,
+					&option_static_remotekey))
+		return bad_req(conn, c, msg_in);
+
+	return req_reply(conn, c,
+			 take(towire_hsm_ready_channel_reply(NULL)));
+}
+
 /*~ For almost every wallet tx we use the BIP32 seed, but not for onchain
  * unilateral closes from a peer: they (may) have an output to us using a
  * public key based on the channel basepoints.  It's a bit spammy to spend
@@ -1962,6 +2009,7 @@ static bool check_client_capabilities(struct client *client,
 
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT:
 	case WIRE_HSMD_CHECK_FUTURE_SECRET:
+	case WIRE_HSMD_READY_CHANNEL:
 		return (client->capabilities & HSM_CAP_COMMITMENT_POINT) != 0;
 
 	case WIRE_HSMD_SIGN_REMOTE_COMMITMENT_TX:
@@ -1972,6 +2020,7 @@ static bool check_client_capabilities(struct client *client,
 		return (client->capabilities & HSM_CAP_SIGN_CLOSING_TX) != 0;
 
 	case WIRE_HSMD_INIT:
+	case WIRE_HSMD_NEW_CHANNEL:
 	case WIRE_HSMD_CLIENT_HSMFD:
 	case WIRE_HSMD_SIGN_WITHDRAWAL:
 	case WIRE_HSMD_SIGN_INVOICE:
@@ -1990,6 +2039,8 @@ static bool check_client_capabilities(struct client *client,
 	case WIRE_HSMD_CANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_CUPDATE_SIG_REPLY:
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:
+	case WIRE_HSMD_NEW_CHANNEL_REPLY:
+	case WIRE_HSMD_READY_CHANNEL_REPLY:
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
@@ -2038,6 +2089,12 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 
 	case WIRE_HSMD_CLIENT_HSMFD:
 		return pass_client_hsmfd(conn, c, c->msg_in);
+
+	case WIRE_HSMD_NEW_CHANNEL:
+		return handle_new_channel(conn, c, c->msg_in);
+
+	case WIRE_HSMD_READY_CHANNEL:
+		return handle_ready_channel(conn, c, c->msg_in);
 
 	case WIRE_HSMD_GET_CHANNEL_BASEPOINTS:
 		return handle_get_channel_basepoints(conn, c, c->msg_in);
@@ -2108,6 +2165,8 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_CANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_CUPDATE_SIG_REPLY:
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:
+	case WIRE_HSMD_NEW_CHANNEL_REPLY:
+	case WIRE_HSMD_READY_CHANNEL_REPLY:
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
