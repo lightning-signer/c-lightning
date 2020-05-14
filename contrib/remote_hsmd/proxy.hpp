@@ -1,8 +1,24 @@
+#ifndef LIGHTNING_CONTRIB_REMOTE_HSMD_PROXY_H
+#define LIGHTNING_CONTRIB_REMOTE_HSMD_PROXY_H
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include <ccan/short_types/short_types.h>
+#include <common/hash_u5.h>
+#include <secp256k1_recovery.h>
+
+struct bip32_key_version;
+struct channel_type;
+struct utxo;
+struct simple_htlc;
+
+#define STATUS_DEBUG(args...)			\
+	do {					\
+		fprintf(stderr, args);		\
+		fprintf(stderr, "\n");		\
+	} while (false)
 
 enum proxy_status {
 	/* SUCCESS */
@@ -30,6 +46,7 @@ void proxy_setup(void);
 proxy_stat proxy_init_hsm(
 	struct bip32_key_version *bip32_key_version,
 	struct chainparams const *chainparams,
+	bool coldstart,
 	struct secret *hsm_secret,
 	struct node_id *o_node_id,
 	struct ext_key *o_ext_pub_key);
@@ -43,23 +60,38 @@ proxy_stat proxy_handle_pass_client_hsmfd(
 	u64 dbid,
 	u64 capabilities);
 
+proxy_stat proxy_handle_new_channel(
+	struct node_id *peer_id,
+	u64 dbid);
+
+proxy_stat proxy_handle_ready_channel(
+	struct node_id *peer_id,
+	u64 dbid,
+	bool is_outbound,
+	struct amount_sat *channel_value,
+	struct amount_msat *push_value,
+	struct bitcoin_txid *funding_txid,
+	u16 funding_txout,
+	u16 local_to_self_delay,
+	u8 *local_shutdown_script,
+	struct basepoints *remote_basepoints,
+	struct pubkey *remote_funding_pubkey,
+	u16 remote_to_self_delay,
+	u8 *remote_shutdown_script,
+	struct channel_type *channel_type);
+
 proxy_stat proxy_handle_sign_withdrawal_tx(
 	struct node_id *peer_id, u64 dbid,
-	struct amount_sat *satoshi_out,
-	struct amount_sat *change_out,
-	u32 change_keyindex,
 	struct bitcoin_tx_output **outputs,
 	struct utxo **utxos,
-	struct bitcoin_tx *tx,
+	struct wally_psbt *psbt,
 	u8 ****o_wits);
 
 proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct bitcoin_tx *tx,
 	const struct pubkey *remote_funding_pubkey,
-	struct amount_sat *funding,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct witscript const **output_witscripts,
 	const struct pubkey *remote_per_commit,
 	bool option_static_remotekey,
 	struct bitcoin_signature *o_sig);
@@ -164,7 +196,10 @@ proxy_stat proxy_handle_sign_node_announcement(
 
 // FIXME - For debugging, remove for production.
 void print_tx(char const *tag, struct bitcoin_tx const *tx);
+void print_psbt(char const *tag, const struct wally_psbt *psbt);
 
 #ifdef __cplusplus
 } /* extern C */
 #endif
+
+#endif /* LIGHTNING_CONTRIB_REMOTE_HSMD_PROXY_H */
