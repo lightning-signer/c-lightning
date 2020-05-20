@@ -674,6 +674,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 	msg = towire_hsm_ready_channel(NULL,
 				       true,	/* is_outbound */
 				       state->funding,
+				       state->push_msat,
 				       &state->funding_txid,
 				       state->funding_txout,
 				       state->localconf.to_self_delay,
@@ -1196,6 +1197,7 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	msg = towire_hsm_ready_channel(NULL,
 				       false,	/* is_outbound */
 				       state->funding,
+				       state->push_msat,
 				       &state->funding_txid,
 				       state->funding_txout,
 				       state->localconf.to_self_delay,
