@@ -23,14 +23,14 @@ msgdata,hsmd_init_reply,bip32,ext_key,
 msgdata,hsmd_init_reply,bolt12,pubkey32,
 
 # Declare a new channel.
-msgtype,hsm_new_channel,30
+msgtype,hsmd_new_channel,30
 # Which identity to use for requests
-msgdata,hsm_new_channel,id,node_id,
+msgdata,hsmd_new_channel,id,node_id,
 # Database id for this client.
-msgdata,hsm_new_channel,dbid,u64,
+msgdata,hsmd_new_channel,dbid,u64,
 
 # No value returned.
-msgtype,hsm_new_channel_reply,130
+msgtype,hsmd_new_channel_reply,130
 
 # Get a new HSM FD, with the specified capabilities
 msgtype,hsmd_client_hsmfd,9
@@ -54,24 +54,24 @@ msgdata,hsmd_get_channel_basepoints_reply,basepoints,basepoints,
 msgdata,hsmd_get_channel_basepoints_reply,funding_pubkey,pubkey,
 
 # Provide channel parameters.
-msgtype,hsm_ready_channel,31
-msgdata,hsm_ready_channel,is_outbound,bool,
-msgdata,hsm_ready_channel,channel_value,amount_sat,
-msgdata,hsm_ready_channel,push_value,amount_msat,
-msgdata,hsm_ready_channel,funding_txid,bitcoin_txid,
-msgdata,hsm_ready_channel,funding_txout,u16,
-msgdata,hsm_ready_channel,local_to_self_delay,u16,
-msgdata,hsm_ready_channel,local_shutdown_script_len,u16,
-msgdata,hsm_ready_channel,local_shutdown_script,u8,local_shutdown_script_len
-msgdata,hsm_ready_channel,remote_basepoints,basepoints,
-msgdata,hsm_ready_channel,remote_funding_pubkey,pubkey,
-msgdata,hsm_ready_channel,remote_to_self_delay,u16,
-msgdata,hsm_ready_channel,remote_shutdown_script_len,u16,
-msgdata,hsm_ready_channel,remote_shutdown_script,u8,remote_shutdown_script_len
-msgdata,hsm_ready_channel,option_static_remotekey,bool,
+msgtype,hsmd_ready_channel,31
+msgdata,hsmd_ready_channel,is_outbound,bool,
+msgdata,hsmd_ready_channel,channel_value,amount_sat,
+msgdata,hsmd_ready_channel,push_value,amount_msat,
+msgdata,hsmd_ready_channel,funding_txid,bitcoin_txid,
+msgdata,hsmd_ready_channel,funding_txout,u16,
+msgdata,hsmd_ready_channel,local_to_self_delay,u16,
+msgdata,hsmd_ready_channel,local_shutdown_script_len,u16,
+msgdata,hsmd_ready_channel,local_shutdown_script,u8,local_shutdown_script_len
+msgdata,hsmd_ready_channel,remote_basepoints,basepoints,
+msgdata,hsmd_ready_channel,remote_funding_pubkey,pubkey,
+msgdata,hsmd_ready_channel,remote_to_self_delay,u16,
+msgdata,hsmd_ready_channel,remote_shutdown_script_len,u16,
+msgdata,hsmd_ready_channel,remote_shutdown_script,u8,remote_shutdown_script_len
+msgdata,hsmd_ready_channel,option_static_remotekey,bool,
 
 # No value returned.
-msgtype,hsm_ready_channel_reply,131
+msgtype,hsmd_ready_channel_reply,131
 
 # Return signature for a funding tx.
 #include <common/utxo.h>
@@ -172,6 +172,9 @@ msgdata,hsmd_sign_remote_commitment_tx,tx,bitcoin_tx,
 msgdata,hsmd_sign_remote_commitment_tx,remote_funding_key,pubkey,
 msgdata,hsmd_sign_remote_commitment_tx,remote_per_commit,pubkey,
 msgdata,hsmd_sign_remote_commitment_tx,option_static_remotekey,bool,
+msgdata,hsmd_sign_remote_commitment_tx,num_htlc_rhash,u16,
+msgdata,hsmd_sign_remote_commitment_tx,htlc_rhash,sha256,num_htlc_rhash
+msgdata,hsmd_sign_remote_commitment_tx,commit_num,u64,
 
 # channeld asks HSM to sign remote HTLC tx.
 msgtype,hsmd_sign_remote_htlc_tx,20
