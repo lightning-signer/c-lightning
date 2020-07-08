@@ -267,7 +267,7 @@ void unmarshal_witnesses(RepeatedPtrField<Witness> const &wits, u8 ****o_wits)
 	int nwits = wits.size();
 	if (nwits > 0) {
 		owits = tal_arrz(tmpctx, u8**, nwits);
-		for (size_ ii = 0; ii < nwits; ++ii) {
+		for (size_t ii = 0; ii < nwits; ++ii) {
 			owits[ii] = tal_arrz(owits, u8*, 2);
 			Witness const &wit = wits.Get(ii);
 			const string &sig = wit.signature().data();
