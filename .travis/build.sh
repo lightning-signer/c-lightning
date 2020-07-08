@@ -40,6 +40,10 @@ pip3 install --user -U --quiet --progress-bar off \
      -r contrib/pyln-proto/requirements.txt \
      -r contrib/pyln-testing/requirements.txt
 
+echo "fetching remotesigner.proto"
+wget -q --directory-prefix=contrib/remote_hsmd https://gitlab.com/lightning-signer/rust-lightning-signer/-/raw/master/src/server/remotesigner.proto
+ls -l contrib/remote_hsmd
+    
 echo "Configuration which is going to be built:"
 echo -en 'travis_fold:start:script.1\\r'
 ./configure CC="$CC"
@@ -86,10 +90,6 @@ then
     && sudo make install 
     cd .. && rm gmp-6.1.2.tar.xz && rm -rf gmp-6.1.2
 
-    echo "fetching remotesigner.proto"
-    wget -q --directory-prefix=contrib/remote_hsmd https://gitlab.com/lightning-signer/rust-lightning-signer/-/raw/master/src/server/remotesigner.proto
-    ls -l contrib/remote_hsmd
-    
     ./configure --enable-static
 
     echo -en 'travis_fold:start:script.2\\r'
