@@ -40,9 +40,7 @@ pip3 install --user -U --quiet --progress-bar off \
      -r contrib/pyln-proto/requirements.txt \
      -r contrib/pyln-testing/requirements.txt
 
-echo "fetching remotesigner.proto"
 wget -q --directory-prefix=contrib/remote_hsmd https://gitlab.com/lightning-signer/rust-lightning-signer/-/raw/master/src/server/remotesigner.proto
-ls -l contrib/remote_hsmd
     
 echo "Configuration which is going to be built:"
 echo -en 'travis_fold:start:script.1\\r'
