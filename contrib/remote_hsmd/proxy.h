@@ -3,6 +3,7 @@ extern "C" {
 #endif
 
 #include <ccan/short_types/short_types.h>
+#include <common/hash_u5.h>
 
 enum proxy_status {
 	/* SUCCESS */

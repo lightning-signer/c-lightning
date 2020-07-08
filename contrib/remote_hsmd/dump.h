@@ -1,3 +1,7 @@
+extern "C" {
+#include <ccan/short_types/short_types.h>
+#include <secp256k1_recovery.h>
+}
 #include <string>
 
 std::string dump_hex(const void *vptr, size_t sz);

@@ -1,19 +1,14 @@
 /* This needs to be first */
 #define __STDC_FORMAT_MACROS
-#include <inttypes.h>
 
-#include <sys/types.h>	/* These two only needed for sleep() and getpid() */
-#include <unistd.h>
-
-#include <iostream>
-#include <sstream>
-
-#include <grpc++/grpc++.h>
-
+#include "contrib/remote_hsmd/dump.h"
+#include "contrib/remote_hsmd/proxy.h"
+#include "contrib/remote_hsmd/remotesigner.grpc.pb.h"
+#include "contrib/remote_hsmd/remotesigner.pb.h"
 extern "C" {
 #include <bitcoin/chainparams.h>
-#include <bitcoin/psbt.h>
 #include <bitcoin/privkey.h>
+#include <bitcoin/psbt.h>
 #include <bitcoin/short_channel_id.h>
 #include <bitcoin/tx.h>
 #include <common/derive_basepoints.h>
@@ -22,15 +17,20 @@ extern "C" {
 #include <common/status.h>
 #include <common/utils.h>
 #include <common/utxo.h>
+}
+#include <grpc++/grpc++.h>
+#include <inttypes.h>
+#include <iostream>
+extern "C" {
 #include <secp256k1_recovery.h>
+}
+#include <sstream>
+#include <sys/types.h>	/* These two only needed for sleep() and getpid() */
+#include <unistd.h>
+extern "C" {
 #include <wally_bip32.h>
 }
 
-#include "contrib/remote_hsmd/remotesigner.pb.h"
-#include "contrib/remote_hsmd/remotesigner.grpc.pb.h"
-
-#include "contrib/remote_hsmd/dump.h"
-#include "contrib/remote_hsmd/proxy.h"
 
 using std::cerr;
 using std::endl;
