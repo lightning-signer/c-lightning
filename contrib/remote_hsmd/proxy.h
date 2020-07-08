@@ -1,3 +1,6 @@
+#ifndef LIGHTNING_CONTRIB_REMOTE_HSMD_PROXY_H
+#define LIGHTNING_CONTRIB_REMOTE_HSMD_PROXY_H
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -188,3 +191,5 @@ void print_tx(char const *tag, struct bitcoin_tx const *tx);
 #ifdef __cplusplus
 } /* extern C */
 #endif
+
+#endif /* LIGHTNING_CONTRIB_REMOTE_HSMD_PROXY_H */
