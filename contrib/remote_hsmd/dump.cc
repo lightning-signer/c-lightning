@@ -1,4 +1,4 @@
-#include "contrib/remote_hsmd/dump.h"
+#include "contrib/remote_hsmd/dump.hpp"
 
 extern "C" {
 #include <bitcoin/chainparams.h>

@@ -1,8 +1,8 @@
 /* This needs to be first */
 #define __STDC_FORMAT_MACROS
 
-#include "contrib/remote_hsmd/dump.h"
-#include "contrib/remote_hsmd/proxy.h"
+#include "contrib/remote_hsmd/dump.hpp"
+#include "contrib/remote_hsmd/proxy.hpp"
 #include "contrib/remote_hsmd/remotesigner.grpc.pb.h"
 #include "contrib/remote_hsmd/remotesigner.pb.h"
 extern "C" {
