@@ -267,7 +267,7 @@ void unmarshal_witnesses(RepeatedPtrField<Witness> const &wits, u8 ****o_wits)
 	int nwits = wits.size();
 	if (nwits > 0) {
 		owits = tal_arrz(tmpctx, u8**, nwits);
-		for (size_t ii = 0; ii < nwits; ++ii) {
+		for (int ii = 0; ii < nwits; ++ii) {
 			owits[ii] = tal_arrz(owits, u8*, 2);
 			Witness const &wit = wits[ii];
 			const string &sig = wit.signature().data();
@@ -915,7 +915,7 @@ proxy_stat proxy_handle_get_channel_basepoints(
 		unmarshal_pubkey(bps.delayed_payment(),
 				 &o_basepoints->delayed_payment);
 		unmarshal_pubkey(bps.funding_pubkey(), o_funding_pubkey);
-		status_debug("%s:%d %s self_id=%s",
+		status_debug("%s:%d %s self_id=%s basepoints=%s pubkey=%s",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_basepoints(o_basepoints).c_str(),
