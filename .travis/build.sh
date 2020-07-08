@@ -86,7 +86,9 @@ then
     && sudo make install 
     cd .. && rm gmp-6.1.2.tar.xz && rm -rf gmp-6.1.2
 
+    echo "fetching remotesigner.proto"
     wget -q --directory-prefix=contrib/remote_hsmd https://gitlab.com/lightning-signer/rust-lightning-signer/-/raw/master/src/server/remotesigner.proto
+    ls -l contrib/remote_hsmd
     
     ./configure --enable-static
 
