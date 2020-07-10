@@ -67,6 +67,9 @@ def directory(request, test_base_dir, test_name):
     outcome = 'passed' if rep_call is None else rep_call.outcome
     failed = not outcome or request.node.has_errors or outcome != 'passed'
 
+    # FIXME - REMOVE THIS - want to see the state files after a test.
+    failed = True
+    
     if not failed:
         try:
             shutil.rmtree(directory)
