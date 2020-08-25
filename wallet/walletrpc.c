@@ -109,13 +109,18 @@ static void wallet_withdrawal_broadcast(struct bitcoind *bitcoind UNUSED,
 static struct command_result *broadcast_and_wait(struct command *cmd,
 						 struct unreleased_tx *utx)
 {
+	struct node_id peer_id;
+	u64 dbid;
 	struct wally_psbt *signed_psbt;
 	struct wally_tx *signed_wtx;
 	struct bitcoin_txid signed_txid;
 
+	wallet_funding_peerid_dbid(cmd->ld->wallet, &utx->txid, &peer_id, &dbid);
+
 	/* FIXME: hsm will sign almost anything, but it should really
 	 * fail cleanly (not abort!) and let us report the error here. */
-	u8 *msg = towire_hsm_sign_withdrawal(cmd, utx->wtx->utxos, utx->tx->psbt);
+	u8 *msg = towire_hsm_sign_withdrawal(cmd, &peer_id, dbid,
+					     utx->wtx->utxos, utx->tx->psbt);
 
 	if (!wire_sync_write(cmd->ld->hsm_fd, take(msg)))
 		fatal("Could not write sign_withdrawal to HSM: %s",
@@ -1338,6 +1343,8 @@ static struct command_result *json_signpsbt(struct command *cmd,
 	struct json_stream *response;
 	struct wally_psbt *psbt, *signed_psbt;
 	struct utxo **utxos;
+	struct node_id peer_id;
+	u64 dbid;
 
 	if (!param(cmd, buffer, params,
 		   p_req("psbt", param_psbt, &psbt),
@@ -1356,9 +1363,14 @@ static struct command_result *json_signpsbt(struct command *cmd,
 		return command_fail(cmd, LIGHTNINGD,
 				    "No wallet inputs to sign");
 
+	// This transaction is not a funding transaction.
+	memset(&peer_id, '\0', sizeof(peer_id));
+	peer_id.k[0] = 0x2; // needed to pass towire sanity check
+	dbid = 0;
+
 	/* FIXME: hsm will sign almost anything, but it should really
 	 * fail cleanly (not abort!) and let us report the error here. */
-	u8 *msg = towire_hsm_sign_withdrawal(cmd,
+	u8 *msg = towire_hsm_sign_withdrawal(cmd, &peer_id, dbid,
 					     cast_const2(const struct utxo **, utxos),
 					     psbt);
 
@@ -1367,7 +1379,6 @@ static struct command_result *json_signpsbt(struct command *cmd,
 		      strerror(errno));
 
 	msg = wire_sync_read(cmd, cmd->ld->hsm_fd);
-
 	if (!fromwire_hsm_sign_withdrawal_reply(cmd, msg, &signed_psbt))
 		fatal("HSM gave bad sign_withdrawal_reply %s",
 		      tal_hex(tmpctx, msg));

@@ -86,6 +86,8 @@ msgdata,hsm_node_announcement_sig_reply,signature,secp256k1_ecdsa_signature,
 # Sign a withdrawal request
 #include <bitcoin/psbt.h>
 msgtype,hsm_sign_withdrawal,7
+msgdata,hsm_sign_withdrawal,peerid,node_id,
+msgdata,hsm_sign_withdrawal,dbid,u64,
 msgdata,hsm_sign_withdrawal,num_inputs,u16,
 msgdata,hsm_sign_withdrawal,inputs,utxo,num_inputs
 msgdata,hsm_sign_withdrawal,psbt,wally_psbt,

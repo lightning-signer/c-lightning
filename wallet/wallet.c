@@ -3327,6 +3327,40 @@ void wallet_transaction_annotate(struct wallet *w,
 	db_exec_prepared_v2(take(stmt));
 }
 
+bool wallet_funding_peerid_dbid(struct wallet *w,
+				const struct bitcoin_txid *txid,
+				struct node_id *peer_id,
+				u64 *dbid)
+{
+	struct db_stmt *stmt = db_prepare_v2(
+	    w->db, SQL("SELECT p.node_id, c.id "
+		       "FROM channels c "
+		       "JOIN PEERS p ON p.id = c.peer_id "
+		       "WHERE c.funding_tx_id=?"));
+	db_bind_txid(stmt, 0, txid);
+	db_query_prepared(stmt);
+
+	memset(peer_id, 0, sizeof(*peer_id));
+	peer_id->k[0] = 0x2; // needed to pass towire sanity check
+	*dbid = 0;
+
+	if (!db_step(stmt)) {
+		tal_free(stmt);
+		return false;
+	}
+
+	if (db_column_is_null(stmt, 0)) {
+		tal_free(stmt);
+		return false;
+	}
+
+	db_column_node_id(stmt, 0, peer_id);
+	*dbid = db_column_u64(stmt, 1);
+
+	tal_free(stmt);
+	return true;
+}
+
 bool wallet_transaction_type(struct wallet *w, const struct bitcoin_txid *txid,
 			     enum wallet_tx_type *type)
 {

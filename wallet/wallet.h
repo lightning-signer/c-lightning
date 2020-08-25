@@ -1146,6 +1146,17 @@ void wallet_transaction_annotate(struct wallet *w,
 				 enum wallet_tx_type type, u64 channel_id);
 
 /**
+ * Get the peer_id and dbid for a funding transaction.
+ *
+ * Returns false and clears peer_id and dbid if not found.
+ * Returns true and sets peer_id and dbid if found.
+ */
+bool wallet_funding_peerid_dbid(struct wallet *w,
+				const struct bitcoin_txid *txid,
+				struct node_id *peer_id,
+				u64 *dbid);
+
+/**
  * Get the type of a transaction we are watching by its
  * txid.
  *

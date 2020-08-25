@@ -1626,10 +1626,13 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 						 struct client *c,
 						 const u8 *msg_in)
 {
+	struct node_id peer_id;
+	u64 dbid;
 	struct utxo **utxos;
 	struct wally_psbt *psbt;
 
 	if (!fromwire_hsm_sign_withdrawal(tmpctx, msg_in,
+					  &peer_id, &dbid,
 					  &utxos, &psbt))
 		return bad_req(conn, c, msg_in);
 

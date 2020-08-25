@@ -1154,10 +1154,13 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 						 struct client *c,
 						 const u8 *msg_in)
 {
+	struct node_id peer_id;
+	u64 dbid;
 	struct utxo **utxos;
 	struct wally_psbt *psbt;
 
 	if (!fromwire_hsm_sign_withdrawal(tmpctx, msg_in,
+					  &peer_id, &dbid,
 					  &utxos, &psbt))
 		return bad_req(conn, c, msg_in);
 
@@ -1174,7 +1177,7 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 
 	u8 *** wits;
 	proxy_stat rv = proxy_handle_sign_withdrawal_tx(
-		&c->id, c->dbid, outputs, utxos, psbt, &wits);
+		&peer_id, dbid, outputs, utxos, psbt, &wits);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 			      "proxy_%s failed: %s", __FUNCTION__,
