@@ -150,7 +150,8 @@ void marshal_utxo(struct utxo const *up, InputDescriptor *idesc)
 			      ? SpendType::P2SH_P2WPKH
 			      : SpendType::P2WPKH);
 	if (up->close_info) {
-		UnilateralCloseInfo *cinfo = idesc->mutable_close_info();
+		UnilateralCloseInfo *cinfo =
+			idesc->mutable_key_loc()->mutable_close_info();
 		marshal_channel_nonce(&up->close_info->peer_id,
 				      up->close_info->channel_id,
 				      cinfo->mutable_channel_nonce());
