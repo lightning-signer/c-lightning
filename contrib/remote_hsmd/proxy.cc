@@ -145,7 +145,7 @@ void marshal_pubkey(struct pubkey const *pp, PubKey *o_pp)
 void marshal_utxo(struct utxo const *up, InputDescriptor *idesc)
 {
 	idesc->mutable_key_loc()->add_key_path(up->keyindex);
-	idesc->mutable_prev_output()->set_value_sat(up->amount.satoshis);
+	idesc->set_value_sat(up->amount.satoshis);
 	idesc->set_spend_type(up->is_p2sh
 			      ? SpendType::P2SH_P2WPKH
 			      : SpendType::P2WPKH);
@@ -195,7 +195,7 @@ void marshal_single_input_tx(struct bitcoin_tx const *tx,
 	assert(tx->wtx->num_inputs == 1);
 	assert(tx->psbt->num_inputs == 1);
 	InputDescriptor *idesc = o_tp->add_input_descs();
-	idesc->mutable_prev_output()->set_value_sat(psbt_input_get_amount(tx->psbt, 0).satoshis);
+	idesc->set_value_sat(psbt_input_get_amount(tx->psbt, 0).satoshis);
 	if (redeem_script)
 		idesc->set_redeem_script((const char *) redeem_script,
 					 tal_count(redeem_script));
