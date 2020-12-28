@@ -520,12 +520,12 @@ proxy_stat proxy_handle_ready_channel(
 	struct amount_msat *push_value,
 	struct bitcoin_txid *funding_txid,
 	u16 funding_txout,
-	u16 local_to_self_delay,
-	u8 *local_shutdown_script,
-	struct basepoints *remote_basepoints,
-	struct pubkey *remote_funding_pubkey,
-	u16 remote_to_self_delay,
-	u8 *remote_shutdown_script,
+	u16 holder_to_self_delay,
+	u8 *holder_shutdown_script,
+	struct basepoints *counterparty_basepoints,
+	struct pubkey *counterparty_funding_pubkey,
+	u16 counterparty_to_self_delay,
+	u8 *counterparty_shutdown_script,
 	bool option_static_remotekey)
 {
 	STATUS_DEBUG(
@@ -534,10 +534,11 @@ proxy_stat proxy_handle_ready_channel(
 		"\"is_outbound\":%s, \"channel_value\":%" PRIu64 ", "
 		"\"push_value\":%" PRIu64 ", "
 		"\"funding_txid\":%s, \"funding_txout\":%d, "
-		"\"local_to_self_delay\":%d, \"local_shutdown_script\":%s, "
-		"\"remote_basepoints\":%s, \"remote_funding_pubkey\":%s, "
-		"\"remote_to_self_delay\":%d, "
-		"\"remote_shutdown_script\":%s, "
+		"\"holder_to_self_delay\":%d, \"holder_shutdown_script\":%s, "
+		"\"counterparty_basepoints\":%s, "
+		"\"counterparty_funding_pubkey\":%s, "
+		"\"counterparty_to_self_delay\":%d, "
+		"\"counterparty_shutdown_script\":%s, "
 		"\"option_static_remotekey\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
@@ -548,14 +549,14 @@ proxy_stat proxy_handle_ready_channel(
 		push_value->millisatoshis,
 		dump_bitcoin_txid(funding_txid).c_str(),
 		funding_txout,
-		local_to_self_delay,
-		dump_hex(local_shutdown_script,
-			 tal_count(local_shutdown_script)).c_str(),
-		dump_basepoints(remote_basepoints).c_str(),
-		dump_pubkey(remote_funding_pubkey).c_str(),
-		remote_to_self_delay,
-		dump_hex(remote_shutdown_script,
-			 tal_count(remote_shutdown_script)).c_str(),
+		holder_to_self_delay,
+		dump_hex(holder_shutdown_script,
+			 tal_count(holder_shutdown_script)).c_str(),
+		dump_basepoints(counterparty_basepoints).c_str(),
+		dump_pubkey(counterparty_funding_pubkey).c_str(),
+		counterparty_to_self_delay,
+		dump_hex(counterparty_shutdown_script,
+			 tal_count(counterparty_shutdown_script)).c_str(),
 		(option_static_remotekey ? "true" : "false")
 		);
 
@@ -566,13 +567,16 @@ proxy_stat proxy_handle_ready_channel(
 	req.set_is_outbound(is_outbound);
 	req.set_channel_value_sat(channel_value->satoshis);
 	req.set_push_value_msat(push_value->millisatoshis);
-	marshal_outpoint(funding_txid, funding_txout, req.mutable_funding_outpoint());
-	req.set_local_to_self_delay(local_to_self_delay);
-	marshal_script(local_shutdown_script, req.mutable_local_shutdown_script());
-	marshal_basepoints(remote_basepoints, remote_funding_pubkey,
-			   req.mutable_remote_basepoints());
-	req.set_remote_to_self_delay(remote_to_self_delay);
-	marshal_script(remote_shutdown_script, req.mutable_remote_shutdown_script());
+	marshal_outpoint(funding_txid,
+			 funding_txout, req.mutable_funding_outpoint());
+	req.set_holder_to_self_delay(holder_to_self_delay);
+	marshal_script(holder_shutdown_script,
+		       req.mutable_holder_shutdown_script());
+	marshal_basepoints(counterparty_basepoints, counterparty_funding_pubkey,
+			   req.mutable_counterparty_basepoints());
+	req.set_counterparty_to_self_delay(counterparty_to_self_delay);
+	marshal_script(counterparty_shutdown_script,
+		       req.mutable_counterparty_shutdown_script());
 	req.set_commitment_type(
 		option_static_remotekey ?
 		ReadyChannelRequest_CommitmentType_STATIC_REMOTEKEY :
@@ -662,7 +666,7 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 
 proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct bitcoin_tx *tx,
-	const struct pubkey *remote_funding_pubkey,
+	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
 	const struct pubkey *remote_per_commit,
@@ -672,21 +676,21 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	STATUS_DEBUG(
 		"%s:%d %s { "
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
-		"\"remote_funding_pubkey\":%s, "
+		"\"counterparty_funding_pubkey\":%s, "
 		"\"remote_per_commit\":%s, "
 		"\"option_static_remotekey\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		dump_pubkey(remote_funding_pubkey).c_str(),
+		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_pubkey(remote_per_commit).c_str(),
 		(option_static_remotekey ? "true" : "false"),
 		dump_tx(tx).c_str()
 		);
 
 	last_message = "";
-	SignRemoteCommitmentTxRequest req;
+	SignCounterpartyCommitmentTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_pubkey(remote_per_commit,
@@ -695,7 +699,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignRemoteCommitmentTx(&context, req, &rsp);
+	Status status = stub->SignCounterpartyCommitmentTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
@@ -940,7 +944,7 @@ proxy_stat proxy_handle_get_channel_basepoints(
 
 proxy_stat proxy_handle_sign_mutual_close_tx(
 	struct bitcoin_tx *tx,
-	const struct pubkey *remote_funding_pubkey,
+	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
 	struct bitcoin_signature *o_sig)
@@ -948,12 +952,12 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 	STATUS_DEBUG(
 		"%s:%d %s { "
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
-		"\"remote_funding_pubkey\":%s, \"tx\":%s }",
+		"\"counterparty_funding_pubkey\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		dump_pubkey(remote_funding_pubkey).c_str(),
+		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_tx(tx).c_str()
 		);
 
@@ -986,7 +990,7 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 
 proxy_stat proxy_handle_sign_commitment_tx(
 	struct bitcoin_tx *tx,
-	const struct pubkey *remote_funding_pubkey,
+	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
 	struct bitcoin_signature *o_sig)
@@ -994,24 +998,24 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	STATUS_DEBUG(
 		"%s:%d %s { "
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
-		"\"remote_funding_pubkey\":%s, \"tx\":%s }",
+		"\"counterparty_funding_pubkey\":%s, \"tx\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		dump_pubkey(remote_funding_pubkey).c_str(),
+		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_tx(tx).c_str()
 		);
 
 	last_message = "";
-	SignCommitmentTxRequest req;
+	SignHolderCommitmentTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_single_input_tx(tx, NULL, req.mutable_tx());
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignCommitmentTx(&context, req, &rsp);
+	Status status = stub->SignHolderCommitmentTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
@@ -1107,7 +1111,7 @@ proxy_stat proxy_handle_sign_local_htlc_tx(
 		);
 
 	last_message = "";
-	SignLocalHTLCTxRequest req;
+	SignHolderHTLCTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	req.set_n(commit_num);
@@ -1115,7 +1119,7 @@ proxy_stat proxy_handle_sign_local_htlc_tx(
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignLocalHTLCTx(&context, req, &rsp);
+	Status status = stub->SignHolderHTLCTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
@@ -1155,7 +1159,7 @@ proxy_stat proxy_handle_sign_remote_htlc_tx(
 		);
 
 	last_message = "";
-	SignRemoteHTLCTxRequest req;
+	SignCounterpartyHTLCTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_pubkey(remote_per_commit_point,
@@ -1164,7 +1168,7 @@ proxy_stat proxy_handle_sign_remote_htlc_tx(
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignRemoteHTLCTx(&context, req, &rsp);
+	Status status = stub->SignCounterpartyHTLCTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s. \"sig\":%s }",
@@ -1208,7 +1212,7 @@ proxy_stat proxy_handle_sign_delayed_payment_to_us(
 	SignDelayedPaymentToUsRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
-	req.set_n(commit_num);
+	req.set_commitment_number(commit_num);
 	marshal_single_input_tx(tx, wscript, req.mutable_tx());
 
 	ClientContext context;
@@ -1252,7 +1256,7 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 		);
 
 	last_message = "";
-	SignRemoteHTLCToUsRequest req;
+	SignCounterpartyHTLCToUsRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_pubkey(remote_per_commit_point,
@@ -1261,7 +1265,7 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignRemoteHTLCToUs(&context, req, &rsp);
+	Status status = stub->SignCounterpartyHTLCToUs(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
@@ -1303,7 +1307,7 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 		);
 
 	last_message = "";
-	SignPenaltyToUsRequest req;
+	SignJusticeTxToUsRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_secret(revocation_secret, req.mutable_revocation_secret());
@@ -1311,7 +1315,7 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignPenaltyToUs(&context, req, &rsp);
+	Status status = stub->SignJusticeTxToUs(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
