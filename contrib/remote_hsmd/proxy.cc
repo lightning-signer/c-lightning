@@ -1212,6 +1212,7 @@ proxy_stat proxy_handle_sign_delayed_payment_to_us(
 	SignDelayedPaymentToUsRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
+	req.set_input(0);
 	req.set_commitment_number(commit_num);
 	marshal_single_input_tx(tx, wscript, req.mutable_tx());
 
@@ -1259,6 +1260,7 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 	SignCounterpartyHTLCToUsRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
+	req.set_input(0);
 	marshal_pubkey(remote_per_commit_point,
 		       req.mutable_remote_per_commit_point());
 	marshal_single_input_tx(tx, wscript, req.mutable_tx());
@@ -1311,6 +1313,7 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_secret(revocation_secret, req.mutable_revocation_secret());
+	req.set_input(0);
 	marshal_single_input_tx(tx, wscript, req.mutable_tx());
 
 	ClientContext context;
