@@ -1209,7 +1209,7 @@ proxy_stat proxy_handle_sign_delayed_payment_to_us(
 		);
 
 	last_message = "";
-	SignDelayedPaymentToUsRequest req;
+	SignDelayedSweepRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	req.set_input(0);
@@ -1218,7 +1218,7 @@ proxy_stat proxy_handle_sign_delayed_payment_to_us(
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignDelayedPaymentToUs(&context, req, &rsp);
+	Status status = stub->SignDelayedSweep(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
@@ -1257,7 +1257,7 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 		);
 
 	last_message = "";
-	SignCounterpartyHTLCToUsRequest req;
+	SignCounterpartyHTLCSweepRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	req.set_input(0);
@@ -1267,7 +1267,7 @@ proxy_stat proxy_handle_sign_remote_htlc_to_us(
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignCounterpartyHTLCToUs(&context, req, &rsp);
+	Status status = stub->SignCounterpartyHTLCSweep(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
@@ -1309,7 +1309,7 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 		);
 
 	last_message = "";
-	SignJusticeTxToUsRequest req;
+	SignJusticeSweepRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_secret(revocation_secret, req.mutable_revocation_secret());
@@ -1318,7 +1318,7 @@ proxy_stat proxy_handle_sign_penalty_to_us(
 
 	ClientContext context;
 	SignatureReply rsp;
-	Status status = stub->SignJusticeTxToUs(&context, req, &rsp);
+	Status status = stub->SignJusticeSweep(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
