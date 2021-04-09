@@ -210,6 +210,15 @@ void marshal_single_input_tx(struct bitcoin_tx const *tx,
 	}
 }
 
+void marshal_rhashes(const struct sha256 *rhashes,
+		     RepeatedPtrField<string> *payment_hashes)
+{
+	for (size_t ii = 0; ii < tal_count(rhashes); ++ii) {
+		payment_hashes->Add(string((const char *) &rhashes[ii],
+					   sizeof(struct sha256)));
+	}
+}
+
 void unmarshal_secret(Secret const &ss, struct secret *o_sp)
 {
 	assert(ss.data().size() == sizeof(o_sp->data));
@@ -671,6 +680,8 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	u64 dbid,
 	const struct pubkey *remote_per_commit,
 	bool option_static_remotekey,
+	struct sha256 *rhashes, u64 commit_num,
+	u32 feerate,
 	struct bitcoin_signature *o_sig)
 {
 	STATUS_DEBUG(
@@ -678,7 +689,9 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
 		"\"counterparty_funding_pubkey\":%s, "
 		"\"remote_per_commit\":%s, "
-		"\"option_static_remotekey\":%s, \"tx\":%s }",
+		"\"option_static_remotekey\":%s, \"tx\":%s, "
+		"\"rhashes\":%s, \"commit_num\":%" PRIu64 ", "
+		"\"feerate\":%d }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -686,7 +699,10 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_pubkey(remote_per_commit).c_str(),
 		(option_static_remotekey ? "true" : "false"),
-		dump_tx(tx).c_str()
+		dump_tx(tx).c_str(),
+		dump_rhashes(rhashes, tal_count(rhashes)).c_str(),
+		commit_num,
+		feerate
 		);
 
 	last_message = "";
@@ -696,6 +712,9 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	marshal_pubkey(remote_per_commit,
 		       req.mutable_remote_per_commit_point());
 	marshal_single_input_tx(tx, NULL, req.mutable_tx());
+	marshal_rhashes(rhashes, req.mutable_payment_hashes());
+	req.set_commit_num(commit_num);
+	req.set_feerate_sat_per_kw(feerate);
 
 	ClientContext context;
 	SignatureReply rsp;
