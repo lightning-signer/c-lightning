@@ -681,7 +681,6 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	const struct pubkey *remote_per_commit,
 	bool option_static_remotekey,
 	struct sha256 *rhashes, u64 commit_num,
-	u32 feerate,
 	struct bitcoin_signature *o_sig)
 {
 	STATUS_DEBUG(
@@ -690,8 +689,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		"\"counterparty_funding_pubkey\":%s, "
 		"\"remote_per_commit\":%s, "
 		"\"option_static_remotekey\":%s, \"tx\":%s, "
-		"\"rhashes\":%s, \"commit_num\":%" PRIu64 ", "
-		"\"feerate\":%d }",
+		"\"rhashes\":%s, \"commit_num\":%" PRIu64 " }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -701,8 +699,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		(option_static_remotekey ? "true" : "false"),
 		dump_tx(tx).c_str(),
 		dump_rhashes(rhashes, tal_count(rhashes)).c_str(),
-		commit_num,
-		feerate
+		commit_num
 		);
 
 	last_message = "";
@@ -714,7 +711,6 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	marshal_single_input_tx(tx, NULL, req.mutable_tx());
 	marshal_rhashes(rhashes, req.mutable_payment_hashes());
 	req.set_commit_num(commit_num);
-	req.set_feerate_sat_per_kw(feerate);
 
 	ClientContext context;
 	SignatureReply rsp;

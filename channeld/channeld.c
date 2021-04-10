@@ -855,8 +855,7 @@ static secp256k1_ecdsa_signature *calc_commitsigs(const tal_t *ctx,
 						   &peer->channel->funding_pubkey[REMOTE],
 						   &peer->remote_per_commit,
 						   peer->channel->option_static_remotekey,
-						   rhashes, commit_index,
-						   channel_feerate(peer->channel, REMOTE));
+						   rhashes, commit_index);
 
 	msg = hsm_req(tmpctx, take(msg));
 	if (!fromwire_hsm_sign_tx_reply(msg, commit_sig))

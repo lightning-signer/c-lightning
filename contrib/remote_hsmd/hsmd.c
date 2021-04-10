@@ -688,14 +688,13 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	bool option_static_remotekey;
 	struct sha256 *rhashes;
 	u64 commit_num;
-	u32 feerate;
 
 	if (!fromwire_hsm_sign_remote_commitment_tx(tmpctx, msg_in,
 						    &tx,
 						    &remote_funding_pubkey,
 						    &remote_per_commit,
 						    &option_static_remotekey,
-						    &rhashes, &commit_num, &feerate))
+						    &rhashes, &commit_num))
 		bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
@@ -710,7 +709,7 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 		&c->id, c->dbid,
 		&remote_per_commit,
 		option_static_remotekey,
-		rhashes, commit_num, feerate,
+		rhashes, commit_num,
 		&sig);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,

@@ -90,7 +90,6 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	bool option_static_remotekey,
 	struct sha256 *rhashes,
 	u64 commit_num,
-	u32 feerate,
 	struct bitcoin_signature *o_sig);
 
 proxy_stat proxy_handle_get_per_commitment_point(

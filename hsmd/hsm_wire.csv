@@ -172,7 +172,6 @@ msgdata,hsm_sign_remote_commitment_tx,option_static_remotekey,bool,
 msgdata,hsm_sign_remote_commitment_tx,num_htlc_rhash,u16,
 msgdata,hsm_sign_remote_commitment_tx,htlc_rhash,sha256,num_htlc_rhash
 msgdata,hsm_sign_remote_commitment_tx,commit_num,u64,
-msgdata,hsm_sign_remote_commitment_tx,feerate,u32,
 
 # channeld asks HSM to sign remote HTLC tx.
 msgtype,hsm_sign_remote_htlc_tx,20

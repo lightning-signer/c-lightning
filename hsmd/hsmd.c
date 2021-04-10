@@ -990,14 +990,13 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	bool option_static_remotekey;
 	struct sha256 *htlc_rhash;
 	u64 commit_num;
-	u32 feerate;
 
 	if (!fromwire_hsm_sign_remote_commitment_tx(tmpctx, msg_in,
 						    &tx,
 						    &remote_funding_pubkey,
 						    &remote_per_commit,
 						    &option_static_remotekey,
-						    &htlc_rhash, &commit_num, &feerate))
+						    &htlc_rhash, &commit_num))
 		return bad_req(conn, c, msg_in);
 	tx->chainparams = c->chainparams;
 
