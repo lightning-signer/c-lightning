@@ -820,10 +820,22 @@ static struct bitcoin_signature *calc_commitsigs(const tal_t *ctx,
 	const u8 *msg;
 	struct bitcoin_signature *htlc_sigs;
 
+	size_t num_entries = tal_count(htlc_map);
+	struct sha256 *rhashes = tal_arrz(tmpctx, struct sha256, num_entries);
+	size_t nrhash = 0;
+	for (size_t ndx = 0; ndx < num_entries; ++ndx) {
+		if (htlc_map[ndx]) {
+			memcpy(&rhashes[nrhash], &htlc_map[ndx]->rhash, sizeof(rhashes[nrhash]));
+			++nrhash;
+		}
+	}
+	tal_resize(&rhashes, nrhash);
+
 	msg = towire_hsmd_sign_remote_commitment_tx(NULL, txs[0],
 						   &peer->channel->funding_pubkey[REMOTE],
 						   &peer->remote_per_commit,
-						   peer->channel->option_static_remotekey);
+						   peer->channel->option_static_remotekey,
+						   rhashes, commit_index);
 
 	msg = hsm_req(tmpctx, take(msg));
 	if (!fromwire_hsmd_sign_tx_reply(msg, commit_sig))
