@@ -36,5 +36,6 @@ std::string dump_wally_tx_outputs(const struct wally_tx_output *outputs,
 std::string dump_wally_tx(const struct wally_tx *wtx);
 std::string dump_wally_psbt(const struct wally_psbt *psbt);
 std::string dump_tx(const struct bitcoin_tx *tx);
+std::string dump_rhashes(const struct sha256 *rhashes, size_t num_rhashes);
 
 #endif /* LIGHTNING_CONTRIB_REMOTE_HSMD_DUMP_H */
