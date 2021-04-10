@@ -597,7 +597,8 @@ static bool funder_finalize_channel_setup(struct state *state,
 						   *tx,
 						   &state->channel->funding_pubkey[REMOTE],
 						   &state->first_per_commitment_point[REMOTE],
-						   state->channel->option_static_remotekey);
+						   state->channel->option_static_remotekey,
+						   NULL, 0);
 
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
@@ -1150,7 +1151,8 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 						   remote_commit,
 						   &state->channel->funding_pubkey[REMOTE],
 						   &state->first_per_commitment_point[REMOTE],
-						   state->channel->option_static_remotekey);
+						   state->channel->option_static_remotekey,
+						   NULL, 0);
 
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);

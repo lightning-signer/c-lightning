@@ -86,4 +86,4 @@ Some popular tests:
 rust-lightning-signer
 ----------------------------------------------------------------
 
-    cargo run --bin server |& tee log3
+    cargo run --bin server -- --no-persist --test-mode |& tee log3
