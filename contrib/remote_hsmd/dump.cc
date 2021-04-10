@@ -468,3 +468,16 @@ string dump_tx(const struct bitcoin_tx *tx)
 	ostrm << " }";
 	return ostrm.str();
 }
+
+string dump_rhashes(const struct sha256 *rhashes, size_t num_rhashes)
+{
+	ostringstream ostrm;
+	ostrm << "[";
+	for (size_t ii = 0; ii < num_rhashes; ii++) {
+		if (ii != 0)
+			ostrm << ",";
+		ostrm << dump_hex(&rhashes[ii], sizeof(rhashes[ii]));
+	}
+	ostrm << "]";
+	return ostrm.str();
+}
