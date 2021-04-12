@@ -54,6 +54,7 @@ def test_queryrates(node_factory, bitcoind):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v1')  # Mixed v1 + v2, v2 manually turned on
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_multifunding_v2_best_effort(node_factory, bitcoind):
     '''
     Check that best_effort flag works.
@@ -139,6 +140,7 @@ def test_multifunding_v2_best_effort(node_factory, bitcoind):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v2')
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_v2_open_sigs_restart(node_factory, bitcoind):
     disconnects_1 = ['-WIRE_TX_SIGNATURES']
     disconnects_2 = ['+WIRE_TX_SIGNATURES']
@@ -184,6 +186,7 @@ def test_v2_open_sigs_restart(node_factory, bitcoind):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v2')
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_v2_open_sigs_restart_while_dead(node_factory, bitcoind):
     # Same thing as above, except the transaction mines
     # while we're asleep
@@ -237,6 +240,7 @@ def test_v2_open_sigs_restart_while_dead(node_factory, bitcoind):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
+## @unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_v2_rbf_single(node_factory, bitcoind, chainparams):
     l1, l2 = node_factory.get_nodes(2, opts={'wumbo': None})
 
@@ -415,6 +419,7 @@ def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_v2_rbf_multi(node_factory, bitcoind, chainparams):
     l1, l2 = node_factory.get_nodes(2,
                                     opts={'may_reconnect': True,
@@ -506,6 +511,7 @@ def test_v2_rbf_multi(node_factory, bitcoind, chainparams):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v2')
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_reconnect_init(node_factory, bitcoind, chainparams):
     disconnects = ['-WIRE_INIT_RBF',
                    '@WIRE_INIT_RBF',
@@ -557,6 +563,7 @@ def test_rbf_reconnect_init(node_factory, bitcoind, chainparams):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v2')
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_reconnect_ack(node_factory, bitcoind, chainparams):
     disconnects = ['-WIRE_ACK_RBF',
                    '@WIRE_ACK_RBF',
@@ -608,6 +615,7 @@ def test_rbf_reconnect_ack(node_factory, bitcoind, chainparams):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v2')
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_reconnect_tx_construct(node_factory, bitcoind, chainparams):
     disconnects = ['=WIRE_TX_ADD_INPUT',  # Initial funding succeeds
                    '-WIRE_TX_ADD_INPUT',
@@ -675,6 +683,7 @@ def test_rbf_reconnect_tx_construct(node_factory, bitcoind, chainparams):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v2')
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_reconnect_tx_sigs(node_factory, bitcoind, chainparams):
     disconnects = ['=WIRE_TX_SIGNATURES',  # Initial funding succeeds
                    '-WIRE_TX_SIGNATURES',  # When we send tx-sigs, RBF
@@ -816,6 +825,7 @@ def test_rbf_reconnect_tx_sigs(node_factory, bitcoind, chainparams):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_no_overlap(node_factory, bitcoind, chainparams):
     l1, l2 = node_factory.get_nodes(2,
                                     opts={'allow_warning': True})

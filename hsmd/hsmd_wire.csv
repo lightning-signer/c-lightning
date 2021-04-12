@@ -69,6 +69,7 @@ msgdata,hsmd_ready_channel,remote_to_self_delay,u16,
 msgdata,hsmd_ready_channel,remote_shutdown_script_len,u16,
 msgdata,hsmd_ready_channel,remote_shutdown_script,u8,remote_shutdown_script_len
 msgdata,hsmd_ready_channel,option_static_remotekey,bool,
+msgdata,hsmd_ready_channel,option_anchor_outputs,bool,
 
 # No value returned.
 msgtype,hsmd_ready_channel_reply,131

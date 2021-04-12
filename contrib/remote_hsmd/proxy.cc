@@ -535,7 +535,8 @@ proxy_stat proxy_handle_ready_channel(
 	struct pubkey *counterparty_funding_pubkey,
 	u16 counterparty_to_self_delay,
 	u8 *counterparty_shutdown_script,
-	bool option_static_remotekey)
+	bool option_static_remotekey,
+	bool option_anchor_outputs)
 {
 	STATUS_DEBUG(
 		"%s:%d %s { "
@@ -548,7 +549,8 @@ proxy_stat proxy_handle_ready_channel(
 		"\"counterparty_funding_pubkey\":%s, "
 		"\"counterparty_to_self_delay\":%d, "
 		"\"counterparty_shutdown_script\":%s, "
-		"\"option_static_remotekey\":%s }",
+		"\"option_static_remotekey\":%s, "
+		"\"option_anchor_outputs\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -566,7 +568,8 @@ proxy_stat proxy_handle_ready_channel(
 		counterparty_to_self_delay,
 		dump_hex(counterparty_shutdown_script,
 			 tal_count(counterparty_shutdown_script)).c_str(),
-		(option_static_remotekey ? "true" : "false")
+		(option_static_remotekey ? "true" : "false"),
+		(option_anchor_outputs ? "true" : "false")
 		);
 
 	last_message = "";
@@ -586,10 +589,12 @@ proxy_stat proxy_handle_ready_channel(
 	req.set_counterparty_to_self_delay(counterparty_to_self_delay);
 	marshal_script(counterparty_shutdown_script,
 		       req.mutable_counterparty_shutdown_script());
-	req.set_commitment_type(
-		option_static_remotekey ?
-		ReadyChannelRequest_CommitmentType_STATIC_REMOTEKEY :
-		ReadyChannelRequest_CommitmentType_LEGACY);
+	if (option_anchor_outputs)
+		req.set_commitment_type(ReadyChannelRequest_CommitmentType_ANCHORS);
+	else if (option_static_remotekey)
+		req.set_commitment_type(ReadyChannelRequest_CommitmentType_STATIC_REMOTEKEY);
+	else
+		req.set_commitment_type(ReadyChannelRequest_CommitmentType_LEGACY);
 
 	ClientContext context;
 	ReadyChannelReply rsp;
