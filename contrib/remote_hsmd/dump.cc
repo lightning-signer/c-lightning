@@ -88,7 +88,9 @@ string dump_pubkey(const struct pubkey *kp)
 string dump_ext_pubkey(const struct ext_key *xp)
 {
 	char *out;
+	tal_wally_start();
 	int rv = bip32_key_to_base58(xp, BIP32_FLAG_KEY_PUBLIC, &out);
+	tal_wally_end(NULL);
 	assert(rv == WALLY_OK);
 	string retval(out);
 	wally_free_string(out);
@@ -209,21 +211,22 @@ string dump_wally_tx_witness_stack(const struct wally_tx_witness_stack *sp)
 	return ostrm.str();
 }
 
-string dump_wally_keypath_item(const struct wally_keypath_item *ip)
+string dump_wally_keypath_item(const struct wally_map_item *ip)
 {
+	size_t npath = (ip->value_len - BIP32_KEY_FINGERPRINT_LEN) / sizeof(uint32_t);
 	ostringstream ostrm;
 	ostrm << "{ ";
-	ostrm << "\"pubkey\":" << dump_hex(
-		ip->pubkey, pubkey_is_compressed(ip->pubkey) ?
-		EC_PUBLIC_KEY_LEN : EC_PUBLIC_KEY_UNCOMPRESSED_LEN);
+	ostrm << "\"pubkey\":" << dump_hex(ip->key, ip->key_len);
 	ostrm << ", \"origin\":{ ";
-	ostrm << " \"fingerprint\":" << dump_hex(ip->origin.fingerprint,
-					      sizeof(ip->origin.fingerprint));
+	ostrm << " \"fingerprint\":"
+	      << dump_hex(ip->value, BIP32_KEY_FINGERPRINT_LEN);
 	ostrm << ", \"path\":[ ";
-	for (size_t ii = 0; ii < ip->origin.path_len; ++ii) {
+	for (size_t ii = 0; ii < npath; ++ii) {
 		if (ii != 0)
 			ostrm << ",";
-		ostrm << ip->origin.path[ii];
+		uint32_t pelem = *(uint32_t *)
+			ip->value + BIP32_KEY_FINGERPRINT_LEN + ii * sizeof(uint32_t);
+		ostrm << pelem;
 	}
 	ostrm << " ]";
 	ostrm << " }";
@@ -231,7 +234,7 @@ string dump_wally_keypath_item(const struct wally_keypath_item *ip)
 	return ostrm.str();
 }
 
-string dump_wally_keypath_map(const struct wally_keypath_map *mp)
+string dump_wally_keypath_map(const struct wally_map *mp)
 {
 	ostringstream ostrm;
 	ostrm << "[";
@@ -246,19 +249,17 @@ string dump_wally_keypath_map(const struct wally_keypath_map *mp)
 	return ostrm.str();
 }
 
-string dump_wally_partial_sigs_item(const struct wally_partial_sigs_item *ip)
+string dump_wally_signatures_item(const struct wally_map_item *ip)
 {
 	ostringstream ostrm;
 	ostrm << "{ ";
-	ostrm << "\"pubkey\":" << dump_hex(
-		ip->pubkey, pubkey_is_compressed(ip->pubkey) ?
-		EC_PUBLIC_KEY_LEN : EC_PUBLIC_KEY_UNCOMPRESSED_LEN);
-	ostrm << ", \"sig\":" << dump_hex(ip->sig, ip->sig_len);
+	ostrm << "\"pubkey\":" << dump_hex(ip->key, ip->key_len);
+	ostrm << ", \"sig\":" << dump_hex(ip->value, ip->value_len);
 	ostrm << " }";
 	return ostrm.str();
 }
 
-string dump_wally_partial_sigs_map(const struct wally_partial_sigs_map *mp)
+string dump_wally_signatures_map(const struct wally_map *mp)
 {
 	ostringstream ostrm;
 	ostrm << "[";
@@ -266,14 +267,14 @@ string dump_wally_partial_sigs_map(const struct wally_partial_sigs_map *mp)
 		for (size_t ii = 0; ii < mp->num_items; ii++) {
 			if (ii != 0)
 				ostrm << ",";
-			ostrm << dump_wally_partial_sigs_item(&mp->items[ii]);
+			ostrm << dump_wally_signatures_item(&mp->items[ii]);
 		}
 	}
 	ostrm << "]";
 	return ostrm.str();
 }
 
-string dump_wally_unknowns_item(const struct wally_unknowns_item *ip)
+string dump_wally_unknowns_item(const struct wally_map_item *ip)
 {
 	ostringstream ostrm;
 	ostrm << "{ ";
@@ -283,7 +284,7 @@ string dump_wally_unknowns_item(const struct wally_unknowns_item *ip)
 	return ostrm.str();
 }
 
-string dump_wally_unknowns_map(const struct wally_unknowns_map *mp)
+string dump_wally_unknowns_map(const struct wally_map *mp)
 {
 	ostringstream ostrm;
 	ostrm << "[";
@@ -381,21 +382,21 @@ string dump_wally_psbt_input(const struct wally_psbt_input *in)
 {
 	ostringstream ostrm;
 	ostrm << "{ ";
-	ostrm << "\"non_witness_utxo\":" << dump_wally_tx(in->non_witness_utxo);
+	ostrm << "\"utxo\":" << dump_wally_tx(in->utxo);
 	ostrm << ", \"witness_utxo\":" << dump_wally_tx_output(in->witness_utxo);
 	ostrm << ", \"redeem_script\":" << dump_hex(in->redeem_script,
 						    in->redeem_script_len);
 	ostrm << ", \"witness_script\":" << dump_hex(in->witness_script,
 						     in->witness_script_len);
-	ostrm << ", \"final_script_sig\":" << dump_hex(in->final_script_sig,
-						       in->final_script_sig_len);
+	ostrm << ", \"final_scriptsig\":" << dump_hex(in->final_scriptsig,
+						       in->final_scriptsig_len);
 	ostrm << ", \"final_witness\":"
 	      << dump_wally_tx_witness_stack(in->final_witness);
-	ostrm << ", \"keypaths\":" << dump_wally_keypath_map(in->keypaths);
-	ostrm << ", \"partial_sigs\":"
-	      << dump_wally_partial_sigs_map(in->partial_sigs);
-	ostrm << ", \"unknowns\":" << dump_wally_unknowns_map(in->unknowns);
-	ostrm << ", \"sighash_type\":" << in->sighash_type;
+	ostrm << ", \"keypaths\":" << dump_wally_keypath_map(&in->keypaths);
+	ostrm << ", \"signatures\":"
+	      << dump_wally_signatures_map(&in->signatures);
+	ostrm << ", \"unknowns\":" << dump_wally_unknowns_map(&in->unknowns);
+	ostrm << ", \"sighash\":" << in->sighash;
 	ostrm << " }";
 	return ostrm.str();
 }
@@ -422,8 +423,8 @@ string dump_wally_psbt_output(const struct wally_psbt_output *out)
 						  out->redeem_script_len);
 	ostrm << ", \"witness_script\":" << dump_hex(out->witness_script,
 						     out->witness_script_len);
-	ostrm << ", \"keypaths\":" << dump_wally_keypath_map(out->keypaths);
-	ostrm << ", \"unknowns\":" << dump_wally_unknowns_map(out->unknowns);
+	ostrm << ", \"keypaths\":" << dump_wally_keypath_map(&out->keypaths);
+	ostrm << ", \"unknowns\":" << dump_wally_unknowns_map(&out->unknowns);
 	ostrm << " }";
 	return ostrm.str();
 
@@ -453,7 +454,7 @@ string dump_wally_psbt(const struct wally_psbt *psbt)
 	      << dump_wally_psbt_inputs(psbt->inputs, psbt->num_inputs);
 	ostrm << ", \"outputs\":"
 	      << dump_wally_psbt_outputs(psbt->outputs, psbt->num_outputs);
-	ostrm << ", \"unknowns\":" << dump_wally_unknowns_map(psbt->unknowns);
+	ostrm << ", \"unknowns\":" << dump_wally_unknowns_map(&psbt->unknowns);
 	ostrm << ", \"version\":" << psbt->version;
 	ostrm << " }";
 	return ostrm.str();

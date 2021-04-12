@@ -11,7 +11,9 @@ extern "C" {
 #include <bitcoin/psbt.h>
 #include <bitcoin/short_channel_id.h>
 #include <bitcoin/tx.h>
+#include <common/channel_type.h>
 #include <common/derive_basepoints.h>
+#include <common/features.h>
 #include <common/hash_u5.h>
 #include <common/node_id.h>
 #include <common/status.h>
@@ -29,6 +31,7 @@ extern "C" {
 #include <unistd.h>
 extern "C" {
 #include <wally_bip32.h>
+#include <wally_psbt.h>
 }
 
 
@@ -535,8 +538,11 @@ proxy_stat proxy_handle_ready_channel(
 	struct pubkey *counterparty_funding_pubkey,
 	u16 counterparty_to_self_delay,
 	u8 *counterparty_shutdown_script,
-	bool option_static_remotekey)
+	struct channel_type *channel_type)
 {
+	bool option_static_remotekey = channel_type_has(channel_type, OPT_STATIC_REMOTEKEY);
+	bool option_anchor_outputs = channel_type_has(channel_type, OPT_ANCHOR_OUTPUTS);
+
 	STATUS_DEBUG(
 		"%s:%d %s { "
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
@@ -548,7 +554,8 @@ proxy_stat proxy_handle_ready_channel(
 		"\"counterparty_funding_pubkey\":%s, "
 		"\"counterparty_to_self_delay\":%d, "
 		"\"counterparty_shutdown_script\":%s, "
-		"\"option_static_remotekey\":%s }",
+		"\"option_static_remotekey\":%s, "
+		"\"option_anchor_outputs\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
@@ -566,7 +573,8 @@ proxy_stat proxy_handle_ready_channel(
 		counterparty_to_self_delay,
 		dump_hex(counterparty_shutdown_script,
 			 tal_count(counterparty_shutdown_script)).c_str(),
-		(option_static_remotekey ? "true" : "false")
+		(option_static_remotekey ? "true" : "false"),
+		(option_anchor_outputs ? "true" : "false")
 		);
 
 	last_message = "";
@@ -586,10 +594,12 @@ proxy_stat proxy_handle_ready_channel(
 	req.set_counterparty_to_self_delay(counterparty_to_self_delay);
 	marshal_script(counterparty_shutdown_script,
 		       req.mutable_counterparty_shutdown_script());
-	req.set_commitment_type(
-		option_static_remotekey ?
-		ReadyChannelRequest_CommitmentType_STATIC_REMOTEKEY :
-		ReadyChannelRequest_CommitmentType_LEGACY);
+	if (option_anchor_outputs)
+		req.set_commitment_type(ReadyChannelRequest_CommitmentType_ANCHORS);
+	else if (option_static_remotekey)
+		req.set_commitment_type(ReadyChannelRequest_CommitmentType_STATIC_REMOTEKEY);
+	else
+		req.set_commitment_type(ReadyChannelRequest_CommitmentType_LEGACY);
 
 	ClientContext context;
 	ReadyChannelReply rsp;
@@ -644,8 +654,7 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 		InputDescriptor *idesc = req.mutable_tx()->add_input_descs();
 		if (uu < tal_count(utxos) &&
 		    wally_tx_input_spends(&psbt->tx->inputs[ii],
-					  &utxos[uu]->txid,
-					  utxos[uu]->outnum)) {
+					  &utxos[uu]->outpoint)) {
 			marshal_utxo(utxos[uu], idesc);
 			++uu;
 		}

@@ -1922,7 +1922,7 @@ static u8 *accepter_commits(struct state *state,
 						    remote_commit,
 						    &state->channel->funding_pubkey[REMOTE],
 						    &state->first_per_commitment_point[REMOTE],
-						    true);
+						    true, NULL, 0);
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
 	if (!fromwire_hsmd_sign_tx_reply(msg, &local_sig))
@@ -2515,7 +2515,7 @@ static u8 *opener_commits(struct state *state,
 						   remote_commit,
 						   &state->channel->funding_pubkey[REMOTE],
 						   &state->first_per_commitment_point[REMOTE],
-						   true);
+						    true, NULL, 0);
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
 	if (!fromwire_hsmd_sign_tx_reply(msg, &local_sig))
