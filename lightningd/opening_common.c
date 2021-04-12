@@ -2,6 +2,7 @@
 #include <common/json_command.h>
 #include <common/jsonrpc_errors.h>
 #include <connectd/connectd_wiregen.h>
+#include <hsmd/hsmd_wiregen.h>
 #include <lightningd/channel.h>
 #include <lightningd/log.h>
 #include <lightningd/notification.h>
@@ -11,6 +12,7 @@
 #include <openingd/dualopend_wiregen.h>
 #include <openingd/openingd_wiregen.h>
 #include <wallet/wallet.h>
+#include <wire/wire_sync.h>
 
 static void destroy_uncommitted_channel(struct uncommitted_channel *uc)
 {
@@ -34,6 +36,7 @@ new_uncommitted_channel(struct peer *peer)
 {
 	struct lightningd *ld = peer->ld;
 	struct uncommitted_channel *uc = tal(ld, struct uncommitted_channel);
+	u8 *msg;
 
 	uc->peer = peer;
 	assert(!peer->uncommitted_channel);
@@ -48,6 +51,15 @@ new_uncommitted_channel(struct peer *peer)
 	uc->our_config.id = 0;
 
 	memset(&uc->cid, 0xFF, sizeof(uc->cid));
+
+	/* Declare the new channel to the HSM. */
+	msg = towire_hsmd_new_channel(NULL, &uc->peer->id, uc->dbid);
+	if (!wire_sync_write(ld->hsm_fd, take(msg)))
+		fatal("Could not write to HSM: %s", strerror(errno));
+	msg = wire_sync_read(tmpctx, ld->hsm_fd);
+	if (!fromwire_hsmd_new_channel_reply(msg))
+		fatal("HSM gave bad hsm_new_channel_reply %s",
+		      tal_hex(msg, msg));
 
 	get_channel_basepoints(ld, &uc->peer->id, uc->dbid,
 			       &uc->local_basepoints, &uc->local_funding_pubkey);

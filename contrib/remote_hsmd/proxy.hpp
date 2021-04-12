@@ -72,7 +72,8 @@ proxy_stat proxy_handle_ready_channel(
 	struct pubkey *remote_funding_pubkey,
 	u16 remote_to_self_delay,
 	u8 *remote_shutdown_script,
-	bool option_static_remotekey);
+	bool option_static_remotekey,
+	bool option_anchor_outputs);
 
 proxy_stat proxy_handle_sign_withdrawal_tx(
 	struct node_id *peer_id, u64 dbid,

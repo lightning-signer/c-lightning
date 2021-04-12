@@ -1556,11 +1556,11 @@ static struct io_plan *handle_new_channel(struct io_conn *conn,
 	struct node_id peer_id;
 	u64 dbid;
 
-	if (!fromwire_hsm_new_channel(msg_in, &peer_id, &dbid))
+	if (!fromwire_hsmd_new_channel(msg_in, &peer_id, &dbid))
 		return bad_req(conn, c, msg_in);
 
 	return req_reply(conn, c,
-			 take(towire_hsm_new_channel_reply(NULL)));
+			 take(towire_hsmd_new_channel_reply(NULL)));
 }
 
 static bool mem_is_zero(const void *mem, size_t len)
@@ -1589,9 +1589,10 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 	u16 remote_to_self_delay;
 	u8 *remote_shutdown_script;
 	bool option_static_remotekey;
+	bool option_anchor_outputs;
 	struct amount_msat value_msat;
 
-	if (!fromwire_hsm_ready_channel(tmpctx, msg_in, &is_outbound,
+	if (!fromwire_hsmd_ready_channel(tmpctx, msg_in, &is_outbound,
 					&channel_value, &push_value, &funding_txid,
 					&funding_txout, &local_to_self_delay,
 					&local_shutdown_script,
@@ -1599,7 +1600,8 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 					&remote_funding_pubkey,
 					&remote_to_self_delay,
 					&remote_shutdown_script,
-					&option_static_remotekey))
+					&option_static_remotekey,
+					&option_anchor_outputs))
 		return bad_req(conn, c, msg_in);
 
 	/* Fail fast if any values are obviously uninitialized. */
@@ -1613,7 +1615,7 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 	assert(remote_to_self_delay > 0);
 
 	return req_reply(conn, c,
-			 take(towire_hsm_ready_channel_reply(NULL)));
+			 take(towire_hsmd_ready_channel_reply(NULL)));
 }
 
 /*~ For almost every wallet tx we use the BIP32 seed, but not for onchain

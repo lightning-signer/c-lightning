@@ -1155,6 +1155,7 @@ def test_hsmtool_dump_descriptors(node_factory, bitcoind):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support generatehsm")
 def test_hsmtool_generatehsm(node_factory):
     l1 = node_factory.get_node()
     l1.stop()
