@@ -254,7 +254,7 @@ struct bitcoin_tx *initial_commit_tx(const tal_t *ctx,
 			scriptpubkey = scriptpubkey_p2wpkh(tmpctx,
 							   &keyset->other_payment_key);
 		}
-		pos = bitcoin_tx_add_output(tx, scriptpubkey, NULL, amount);
+		pos = bitcoin_tx_add_output(tx, scriptpubkey, redeem, amount);
 		assert(pos == n);
 		output_order[n] = dummy_remote;
 		n++;

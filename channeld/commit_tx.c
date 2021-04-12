@@ -308,7 +308,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 			scriptpubkey = scriptpubkey_p2wpkh(tmpctx,
 							   &keyset->other_payment_key);
 		}
-		pos = bitcoin_tx_add_output(tx, scriptpubkey, NULL, amount);
+		pos = bitcoin_tx_add_output(tx, scriptpubkey, redeem, amount);
 		assert(pos == n);
 		(*htlcmap)[n] = direct_outputs ? dummy_to_remote : NULL;
 		/* We don't assign cltvs[n]: if we use it, order doesn't matter.

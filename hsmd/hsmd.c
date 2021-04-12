@@ -639,6 +639,8 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_DEV_MEMLEAK:
 #endif /* DEVELOPER */
 
+	case WIRE_HSMD_NEW_CHANNEL:
+	case WIRE_HSMD_READY_CHANNEL:
 	case WIRE_HSMD_SIGN_COMMITMENT_TX:
 	case WIRE_HSMD_SIGN_PENALTY_TO_US:
 	case WIRE_HSMD_SIGN_REMOTE_COMMITMENT_TX:
