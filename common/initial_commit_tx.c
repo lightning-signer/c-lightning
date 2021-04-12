@@ -238,16 +238,17 @@ struct bitcoin_tx *initial_commit_tx(const tal_t *ctx,
 		 */
 		u8 *scriptpubkey;
 		int pos;
+		u8 *wscript = NULL;
 
 		amount = amount_msat_to_sat_round_down(other_pay);
 		if (option_anchor_outputs) {
-			scriptpubkey = scriptpubkey_p2wsh(tmpctx,
-							  anchor_to_remote_redeem(tmpctx, &keyset->other_payment_key));
+			wscript = anchor_to_remote_redeem(tmpctx, &keyset->other_payment_key);
+			scriptpubkey = scriptpubkey_p2wsh(tmpctx, wscript);
 		} else {
 			scriptpubkey = scriptpubkey_p2wpkh(tmpctx,
 							   &keyset->other_payment_key);
 		}
-		pos = bitcoin_tx_add_output(tx, scriptpubkey, NULL, amount);
+		pos = bitcoin_tx_add_output(tx, scriptpubkey, wscript, amount);
 		assert(pos == n);
 		output_order[n] = dummy_remote;
 		n++;
