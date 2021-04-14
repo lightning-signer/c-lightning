@@ -495,7 +495,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 	struct wally_tx_output *direct_outputs[NUM_SIDES];
 
 	/*~ Channel is ready; Report the channel parameters to the signer. */
-	msg = towire_hsm_ready_channel(NULL,
+	msg = towire_hsmd_ready_channel(NULL,
 				       true,	/* is_outbound */
 				       state->funding,
 				       state->push_msat,
@@ -510,7 +510,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 				       state->option_static_remotekey);
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
-	if (!fromwire_hsm_ready_channel_reply(msg))
+	if (!fromwire_hsmd_ready_channel_reply(msg))
 		status_failed(STATUS_FAIL_HSM_IO, "Bad ready_channel_reply %s",
 			      tal_hex(tmpctx, msg));
 
@@ -1016,7 +1016,7 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 				type_to_string(msg, struct channel_id, &id_in));
 
 	/*~ Channel is ready; Report the channel parameters to the signer. */
-	msg = towire_hsm_ready_channel(NULL,
+	msg = towire_hsmd_ready_channel(NULL,
 				       false,	/* is_outbound */
 				       state->funding,
 				       state->push_msat,
@@ -1031,7 +1031,7 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 				       state->option_static_remotekey);
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
-	if (!fromwire_hsm_ready_channel_reply(msg))
+	if (!fromwire_hsmd_ready_channel_reply(msg))
 		status_failed(STATUS_FAIL_HSM_IO, "Bad ready_channel_reply %s",
 			      tal_hex(tmpctx, msg));
 

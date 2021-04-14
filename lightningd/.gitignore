@@ -6,4 +6,5 @@ lightning_dualopend
 lightning_gossipd
 lightning_hsmd
 lightning_onchaind
+lightning_openingd
 remote_hsmd
