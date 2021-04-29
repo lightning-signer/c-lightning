@@ -4,7 +4,7 @@ c-lightning
 Setup
 
     (cd contrib/remote_hsmd && \
-    ln -s ../../../rust-lightning-signer/src/server/remotesigner.proto)
+    ln -s ../../../rust-lightning-signer/lightning-signer-server/src/server/remotesigner.proto)
 
 Building
 
