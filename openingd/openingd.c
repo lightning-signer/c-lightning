@@ -507,7 +507,8 @@ static bool funder_finalize_channel_setup(struct state *state,
 				       &state->their_funding_pubkey,
 				       state->remoteconf.to_self_delay,
 				       state->upfront_shutdown_script[REMOTE],
-				       state->option_static_remotekey);
+				       state->option_static_remotekey,
+				       state->option_anchor_outputs);
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
 	if (!fromwire_hsmd_ready_channel_reply(msg))
@@ -1028,7 +1029,8 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 				       &their_funding_pubkey,
 				       state->remoteconf.to_self_delay,
 				       state->upfront_shutdown_script[REMOTE],
-				       state->option_static_remotekey);
+				       state->option_static_remotekey,
+				       state->option_anchor_outputs);
 	wire_sync_write(HSM_FD, take(msg));
 	msg = wire_sync_read(tmpctx, HSM_FD);
 	if (!fromwire_hsmd_ready_channel_reply(msg))

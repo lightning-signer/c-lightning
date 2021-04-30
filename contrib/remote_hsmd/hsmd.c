@@ -1183,6 +1183,7 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 	u16 remote_to_self_delay;
 	u8 *remote_shutdown_script;
 	bool option_static_remotekey;
+	bool option_anchor_outputs;
 
 	if (!fromwire_hsmd_ready_channel(tmpctx, msg_in, &is_outbound,
 					&channel_value, &push_value, &funding_txid,
@@ -1192,7 +1193,8 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 					&remote_funding_pubkey,
 					&remote_to_self_delay,
 					&remote_shutdown_script,
-					&option_static_remotekey))
+					&option_static_remotekey,
+					&option_anchor_outputs))
 		return bad_req(conn, c, msg_in);
 
 	proxy_stat rv = proxy_handle_ready_channel(
@@ -1208,7 +1210,8 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 		&remote_funding_pubkey,
 		remote_to_self_delay,
 		remote_shutdown_script,
-		option_static_remotekey);
+		option_static_remotekey,
+		option_anchor_outputs);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 			      "proxy_%s failed: %s", __FUNCTION__,

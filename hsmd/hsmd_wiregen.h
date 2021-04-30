@@ -146,8 +146,8 @@ bool fromwire_hsmd_get_channel_basepoints_reply(const void *p, struct basepoints
 
 /* WIRE: HSMD_READY_CHANNEL */
 /*  Provide channel parameters. */
-u8 *towire_hsmd_ready_channel(const tal_t *ctx, bool is_outbound, struct amount_sat channel_value, struct amount_msat push_value, const struct bitcoin_txid *funding_txid, u16 funding_txout, u16 local_to_self_delay, const u8 *local_shutdown_script, const struct basepoints *remote_basepoints, const struct pubkey *remote_funding_pubkey, u16 remote_to_self_delay, const u8 *remote_shutdown_script, bool option_static_remotekey);
-bool fromwire_hsmd_ready_channel(const tal_t *ctx, const void *p, bool *is_outbound, struct amount_sat *channel_value, struct amount_msat *push_value, struct bitcoin_txid *funding_txid, u16 *funding_txout, u16 *local_to_self_delay, u8 **local_shutdown_script, struct basepoints *remote_basepoints, struct pubkey *remote_funding_pubkey, u16 *remote_to_self_delay, u8 **remote_shutdown_script, bool *option_static_remotekey);
+u8 *towire_hsmd_ready_channel(const tal_t *ctx, bool is_outbound, struct amount_sat channel_value, struct amount_msat push_value, const struct bitcoin_txid *funding_txid, u16 funding_txout, u16 local_to_self_delay, const u8 *local_shutdown_script, const struct basepoints *remote_basepoints, const struct pubkey *remote_funding_pubkey, u16 remote_to_self_delay, const u8 *remote_shutdown_script, bool option_static_remotekey, bool option_anchor_outputs);
+bool fromwire_hsmd_ready_channel(const tal_t *ctx, const void *p, bool *is_outbound, struct amount_sat *channel_value, struct amount_msat *push_value, struct bitcoin_txid *funding_txid, u16 *funding_txout, u16 *local_to_self_delay, u8 **local_shutdown_script, struct basepoints *remote_basepoints, struct pubkey *remote_funding_pubkey, u16 *remote_to_self_delay, u8 **remote_shutdown_script, bool *option_static_remotekey, bool *option_anchor_outputs);
 
 /* WIRE: HSMD_READY_CHANNEL_REPLY */
 /*  No value returned. */
@@ -311,4 +311,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig);
 
 
 #endif /* LIGHTNING_HSMD_HSMD_WIREGEN_H */
-// SHA256STAMP:6a5cf67796d4ab18bbff32cffb1a86058f63694ec5dea59748bb84c4c7138ded
+// SHA256STAMP:258589f1f8a9033749642bbd90aca10619452ffecc5343077a73016a684f3ed9

@@ -1589,6 +1589,7 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 	u16 remote_to_self_delay;
 	u8 *remote_shutdown_script;
 	bool option_static_remotekey;
+	bool option_anchor_outputs;
 	struct amount_msat value_msat;
 
 	if (!fromwire_hsmd_ready_channel(tmpctx, msg_in, &is_outbound,
@@ -1599,7 +1600,8 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 					&remote_funding_pubkey,
 					&remote_to_self_delay,
 					&remote_shutdown_script,
-					&option_static_remotekey))
+					&option_static_remotekey,
+					&option_anchor_outputs))
 		return bad_req(conn, c, msg_in);
 
 	/* Fail fast if any values are obviously uninitialized. */
