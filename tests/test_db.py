@@ -311,6 +311,7 @@ def test_psql_key_value_dsn(node_factory, db_provider, monkeypatch):
     os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3',
     "This test is based on a sqlite3 snapshot"
 )
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support DB migration")
 def test_local_basepoints_cache(bitcoind, node_factory):
     """XXX started caching the local basepoints as well as the remote ones.
 

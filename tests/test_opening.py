@@ -364,6 +364,7 @@ def test_v2_rbf_multi(node_factory, bitcoind, chainparams):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @unittest.skipIf(not DEVELOPER, "uses dev-disconnect")
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_reconnect_init(node_factory, bitcoind, chainparams):
     disconnects = ['-WIRE_INIT_RBF',
                    '@WIRE_INIT_RBF',
@@ -416,6 +417,7 @@ def test_rbf_reconnect_init(node_factory, bitcoind, chainparams):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @unittest.skipIf(not DEVELOPER, "uses dev-disconnect")
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_reconnect_ack(node_factory, bitcoind, chainparams):
     disconnects = ['-WIRE_ACK_RBF',
                    '@WIRE_ACK_RBF',
@@ -468,6 +470,7 @@ def test_rbf_reconnect_ack(node_factory, bitcoind, chainparams):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @unittest.skipIf(not DEVELOPER, "uses dev-disconnect")
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_reconnect_tx_construct(node_factory, bitcoind, chainparams):
     disconnects = ['=WIRE_TX_ADD_INPUT',  # Initial funding succeeds
                    '-WIRE_TX_ADD_INPUT',
@@ -536,6 +539,7 @@ def test_rbf_reconnect_tx_construct(node_factory, bitcoind, chainparams):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @unittest.skipIf(not DEVELOPER, "uses dev-disconnect")
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_reconnect_tx_sigs(node_factory, bitcoind, chainparams):
     disconnects = ['=WIRE_TX_SIGNATURES',  # Initial funding succeeds
                    '-WIRE_TX_SIGNATURES',  # When we send tx-sigs, RBF
@@ -669,6 +673,7 @@ def test_rbf_reconnect_tx_sigs(node_factory, bitcoind, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_rbf_no_overlap(node_factory, bitcoind, chainparams):
     l1, l2 = node_factory.get_nodes(2,
                                     opts={'experimental-dual-fund': None,

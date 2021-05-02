@@ -3095,6 +3095,7 @@ def test_channel_features(node_factory, bitcoind):
 
 
 @unittest.skipIf(not DEVELOPER, "need dev-force-features")
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support non-option_static_remotekey")
 def test_nonstatic_channel(node_factory, bitcoind):
     """Smoke test for a channel without option_static_remotekey"""
     l1, l2 = node_factory.line_graph(2,
