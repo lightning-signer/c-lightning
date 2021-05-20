@@ -316,7 +316,8 @@ const char *proxy_last_message(void)
 void proxy_setup()
 {
 	STATUS_DEBUG("%s:%d %s", __FILE__, __LINE__, __FUNCTION__);
-	auto channel = grpc::CreateChannel("localhost:50051",
+	const char *endpoint = getenv("REMOTE_HSMD_ENDPOINT");
+	auto channel = grpc::CreateChannel(endpoint != NULL ? endpoint : "localhost:50051",
 					   grpc::InsecureChannelCredentials());
 	stub = Signer::NewStub(channel);
 	last_message = "";
