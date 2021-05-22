@@ -536,6 +536,7 @@ def test_reconnect_no_update(node_factory, executor, bitcoind):
     l1.daemon.wait_for_log(r"CLOSINGD_COMPLETE")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't like hsm_secret shenanigans")
 def test_connect_stresstest(node_factory, executor):
     # This test is unreliable, but it's better than nothing.
     l1, l2, l3 = node_factory.get_nodes(3, opts={'may_reconnect': True})
