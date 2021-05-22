@@ -396,7 +396,7 @@ static void workaround_init_bolt12(const struct secret *hsm_secret, struct pubke
 		              "Could derive bolt12 public key.");
 }
 
-static void persist_pubstuff(const struct node_id *node_id,
+static void persist_node_id(const struct node_id *node_id,
 			     const struct ext_key *bip32,
 			     const struct pubkey32 *bolt12)
 {
@@ -419,24 +419,24 @@ static void persist_pubstuff(const struct node_id *node_id,
 	size_t len;
 	const char *p = json_out_contents(jout, &len);
 
-	int fd = open("PUBSTUFF", O_WRONLY|O_TRUNC|O_CREAT, 0666);
+	int fd = open("NODE_ID", O_WRONLY|O_TRUNC|O_CREAT, 0666);
 	assert(fd != -1);
 	write_all(fd, p, len);
 	json_out_consume(jout, len);
 	close(fd);
 }
 
-static bool restore_pubstuff(struct node_id *node_id,
+static bool restore_node_id(struct node_id *node_id,
 			     struct ext_key *bip32,
 			     struct pubkey32 *bolt12)
 {
-	if (access("PUBSTUFF", F_OK) == -1) {
+	if (access("NODE_ID", F_OK) == -1) {
 		// This is a cold start, we don't have this yet.
 		return false;
 	}
 
-	// This is a warmstart, initialize our pubstuff.
-	char *buffer = grab_file(tmpctx, "PUBSTUFF");
+	// This is a warmstart, initialize our node_id.
+	char *buffer = grab_file(tmpctx, "NODE_ID");
 	const jsmntok_t *toks = json_parse_simple(buffer, buffer, strlen(buffer));
 	const jsmntok_t *nodeidtok = json_get_member(buffer, toks, "nodeid");
 	const jsmntok_t *xpubtok = json_get_member(buffer, toks, "xpub");
@@ -476,6 +476,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	struct sha256 *force_channel_secrets_shaseed;
 	struct secret *hsm_encryption_key;
 	struct secret hsm_secret;
+	struct secret *use_hsm_secret;
 	bool coldstart;
 
 	/* This must be lightningd. */
@@ -516,23 +517,29 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	c->chainparams = chainparams;
 
 	/* Is this a warm start (restart) or a cold start (first time)? */
-	if (restore_pubstuff(&node_id, &pubstuff.bip32, &bolt12)) {
+	if (restore_node_id(&node_id, &pubstuff.bip32, &bolt12)) {
 		// This is a warm start.
 		proxy_set_node_id(&node_id);
 	} else {
+		status_unusual("cold start, initializing the remote signer");
+
 		// This is a cold start, initialize the remote signer.
 
 		/* To support integration tests we honor any seed provided
 		 * in the hsm_secret file (testnet only). Otherwise we
 		 * generate a random seed.
 		 */
-		if (!read_test_seed(&hsm_secret)) {
-			randombytes_buf(&hsm_secret, sizeof(hsm_secret));
+		if (read_test_seed(&hsm_secret)) {
+			// We are running integration tests and the secret has been forced.
+			use_hsm_secret = &hsm_secret;
+		} else {
+			// We are not running integration tests, remote signer generates.
+			use_hsm_secret = NULL;
 		}
 
 		coldstart = true; // this can go away in the API.
 		proxy_stat rv = proxy_init_hsm(&bip32_key_version, chainparams,
-					       coldstart, &hsm_secret,
+					       coldstart, use_hsm_secret,
 					       &node_id, &pubstuff.bip32);
 		if (PROXY_PERMANENT(rv)) {
 			status_failed(STATUS_FAIL_INTERNAL_ERROR,
@@ -552,7 +559,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 		workaround_init_bolt12(&hsm_secret, &bolt12);
 
 		/* Mark this node as already inited. */
-		persist_pubstuff(&node_id, &pubstuff.bip32, &bolt12);
+		persist_node_id(&node_id, &pubstuff.bip32, &bolt12);
 	}
 	/* Now we can consider ourselves initialized, and we won't get
 	 * upset if we get a non-init message. */

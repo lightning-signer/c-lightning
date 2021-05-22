@@ -337,7 +337,7 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 	STATUS_DEBUG(
 		"%s:%d %s { \"hsm_secret\":%s, \"coldstart\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
-		dump_secret(hsm_secret).c_str(),
+		hsm_secret != NULL ? dump_secret(hsm_secret).c_str() : "\"\"",
 		coldstart ? "true" : "false"
 		);
 
@@ -354,9 +354,9 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 
 		req.set_coldstart(coldstart);
 
-		/* FIXME - Sending the secret instead of generating on
-		 * the remote. */
-		marshal_bip32seed(hsm_secret, req.mutable_hsm_secret());
+		// If we are running integration tests the secret will be forced.
+		if (hsm_secret != NULL)
+			marshal_bip32seed(hsm_secret, req.mutable_hsm_secret());
 
 		ClientContext context;
 		InitReply rsp;
