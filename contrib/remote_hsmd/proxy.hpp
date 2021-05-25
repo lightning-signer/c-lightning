@@ -37,6 +37,8 @@ char const *proxy_last_message(void);
 
 void proxy_setup(void);
 
+void proxy_set_node_id(const struct node_id *node_id);
+
 proxy_stat proxy_init_hsm(
 	struct bip32_key_version *bip32_key_version,
 	struct chainparams const *chainparams,
