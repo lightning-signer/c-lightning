@@ -35,6 +35,7 @@ RMTHSMD_COMMON_OBJS :=				\
     hsmd/hsmd_wiregen.o			\
 	common/amount.o				\
 	common/autodata.o			\
+	common/base32.o				\
 	common/bigsize.o			\
 	common/bip32.o				\
 	common/channel_id.o			\
@@ -46,6 +47,9 @@ RMTHSMD_COMMON_OBJS :=				\
 	common/funding_tx.o			\
 	common/status_wiregen.o		\
 	common/hash_u5.o			\
+	common/json.o				\
+	common/json_helpers.o		\
+	common/json_stream.o		\
 	common/key_derive.o			\
 	common/memleak.o			\
 	common/msg_queue.o			\
@@ -59,7 +63,8 @@ RMTHSMD_COMMON_OBJS :=				\
 	common/type_to_string.o		\
 	common/utils.o				\
 	common/utxo.o				\
-	common/version.o
+	common/version.o			\
+	common/wireaddr.o
 
 # For checking
 LIGHTNINGD_RMTHSM_ALLSRC_NOGEN := $(filter-out contrib/remote_hsmd/remotesigner.%, $(LIGHTNINGD_RMTHSM_SRC) $(LIGHTNINGD_RMTHSM_SRC))
