@@ -998,8 +998,7 @@ def write_all(fd, bytestr):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
-@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support hsm_secret file")
-def test_hsm_secret_encryption(node_factory):
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support hsm_secrdef test_hsm_secret_encryption(node_factory):
     l1 = node_factory.get_node(may_fail=True)  # May fail when started without key
     password = "reckful&é🍕\n"
     # We need to simulate a terminal to use termios in `lightningd`.
@@ -1062,7 +1061,7 @@ class HsmTool(TailableProc):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
-@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support hsm_secret file")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support hsm_secret file")
 def test_hsmtool_secret_decryption(node_factory):
     l1 = node_factory.get_node()
     password = "reckless123#{ù}\n"
@@ -1197,7 +1196,7 @@ def test_hsmtool_dump_descriptors(node_factory, bitcoind):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
-@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support generatehsm")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support generatehsm")
 def test_hsmtool_generatehsm(node_factory):
     l1 = node_factory.get_node()
     l1.stop()
