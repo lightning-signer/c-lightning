@@ -1110,7 +1110,7 @@ def test_daemon_option(node_factory):
 
 @flaky
 @pytest.mark.developer("needs DEVELOPER=1")
-@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't have repeatable random seeding")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't have repeatable random seeding")
 def test_blockchaintrack(node_factory, bitcoind):
     """Check that we track the blockchain correctly across reorgs
     """
@@ -1817,7 +1817,7 @@ def test_bitcoind_fail_first(node_factory, bitcoind, executor):
 
 @pytest.mark.developer("needs --dev-force-bip32-seed")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Addresses are network specific")
-@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support forced secrets")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support forced secrets")
 def test_dev_force_bip32_seed(node_factory):
     l1 = node_factory.get_node(options={'dev-force-bip32-seed': '0000000000000000000000000000000000000000000000000000000000000001'})
     # First is m/0/0/1 ..
@@ -2148,7 +2148,7 @@ def test_regtest_upgrade(node_factory):
 
 @unittest.skipIf(VALGRIND, "valgrind files can't be written since we rmdir")
 @unittest.skipIf(TEST_NETWORK != "regtest", "needs bitcoin mainnet")
-@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't create hsm_secret file")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't create hsm_secret file")
 def test_new_node_is_mainnet(node_factory):
     """Test that an empty directory causes us to be on mainnet"""
     l1 = node_factory.get_node(start=False, may_fail=True)
@@ -2386,7 +2386,7 @@ def test_sendonionmessage_reply(node_factory):
 
 
 @pytest.mark.developer("needs --dev-force-privkey")
-@unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dev-force-privkey")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dev-force-privkey")
 def test_getsharedsecret(node_factory):
     """
     Test getsharedsecret command.
