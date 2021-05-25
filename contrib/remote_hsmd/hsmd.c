@@ -20,14 +20,19 @@
 #include <ccan/intmap/intmap.h>
 #include <ccan/io/fdpass/fdpass.h>
 #include <ccan/io/io.h>
+#include <ccan/json_out/json_out.h>
 #include <ccan/noerr/noerr.h>
 #include <ccan/ptrint/ptrint.h>
 #include <ccan/read_write_all/read_write_all.h>
+#include <ccan/str/hex/hex.h>
 #include <ccan/take/take.h>
+#include <ccan/tal/grab_file/grab_file.h>
 #include <ccan/tal/str/str.h>
 #include <common/daemon_conn.h>
 #include <common/derive_basepoints.h>
 #include <common/hash_u5.h>
+#include <common/json.h>
+#include <common/json_helpers.h>
 #include <common/key_derive.h>
 #include <common/memleak.h>
 #include <common/node_id.h>
@@ -391,6 +396,72 @@ static void workaround_init_bolt12(const struct secret *hsm_secret, struct pubke
 		              "Could derive bolt12 public key.");
 }
 
+static void persist_node_id(const struct node_id *node_id,
+			     const struct ext_key *bip32,
+			     const struct pubkey32 *bolt12)
+{
+	struct json_out *jout = json_out_new(tmpctx);
+	json_out_start(jout, NULL, '{');
+
+	json_out_addstr(jout, "nodeid", type_to_string(jout, struct node_id, node_id));
+
+	char *xpub;
+	tal_wally_start();
+	int rv2 = bip32_key_to_base58(bip32, BIP32_FLAG_KEY_PUBLIC, &xpub);
+	tal_wally_end(NULL);
+	assert(rv2 == WALLY_OK);
+	json_out_addstr(jout, "xpub", xpub);
+	wally_free_string(xpub);
+
+	json_out_addstr(jout, "bolt12", type_to_string(jout, struct pubkey32, bolt12));
+
+	json_out_end(jout, '}');
+	size_t len;
+	const char *p = json_out_contents(jout, &len);
+
+	int fd = open("NODE_ID", O_WRONLY|O_TRUNC|O_CREAT, 0666);
+	assert(fd != -1);
+	write_all(fd, p, len);
+	json_out_consume(jout, len);
+	close(fd);
+}
+
+static bool restore_node_id(struct node_id *node_id,
+			     struct ext_key *bip32,
+			     struct pubkey32 *bolt12)
+{
+	if (access("NODE_ID", F_OK) == -1) {
+		// This is a cold start, we don't have this yet.
+		return false;
+	}
+
+	// This is a warmstart, initialize our node_id.
+	char *buffer = grab_file(tmpctx, "NODE_ID");
+	const jsmntok_t *toks = json_parse_simple(buffer, buffer, strlen(buffer));
+	const jsmntok_t *nodeidtok = json_get_member(buffer, toks, "nodeid");
+	const jsmntok_t *xpubtok = json_get_member(buffer, toks, "xpub");
+	const jsmntok_t *bolt12tok = json_get_member(buffer, toks, "bolt12");
+	assert(nodeidtok != NULL);
+	assert(xpubtok != NULL);
+	assert(bolt12tok != NULL);
+
+	if (!json_to_node_id(buffer, nodeidtok, node_id))
+		abort();
+
+	buffer[xpubtok->end] = '\0';  // need to null-terminate xpub string
+	if (bip32_key_from_base58(buffer + xpubtok->start, bip32) != WALLY_OK)
+		abort();
+
+	u8 raw[32];
+	if (!hex_decode(buffer + bolt12tok->start, bolt12tok->end - bolt12tok->start,
+			raw, sizeof(raw)))
+		abort();
+	if (secp256k1_xonly_pubkey_parse(secp256k1_ctx, &bolt12->pubkey, raw) != 1)
+		abort();
+
+	return true;
+}
+
 /*~ This is the response to lightningd's HSM_INIT request, which is the first
  * thing it sends. */
 static struct io_plan *init_hsm(struct io_conn *conn,
@@ -405,6 +476,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	struct sha256 *force_channel_secrets_shaseed;
 	struct secret *hsm_encryption_key;
 	struct secret hsm_secret;
+	struct secret *use_hsm_secret;
 	bool coldstart;
 
 	/* This must be lightningd. */
@@ -444,41 +516,51 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	 * will use */
 	c->chainparams = chainparams;
 
-	/* To support integration tests we honor any seed provided
-	 * in the hsm_secret file (testnet only). Otherwise we
-	 * generate a random seed.
-	 */
-	if (!read_test_seed(&hsm_secret)) {
-		randombytes_buf(&hsm_secret, sizeof(hsm_secret));
-	}
-
 	/* Is this a warm start (restart) or a cold start (first time)? */
-	coldstart = access("WARM", F_OK) == -1;
+	if (restore_node_id(&node_id, &pubstuff.bip32, &bolt12)) {
+		// This is a warm start.
+		proxy_set_node_id(&node_id);
+	} else {
+		status_unusual("cold start, initializing the remote signer");
 
-	proxy_stat rv = proxy_init_hsm(&bip32_key_version, chainparams,
-				       coldstart, &hsm_secret,
-				       &node_id, &pubstuff.bip32);
-	if (PROXY_PERMANENT(rv)) {
-		status_failed(STATUS_FAIL_INTERNAL_ERROR,
-		              "proxy_%s failed: %s", __FUNCTION__,
-			      proxy_last_message());
+		// This is a cold start, initialize the remote signer.
+
+		/* To support integration tests we honor any seed provided
+		 * in the hsm_secret file (testnet only). Otherwise we
+		 * generate a random seed.
+		 */
+		if (read_test_seed(&hsm_secret)) {
+			// We are running integration tests and the secret has been forced.
+			use_hsm_secret = &hsm_secret;
+		} else {
+			// We are not running integration tests, remote signer generates.
+			use_hsm_secret = NULL;
+		}
+
+		coldstart = true; // this can go away in the API.
+		proxy_stat rv = proxy_init_hsm(&bip32_key_version, chainparams,
+					       coldstart, use_hsm_secret,
+					       &node_id, &pubstuff.bip32);
+		if (PROXY_PERMANENT(rv)) {
+			status_failed(STATUS_FAIL_INTERNAL_ERROR,
+				      "proxy_%s failed: %s", __FUNCTION__,
+				      proxy_last_message());
+		}
+		else if (!PROXY_SUCCESS(rv)) {
+			status_unusual("proxy_%s failed: %s", __FUNCTION__,
+				       proxy_last_message());
+			return bad_req_fmt(conn, c, msg_in,
+					   "proxy_%s error: %s", __FUNCTION__,
+					   proxy_last_message());
+		}
+
+
+		// TODO - add support for bolt12
+		workaround_init_bolt12(&hsm_secret, &bolt12);
+
+		/* Mark this node as already inited. */
+		persist_node_id(&node_id, &pubstuff.bip32, &bolt12);
 	}
-	else if (!PROXY_SUCCESS(rv)) {
-		status_unusual("proxy_%s failed: %s", __FUNCTION__,
-			       proxy_last_message());
-		return bad_req_fmt(conn, c, msg_in,
-				   "proxy_%s error: %s", __FUNCTION__,
-				   proxy_last_message());
-	}
-
-	/* Mark this node as already inited. */
-	int fd = open("WARM", O_WRONLY|O_TRUNC|O_CREAT, 0666);
-	assert(fd != -1);
-	close(fd);
-
-	// TODO - add support for bolt12
-	workaround_init_bolt12(&hsm_secret, &bolt12);
-
 	/* Now we can consider ourselves initialized, and we won't get
 	 * upset if we get a non-init message. */
 	initialized = true;
