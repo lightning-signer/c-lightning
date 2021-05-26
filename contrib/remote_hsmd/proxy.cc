@@ -59,8 +59,9 @@ proxy_stat map_status(Status const & status)
 	// FIXME - this is bogus, but the pytest framework loses our
 	// status_unusual messages.
 	if (code != StatusCode::OK) {
-		cerr << "PROXY-HSMD grpc::StatusCode " << int(code)
-		     << ": " << status.error_message()
+		cerr << "PID: " << getpid() << ' '
+		     << "PROXY-HSMD grpc::StatusCode " << int(code)
+ 		     << ": " << status.error_message()
 		     << endl;
 	}
 	switch (code) {
@@ -317,7 +318,8 @@ void proxy_setup()
 {
 	const char *endpointvar = getenv("REMOTE_HSMD_ENDPOINT");
 	const char *endpoint = endpointvar != NULL ? endpointvar : "localhost:50051";
-	STATUS_DEBUG("%s:%d %s endpoint:%s", __FILE__, __LINE__, __FUNCTION__, endpoint);
+	STATUS_DEBUG("%s:%d %s pid:%d, endpoint:%s", __FILE__, __LINE__, __FUNCTION__,
+		     getpid(), endpoint);
 	auto channel = grpc::CreateChannel(endpoint,
 					   grpc::InsecureChannelCredentials());
 	stub = Signer::NewStub(channel);
