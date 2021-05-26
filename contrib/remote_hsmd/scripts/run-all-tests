@@ -1,8 +1,9 @@
 #!/usr/bin/sh
 
+
 SUBDAEMON='hsmd:remote_hsmd' \
 make \
-PYTEST_PAR=1 \
+-j12 PYTEST_PAR=24 \
 DEVELOPER=1 \
 VALGRIND=0 \
 SLOW_MACHINE=1 \
