@@ -514,6 +514,33 @@ class ElementsD(BitcoinD):
         info = self.rpc.getaddressinfo(addr)
         return info['unconfidential']
 
+class RemoteSignerD(TailableProc):
+    def __init__(self, rsignerd_dir, rsignerd_port):
+        TailableProc.__init__(self, rsignerd_dir)
+        self.executable = env("REMOTE_SIGNER_CMD", 'rsignerd')
+        self.opts = [
+            '--datadir={}'.format(rsignerd_dir),
+            '--port={}'.format(rsignerd_port),
+        ]
+        self.prefix = 'rsignerd'
+        self.rsignerd_port = rsignerd_port
+
+    @property
+    def cmd_line(self):
+        return [self.executable] + self.opts
+
+    def start(self, stdin=None, stdout=None, stderr=None,
+              wait_for_initialized=True):
+        TailableProc.start(self, stdin, stdout, stderr)
+        # We need to always wait for initialization
+        self.wait_for_log("rsignerd [0-9]* ready on .*:{}".format(self.rsignerd_port))
+        logging.info("rsignerd started")
+
+    def stop(self, timeout=10):
+        logging.info("stopping rsignerd")
+        rc = TailableProc.stop(self, timeout)
+        logging.info("rsignerd stopped")
+        return rc
 
 class LightningD(TailableProc):
     def __init__(self, lightning_dir, bitcoindproxy, port=9735, random_hsm=False, node_id=0):
@@ -523,7 +550,9 @@ class LightningD(TailableProc):
         self.port = port
         self.cmd_prefix = []
         self.disconnect_file = None
-
+        self.lightning_dir = lightning_dir
+        self.rsignerd_dir = os.path.join(lightning_dir, "remotesigner")
+                
         self.rpcproxy = bitcoindproxy
 
         self.opts = LIGHTNINGD_CONFIG.copy()
@@ -550,6 +579,9 @@ class LightningD(TailableProc):
         if not os.path.exists(os.path.join(lightning_dir, TEST_NETWORK)):
             os.makedirs(os.path.join(lightning_dir, TEST_NETWORK))
 
+        if not os.path.exists(self.rsignerd_dir):
+            os.makedirs(self.rsignerd_dir)
+
         # Last 32-bytes of final part of dir -> seed.
         seed = (bytes(re.search('([^/]+)/*$', lightning_dir).group(1), encoding='utf-8') + bytes(32))[:32]
         if not random_hsm:
@@ -561,6 +593,8 @@ class LightningD(TailableProc):
         self.prefix = 'lightningd-%d' % (node_id)
 
     def cleanup(self):
+        # Make sure the remotesigner is shutdown
+        self.rsignerd.stop()
         # To force blackhole to exit, disconnect file must be truncated!
         if self.disconnect_file:
             with open(self.disconnect_file, "w") as f:
@@ -583,11 +617,34 @@ class LightningD(TailableProc):
 
     def start(self, stdin=None, stdout=None, stderr=None,
               wait_for_initialized=True):
-        self.opts['bitcoin-rpcport'] = self.rpcproxy.rpcport
-        TailableProc.start(self, stdin, stdout, stderr)
-        if wait_for_initialized:
-            self.wait_for_log("Server started with public key")
-        logging.info("LightningD started")
+        try:
+            # Start the remote signer first
+            rsignerd_port = reserve()
+            self.rsignerd = RemoteSignerD(self.rsignerd_dir, rsignerd_port)
+            self.rsignerd.start(stdin, stdout, stderr, wait_for_initialized)
+
+            # We can't do this in the constructor because we need a new port on each restart.
+            self.env['REMOTE_HSMD_ENDPOINT'] = 'localhost:{}'.format(rsignerd_port)
+
+            self.opts['bitcoin-rpcport'] = self.rpcproxy.rpcport
+            TailableProc.start(self, stdin, stdout, stderr)
+            if wait_for_initialized:
+                self.wait_for_log("Server started with public key")
+            logging.info("LightningD started")
+        except:
+            # LightningD didn't start, stop the remotesigner
+            self.rsignerd.stop()
+            raise
+
+    def stop(self, timeout=10):
+        # Stop the remote signer first
+        self.rsignerd.stop(timeout)
+        return TailableProc.stop(self, timeout)
+
+    def kill(self):
+        # Kill the remote signer first
+        self.rsignerd.kill()
+        TailableProc.kill(self)
 
     def wait(self, timeout=10):
         """Wait for the daemon to stop for up to timeout seconds
