@@ -1,11 +1,14 @@
 #!/usr/bin/sh
 
 
+
 SUBDAEMON='hsmd:remote_hsmd' \
+REMOTE_SIGNER_CMD=$(pwd)/../rust-lightning-signer/target/debug/server \
 make \
--j12 PYTEST_PAR=24 \
+-j32 PYTEST_PAR=64 \
 DEVELOPER=1 \
 VALGRIND=0 \
 SLOW_MACHINE=1 \
+PYTEST_MOREOPTS='--timeout=300 --timeout_method=thread' \
 pytest
 
