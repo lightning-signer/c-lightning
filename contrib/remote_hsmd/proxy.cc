@@ -335,8 +335,7 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 			  struct chainparams const *chainparams,
 			  bool coldstart,
 			  struct secret *hsm_secret,
-			  struct node_id *o_node_id,
-			  struct ext_key *o_ext_pubkey)
+			  struct node_id *o_node_id)
 {
 	STATUS_DEBUG(
 		"%s:%d %s { \"hsm_secret\":%s, \"coldstart\":%s }",
@@ -345,69 +344,68 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 		coldstart ? "true" : "false"
 		);
 
-	/* First we make the Init call to create the Node. */
-	{
-		last_message = "";
-		InitRequest req;
+	last_message = "";
+	InitRequest req;
 
-		auto nc = req.mutable_node_config();
-		nc->set_key_derivation_style(NodeConfig::NATIVE);
+	auto nc = req.mutable_node_config();
+	nc->set_key_derivation_style(NodeConfig::NATIVE);
 
-		auto cp = req.mutable_chainparams();
-		cp->set_network_name(chainparams->network_name);
+	auto cp = req.mutable_chainparams();
+	cp->set_network_name(chainparams->network_name);
 
-		req.set_coldstart(coldstart);
+	req.set_coldstart(coldstart);
 
-		// If we are running integration tests the secret will be forced.
-		if (hsm_secret != NULL)
-			marshal_bip32seed(hsm_secret, req.mutable_hsm_secret());
+	// If we are running integration tests the secret will be forced.
+	if (hsm_secret != NULL)
+		marshal_bip32seed(hsm_secret, req.mutable_hsm_secret());
 
-		ClientContext context;
-		InitReply rsp;
-		Status status = stub->Init(&context, req, &rsp);
-		if (status.ok()) {
-			unmarshal_node_id(rsp.node_id(), o_node_id);
-			unmarshal_node_id(rsp.node_id(), &self_id);
-			STATUS_DEBUG("%s:%d %s { \"node_id\":%s }",
-				     __FILE__, __LINE__, __FUNCTION__,
-				     dump_node_id(o_node_id).c_str());
-			last_message = "success";
-			// Fall-through to the next part. */
-		} else {
-			status_unusual("%s:%d %s: %s",
-				       __FILE__, __LINE__, __FUNCTION__,
-				       status.error_message().c_str());
-			last_message = status.error_message();
-			return map_status(status);
-		}
+	ClientContext context;
+	InitReply rsp;
+	Status status = stub->Init(&context, req, &rsp);
+	if (status.ok()) {
+		unmarshal_node_id(rsp.node_id(), o_node_id);
+		unmarshal_node_id(rsp.node_id(), &self_id);
+		STATUS_DEBUG("%s:%d %s { \"node_id\":%s }",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(o_node_id).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status);
 	}
+}
 
-	/* Next we make the GetExtPubKey call to fetch the XPUB. */
-	{
-		last_message = "";
-		GetExtPubKeyRequest req;
+proxy_stat proxy_get_ext_pub_key(struct ext_key *o_ext_pubkey)
+{
+	// TODO
+	STATUS_DEBUG("%s:%d %s", __FILE__, __LINE__, __FUNCTION__);
 
-		marshal_node_id(&self_id, req.mutable_node_id());
+	last_message = "";
+	GetExtPubKeyRequest req;
 
-		ClientContext context;
-		GetExtPubKeyReply rsp;
-		Status status = stub->GetExtPubKey(&context, req, &rsp);
-		if (status.ok()) {
-			unmarshal_ext_pubkey(rsp.xpub(), o_ext_pubkey);
-			STATUS_DEBUG("%s:%d %s "
-				     "{ \"node_id\":%s, \"ext_pubkey\":%s }",
-				     __FILE__, __LINE__, __FUNCTION__,
-				     dump_node_id(&self_id).c_str(),
-				     dump_ext_pubkey(o_ext_pubkey).c_str());
-			last_message = "success";
-			return PROXY_OK;
-		} else {
-			status_unusual("%s:%d %s: %s",
-				       __FILE__, __LINE__, __FUNCTION__,
-				       status.error_message().c_str());
-			last_message = status.error_message();
-			return map_status(status);
-		}
+	marshal_node_id(&self_id, req.mutable_node_id());
+
+	ClientContext context;
+	GetExtPubKeyReply rsp;
+	Status status = stub->GetExtPubKey(&context, req, &rsp);
+	if (status.ok()) {
+		unmarshal_ext_pubkey(rsp.xpub(), o_ext_pubkey);
+		STATUS_DEBUG("%s:%d %s "
+			     "{ \"ext_pubkey\":%s }",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_ext_pubkey(o_ext_pubkey).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status);
 	}
 }
 
