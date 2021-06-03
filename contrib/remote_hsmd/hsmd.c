@@ -20,19 +20,15 @@
 #include <ccan/intmap/intmap.h>
 #include <ccan/io/fdpass/fdpass.h>
 #include <ccan/io/io.h>
-#include <ccan/json_out/json_out.h>
 #include <ccan/noerr/noerr.h>
 #include <ccan/ptrint/ptrint.h>
 #include <ccan/read_write_all/read_write_all.h>
-#include <ccan/str/hex/hex.h>
 #include <ccan/take/take.h>
 #include <ccan/tal/grab_file/grab_file.h>
 #include <ccan/tal/str/str.h>
 #include <common/daemon_conn.h>
 #include <common/derive_basepoints.h>
 #include <common/hash_u5.h>
-#include <common/json.h>
-#include <common/json_helpers.h>
 #include <common/key_derive.h>
 #include <common/memleak.h>
 #include <common/node_id.h>
@@ -352,13 +348,19 @@ static bool read_test_seed(struct secret *hsm_secret)
 	return true;
 }
 
-// TODO - Add support for bolt12 to remote signer and remove this entire routine.
-static void workaround_init_bolt12(const struct secret *hsm_secret, struct pubkey32 *bolt12out)
+// TODO - Add support for bolt12 to remote signer and remove this
+// entire routine.  This does not actually setup a usable BOLT12
+// context; it always uses an empty hsm_secret.
+static void bogus_bolt12_placeholder(struct pubkey32 *bolt12out)
 {
+	struct secret bad_hsm_secret;
 	u8 bip32_seed[BIP32_ENTROPY_LEN_256];
 	u32 salt = 0;
 	struct ext_key master_extkey, child_extkey;
 	secp256k1_keypair bolt12;
+
+	// This needs to be computed on the remote server!
+	memset(&bad_hsm_secret, 0, sizeof(bad_hsm_secret));
 
 	/* Fill in the BIP32 tree for bitcoin addresses. */
 	/* In libwally-core, the version BIP32_VER_TEST_PRIVATE is for testnet/regtest,
@@ -367,8 +369,8 @@ static void workaround_init_bolt12(const struct secret *hsm_secret, struct pubke
 	do {
 		hkdf_sha256(bip32_seed, sizeof(bip32_seed),
 			    &salt, sizeof(salt),
-			    hsm_secret,
-			    sizeof(*hsm_secret),
+			    &bad_hsm_secret,
+			    sizeof(bad_hsm_secret),
 			    "bip32 seed", strlen("bip32 seed"));
 		salt++;
 	} while (bip32_key_from_seed(bip32_seed, sizeof(bip32_seed),
@@ -396,69 +398,29 @@ static void workaround_init_bolt12(const struct secret *hsm_secret, struct pubke
 		              "Could derive bolt12 public key.");
 }
 
-static void persist_node_id(const struct node_id *node_id,
-			     const struct ext_key *bip32,
-			     const struct pubkey32 *bolt12)
+static void persist_node_id(const struct node_id *node_id)
 {
-	struct json_out *jout = json_out_new(tmpctx);
-	json_out_start(jout, NULL, '{');
-
-	json_out_addstr(jout, "nodeid", type_to_string(jout, struct node_id, node_id));
-
-	char *xpub;
-	tal_wally_start();
-	int rv2 = bip32_key_to_base58(bip32, BIP32_FLAG_KEY_PUBLIC, &xpub);
-	tal_wally_end(NULL);
-	assert(rv2 == WALLY_OK);
-	json_out_addstr(jout, "xpub", xpub);
-	wally_free_string(xpub);
-
-	json_out_addstr(jout, "bolt12", type_to_string(jout, struct pubkey32, bolt12));
-
-	json_out_end(jout, '}');
-	size_t len;
-	const char *p = json_out_contents(jout, &len);
-
+	char *node_id_str = tal_fmt(tmpctx, "%s\n",
+				    type_to_string(tmpctx, struct node_id, node_id));
 	int fd = open("NODE_ID", O_WRONLY|O_TRUNC|O_CREAT, 0666);
 	assert(fd != -1);
-	write_all(fd, p, len);
-	json_out_consume(jout, len);
+	write_all(fd, node_id_str, strlen(node_id_str));
 	close(fd);
 }
 
-static bool restore_node_id(struct node_id *node_id,
-			     struct ext_key *bip32,
-			     struct pubkey32 *bolt12)
+static bool restore_node_id(struct node_id *node_id)
 {
 	if (access("NODE_ID", F_OK) == -1) {
-		// This is a cold start, we don't have this yet.
+		// This is a cold start, we don't have a node_id yet.
 		return false;
 	}
 
-	// This is a warmstart, initialize our node_id.
 	char *buffer = grab_file(tmpctx, "NODE_ID");
-	const jsmntok_t *toks = json_parse_simple(buffer, buffer, strlen(buffer));
-	const jsmntok_t *nodeidtok = json_get_member(buffer, toks, "nodeid");
-	const jsmntok_t *xpubtok = json_get_member(buffer, toks, "xpub");
-	const jsmntok_t *bolt12tok = json_get_member(buffer, toks, "bolt12");
-	assert(nodeidtok != NULL);
-	assert(xpubtok != NULL);
-	assert(bolt12tok != NULL);
-
-	if (!json_to_node_id(buffer, nodeidtok, node_id))
-		abort();
-
-	buffer[xpubtok->end] = '\0';  // need to null-terminate xpub string
-	if (bip32_key_from_base58(buffer + xpubtok->start, bip32) != WALLY_OK)
-		abort();
-
-	u8 raw[32];
-	if (!hex_decode(buffer + bolt12tok->start, bolt12tok->end - bolt12tok->start,
-			raw, sizeof(raw)))
-		abort();
-	if (secp256k1_xonly_pubkey_parse(secp256k1_ctx, &bolt12->pubkey, raw) != 1)
-		abort();
-
+	assert(buffer != NULL);
+	size_t len = tal_bytelen(buffer) - 2;
+	assert(buffer[len] == '\n');
+	bool ok = node_id_from_hexstr(buffer, len, node_id);
+	assert(ok);
 	return true;
 }
 
@@ -517,7 +479,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	c->chainparams = chainparams;
 
 	/* Is this a warm start (restart) or a cold start (first time)? */
-	if (restore_node_id(&node_id, &pubstuff.bip32, &bolt12)) {
+	if (restore_node_id(&node_id)) {
 		// This is a warm start.
 		proxy_set_node_id(&node_id);
 	} else {
@@ -540,7 +502,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 		coldstart = true; // this can go away in the API.
 		proxy_stat rv = proxy_init_hsm(&bip32_key_version, chainparams,
 					       coldstart, use_hsm_secret,
-					       &node_id, &pubstuff.bip32);
+					       &node_id);
 		if (PROXY_PERMANENT(rv)) {
 			status_failed(STATUS_FAIL_INTERNAL_ERROR,
 				      "proxy_%s failed: %s", __FUNCTION__,
@@ -554,13 +516,28 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 					   proxy_last_message());
 		}
 
-
-		// TODO - add support for bolt12
-		workaround_init_bolt12(&hsm_secret, &bolt12);
-
 		/* Mark this node as already inited. */
-		persist_node_id(&node_id, &pubstuff.bip32, &bolt12);
+		persist_node_id(&node_id);
 	}
+
+	// Fetch the bip32 ext_pub_key.
+	proxy_stat rv = proxy_get_ext_pub_key(&pubstuff.bip32);
+	if (PROXY_PERMANENT(rv)) {
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	}
+	else if (!PROXY_SUCCESS(rv)) {
+		status_unusual("proxy_%s failed: %s", __FUNCTION__,
+			       proxy_last_message());
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+	}
+
+	// TODO - add support for bolt12
+	bogus_bolt12_placeholder(&bolt12);
+
 	/* Now we can consider ourselves initialized, and we won't get
 	 * upset if we get a non-init message. */
 	initialized = true;
