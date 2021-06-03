@@ -20,19 +20,15 @@
 #include <ccan/intmap/intmap.h>
 #include <ccan/io/fdpass/fdpass.h>
 #include <ccan/io/io.h>
-#include <ccan/json_out/json_out.h>
 #include <ccan/noerr/noerr.h>
 #include <ccan/ptrint/ptrint.h>
 #include <ccan/read_write_all/read_write_all.h>
-#include <ccan/str/hex/hex.h>
 #include <ccan/take/take.h>
 #include <ccan/tal/grab_file/grab_file.h>
 #include <ccan/tal/str/str.h>
 #include <common/daemon_conn.h>
 #include <common/derive_basepoints.h>
 #include <common/hash_u5.h>
-#include <common/json.h>
-#include <common/json_helpers.h>
 #include <common/key_derive.h>
 #include <common/memleak.h>
 #include <common/node_id.h>
@@ -495,7 +491,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	c->chainparams = chainparams;
 
 	/* Is this a warm start (restart) or a cold start (first time)? */
-	if (restore_node_id(&node_id, &pubstuff.bip32, &bolt12)) {
+	if (restore_node_id(&node_id)) {
 		// This is a warm start.
 		proxy_set_node_id(&node_id);
 	} else {
@@ -518,7 +514,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 		coldstart = true; // this can go away in the API.
 		proxy_stat rv = proxy_init_hsm(&bip32_key_version, chainparams,
 					       coldstart, use_hsm_secret,
-					       &node_id, &pubstuff.bip32);
+					       &node_id);
 		if (PROXY_PERMANENT(rv)) {
 			status_failed(STATUS_FAIL_INTERNAL_ERROR,
 				      "proxy_%s failed: %s", __FUNCTION__,
@@ -533,7 +529,22 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 		}
 
 		/* Mark this node as already inited. */
-		persist_node_id(&node_id, &pubstuff.bip32, &bolt12);
+		persist_node_id(&node_id);
+	}
+
+	// Fetch the bip32 ext_pub_key.
+	proxy_stat rv = proxy_get_ext_pub_key(&pubstuff.bip32);
+	if (PROXY_PERMANENT(rv)) {
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+			      "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	}
+	else if (!PROXY_SUCCESS(rv)) {
+		status_unusual("proxy_%s failed: %s", __FUNCTION__,
+			       proxy_last_message());
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
 	}
 
 	// TODO - add support for bolt12
@@ -541,10 +552,6 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 
 	// TODO - add support for onion_reply_secret
 	bogus_onion_reply_secret_placeholder(&onion_reply_secret);
-
-	/* Now we can consider ourselves initialized, and we won't get
-	 * upset if we get a non-init message. */
-	initialized = true;
 
 	/* Now we can consider ourselves initialized, and we won't get
 	 * upset if we get a non-init message. */

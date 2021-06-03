@@ -50,8 +50,9 @@ proxy_stat proxy_init_hsm(
 	struct chainparams const *chainparams,
 	bool coldstart,
 	struct secret *hsm_secret,
-	struct node_id *o_node_id,
-	struct ext_key *o_ext_pub_key);
+	struct node_id *o_node_id);
+
+proxy_stat proxy_get_ext_pub_key(struct ext_key *o_ext_pub_key);
 
 proxy_stat proxy_handle_ecdh(
 	const struct pubkey *point,
