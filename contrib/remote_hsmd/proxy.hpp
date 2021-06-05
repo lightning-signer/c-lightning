@@ -91,7 +91,6 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct node_id *peer_id,
 	u64 dbid,
 	const struct pubkey *remote_per_commit,
-	bool option_static_remotekey,
 	struct sha256 *rhashes,
 	u64 commit_num,
 	struct bitcoin_signature *o_sig);
@@ -130,6 +129,8 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	const struct pubkey *remote_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
+	struct sha256 *rhashes,
+	u64 commit_num,
 	struct bitcoin_signature *o_sig);
 
 proxy_stat proxy_handle_cannouncement_sig(

@@ -186,13 +186,56 @@ static void sign_last_tx(struct channel *channel)
 	struct bitcoin_signature sig;
 	u8 *msg, **witness;
 
+	struct htlc_in_map *htlcs_in = &channel->peer->ld->htlcs_in;
+	struct htlc_out_map *htlcs_out = &channel->peer->ld->htlcs_out;
+
+	// Count how many payment hashes we will be sending.
+	size_t num_entries = 0;
+	struct htlc_in_map_iter ini;
+	struct htlc_in *hin;
+	for (hin = htlc_in_map_first(htlcs_in, &ini);
+	     hin;
+	     hin = htlc_in_map_next(htlcs_in, &ini))
+		if (hin->key.channel == channel)
+			++num_entries;
+	struct htlc_out_map_iter outi;
+	struct htlc_out *hout;
+	for (hout = htlc_out_map_first(htlcs_out, &outi);
+	     hout;
+	     hout = htlc_out_map_next(htlcs_out, &outi))
+		if (hout->key.channel == channel)
+			++num_entries;
+
+	// Gather the payment hashes.
+	struct sha256 *rhashes = tal_arrz(tmpctx, struct sha256, num_entries);
+	size_t nrhash = 0;
+	for (hin = htlc_in_map_first(htlcs_in, &ini);
+	     hin;
+	     hin = htlc_in_map_next(htlcs_in, &ini)) {
+		if (hin->key.channel != channel)
+			continue;
+		memcpy(&rhashes[nrhash], &hin->payment_hash, sizeof(rhashes[nrhash]));
+		++nrhash;
+	}
+	for (hout = htlc_out_map_first(htlcs_out, &outi);
+	     hout;
+	     hout = htlc_out_map_next(htlcs_out, &outi)) {
+		if (hout->key.channel != channel)
+			continue;
+		memcpy(&rhashes[nrhash], &hout->payment_hash, sizeof(rhashes[nrhash]));
+		++nrhash;
+	}
+	assert(nrhash == num_entries);
+
+	u64 commit_index = channel->next_index[LOCAL] - 1;
+
 	assert(!channel->last_tx->wtx->inputs[0].witness);
 	msg = towire_hsmd_sign_commitment_tx(tmpctx,
 					    &channel->peer->id,
 					    channel->dbid,
 					    channel->last_tx,
-					    &channel->channel_info
-					    .remote_fundingkey);
+					    &channel->channel_info.remote_fundingkey,
+					    rhashes, commit_index);
 
 	if (!wire_sync_write(ld->hsm_fd, take(msg)))
 		fatal("Could not write to HSM: %s", strerror(errno));
