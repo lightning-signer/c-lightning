@@ -785,17 +785,39 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 	if (tx->wtx->num_outputs == 0)
 		return bad_req_fmt(conn, c, msg_in, "tx must have > 0 outputs");
 
-	proxy_stat rv = proxy_handle_sign_commitment_tx(
-		tx, &remote_funding_pubkey, &peer_id, dbid,
-		rhashes, commit_num, &sig);
-	if (PROXY_PERMANENT(rv))
-		status_failed(STATUS_FAIL_INTERNAL_ERROR,
-		              "proxy_%s failed: %s", __FUNCTION__,
-			      proxy_last_message());
-	else if (!PROXY_SUCCESS(rv))
-		return bad_req_fmt(conn, c, msg_in,
-				   "proxy_%s error: %s", __FUNCTION__,
-				   proxy_last_message());
+	// WORKAROUND - sometimes c-lightning calls handle_sign_commitment_tx
+	// with mutual close transactions.  We can tell the difference because
+	// the locktime field will be set to 0 for a mutual close.
+	if (tx->wtx->locktime == 0) {
+		// This is really a mutual close.
+		fprintf(stderr,
+			"handle_sign_commitment_tx called with locktime==0; "
+			"dispatching to proxy_handle_sign_mutual_close_tx instead\n");
+		proxy_stat rv = proxy_handle_sign_mutual_close_tx(
+			tx, &remote_funding_pubkey, &peer_id, dbid, &sig);
+		if (PROXY_PERMANENT(rv))
+			status_failed(STATUS_FAIL_INTERNAL_ERROR,
+				      "proxy_%s failed: %s", __FUNCTION__,
+				      proxy_last_message());
+		else if (!PROXY_SUCCESS(rv))
+			return bad_req_fmt(conn, c, msg_in,
+					   "proxy_%s error: %s", __FUNCTION__,
+					   proxy_last_message());
+
+	} else {
+		// This is a unilateral close from our side.
+		proxy_stat rv = proxy_handle_sign_commitment_tx(
+			tx, &remote_funding_pubkey, &peer_id, dbid,
+			rhashes, commit_num, &sig);
+		if (PROXY_PERMANENT(rv))
+			status_failed(STATUS_FAIL_INTERNAL_ERROR,
+				      "proxy_%s failed: %s", __FUNCTION__,
+				      proxy_last_message());
+		else if (!PROXY_SUCCESS(rv))
+			return bad_req_fmt(conn, c, msg_in,
+					   "proxy_%s error: %s", __FUNCTION__,
+					   proxy_last_message());
+	}
 
 	return req_reply(conn, c,
 			 take(towire_hsmd_sign_commitment_tx_reply(NULL, &sig)));
