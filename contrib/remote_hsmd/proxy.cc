@@ -691,7 +691,6 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct node_id *peer_id,
 	u64 dbid,
 	const struct pubkey *remote_per_commit,
-	bool option_static_remotekey,
 	struct sha256 *rhashes, u64 commit_num,
 	struct bitcoin_signature *o_sig)
 {
@@ -699,8 +698,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		"%s:%d %s { "
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
 		"\"counterparty_funding_pubkey\":%s, "
-		"\"remote_per_commit\":%s, "
-		"\"option_static_remotekey\":%s, \"tx\":%s, "
+		"\"remote_per_commit\":%s, \"tx\":%s, "
 		"\"rhashes\":%s, \"commit_num\":%" PRIu64 " }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
@@ -708,7 +706,6 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		dbid,
 		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_pubkey(remote_per_commit).c_str(),
-		(option_static_remotekey ? "true" : "false"),
 		dump_tx(tx).c_str(),
 		dump_rhashes(rhashes, tal_count(rhashes)).c_str(),
 		commit_num
@@ -1020,18 +1017,22 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
+	struct sha256 *rhashes, u64 commit_num,
 	struct bitcoin_signature *o_sig)
 {
 	STATUS_DEBUG(
 		"%s:%d %s { "
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
-		"\"counterparty_funding_pubkey\":%s, \"tx\":%s }",
+		"\"counterparty_funding_pubkey\":%s, \"tx\":%s, "
+		"\"rhashes\":%s, \"commit_num\":%" PRIu64 " }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
 		dump_pubkey(counterparty_funding_pubkey).c_str(),
-		dump_tx(tx).c_str()
+		dump_tx(tx).c_str(),
+		dump_rhashes(rhashes, tal_count(rhashes)).c_str(),
+		commit_num
 		);
 
 	last_message = "";
@@ -1039,6 +1040,8 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_single_input_tx(tx, NULL, req.mutable_tx());
+	marshal_rhashes(rhashes, req.mutable_payment_hashes());
+	req.set_commit_num(commit_num);
 
 	ClientContext context;
 	SignatureReply rsp;
