@@ -752,11 +752,14 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 	u64 dbid;
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
+	struct sha256 *rhashes;
+	u64 commit_num;
 
 	if (!fromwire_hsmd_sign_commitment_tx(tmpctx, msg_in,
 					     &peer_id, &dbid,
 					     &tx,
-					     &remote_funding_pubkey))
+					     &remote_funding_pubkey,
+					     &rhashes, &commit_num))
 		return bad_req(conn, c, msg_in);
 
 	tx->chainparams = c->chainparams;
@@ -768,7 +771,8 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 		return bad_req_fmt(conn, c, msg_in, "tx must have > 0 outputs");
 
 	proxy_stat rv = proxy_handle_sign_commitment_tx(
-		tx, &remote_funding_pubkey, &peer_id, dbid, &sig);
+		tx, &remote_funding_pubkey, &peer_id, dbid,
+		rhashes, commit_num, &sig);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
@@ -821,7 +825,6 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 		tx, &remote_funding_pubkey,
 		&c->id, c->dbid,
 		&remote_per_commit,
-		option_static_remotekey,
 		rhashes, commit_num,
 		&sig);
 	if (PROXY_PERMANENT(rv))
