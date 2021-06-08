@@ -809,8 +809,9 @@ bool fromwire_hsmd_cupdate_sig_reply(const tal_t *ctx, const void *p, u8 **cu)
 
 /* WIRE: HSMD_SIGN_COMMITMENT_TX */
 /* Master asks HSM to sign a commitment transaction. */
-u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key)
+u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct sha256 *htlc_rhash, u64 commit_num)
 {
+	u16 num_htlc_rhash = tal_count(htlc_rhash);
 	u8 *p = tal_arr(ctx, u8, 0);
 
 	towire_u16(&p, WIRE_HSMD_SIGN_COMMITMENT_TX);
@@ -818,11 +819,17 @@ u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_
 	towire_u64(&p, channel_dbid);
 	towire_bitcoin_tx(&p, tx);
 	towire_pubkey(&p, remote_funding_key);
+	towire_u16(&p, num_htlc_rhash);
+	for (size_t i = 0; i < num_htlc_rhash; i++)
+		towire_sha256(&p, htlc_rhash + i);
+	towire_u64(&p, commit_num);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key)
+bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct sha256 **htlc_rhash, u64 *commit_num)
 {
+	u16 num_htlc_rhash;
+
 	const u8 *cursor = p;
 	size_t plen = tal_count(p);
 
@@ -832,6 +839,12 @@ bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct no
  	*channel_dbid = fromwire_u64(&cursor, &plen);
  	*tx = fromwire_bitcoin_tx(ctx, &cursor, &plen);
  	fromwire_pubkey(&cursor, &plen, remote_funding_key);
+ 	num_htlc_rhash = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlc_rhash
+	*htlc_rhash = num_htlc_rhash ? tal_arr(ctx, struct sha256, num_htlc_rhash) : NULL;
+	for (size_t i = 0; i < num_htlc_rhash; i++)
+		fromwire_sha256(&cursor, &plen, *htlc_rhash + i);
+ 	*commit_num = fromwire_u64(&cursor, &plen);
 	return cursor != NULL;
 }
 
