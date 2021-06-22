@@ -631,6 +631,7 @@ def test_openchannel_hook(node_factory, bitcoind):
         l1.rpc.fundchannel(l2.info['id'], 100001)
 
 
+@flaky
 def test_openchannel_hook_error_handling(node_factory, bitcoind):
     """ l2 uses a plugin that should fatal() crash the node.
 
@@ -1008,6 +1009,7 @@ def test_htlc_accepted_hook_fail(node_factory):
     assert len(inv) == 1 and inv[0]['status'] == 'unpaid'
 
 
+@flaky
 @unittest.skipIf(not DEVELOPER, "without DEVELOPER=1, gossip v slow")
 def test_htlc_accepted_hook_resolve(node_factory):
     """l3 creates an invoice, l2 knows the preimage and will shortcircuit.
@@ -2041,6 +2043,7 @@ def test_3847_repro(node_factory, bitcoind):
     l1.rpc.paystatus(i1)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "trouble managing remotesigner when node killed this way")
 def test_important_plugin(node_factory):
     # Cache it here.
     pluginsdir = os.path.join(os.path.dirname(__file__), "plugins")

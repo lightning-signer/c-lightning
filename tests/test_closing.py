@@ -855,6 +855,7 @@ def test_penalty_htlc_tx_fulfill(node_factory, bitcoind, chainparams):
     assert account_balance(l2, channel_id) == 0
 
 
+@flaky
 @unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1")
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
 @pytest.mark.slow_test
@@ -2132,6 +2133,7 @@ def setup_multihtlc_test(node_factory, bitcoind):
     return h, nodes
 
 
+@flaky
 @unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1 for dev_ignore_htlcs")
 @pytest.mark.slow_test
 def test_onchain_multihtlc_our_unilateral(node_factory, bitcoind):
@@ -2224,6 +2226,7 @@ def test_onchain_multihtlc_our_unilateral(node_factory, bitcoind):
             assert only_one(nodes[i].rpc.listpeers(nodes[i + 1].info['id'])['peers'])['connected']
 
 
+@flaky
 @unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1 for dev_ignore_htlcs")
 @pytest.mark.slow_test
 def test_onchain_multihtlc_their_unilateral(node_factory, bitcoind):
@@ -2430,6 +2433,7 @@ def test_permfail_htlc_out(node_factory, bitcoind, executor):
 
 
 @unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy: can't withdraw to non-wallet address")
 def test_permfail(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2)
 

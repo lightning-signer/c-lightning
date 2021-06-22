@@ -1066,6 +1066,7 @@ def test_forward(node_factory, bitcoind):
     l1.rpc.waitsendpay(rhash)
 
 
+@flaky
 @unittest.skipIf(not DEVELOPER, "needs --dev-fast-gossip")
 def test_forward_different_fees_and_cltv(node_factory, bitcoind):
     # FIXME: Check BOLT quotes here too
@@ -2368,6 +2369,7 @@ def test_channel_spendable_large(node_factory, bitcoind):
     l1.rpc.waitsendpay(payment_hash, TIMEOUT)
 
 
+@flaky
 def test_channel_spendable_receivable_capped(node_factory, bitcoind):
     """Test that spendable_msat and receivable_msat is capped at 2^32-1"""
     sats = 16777215

@@ -459,6 +459,11 @@ bool wallet_can_spend(struct wallet *w, const u8 *script,
 		      u32 *index, bool *output_is_p2sh);
 
 /**
+ * wallet_set_keypath - set the keypath to the given wallet entry.
+ */
+void wallet_set_keypath(struct wallet *w, u32 index, struct wally_map *map_in);
+
+/**
  * wallet_get_newindex - get a new index from the wallet.
  * @ld: (in) lightning daemon
  *

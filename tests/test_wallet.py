@@ -20,6 +20,7 @@ WAIT_TIMEOUT = 60  # Wait timeout for processes
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Test relies on a number of example addresses valid only in regtest")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy: can't withdraw to non-wallet address")
 def test_withdraw(node_factory, bitcoind):
     amount = 1000000
     # Don't get any funds from previous runs.
@@ -666,6 +667,7 @@ def test_utxopsbt(node_factory, bitcoind, chainparams):
                     reservedok=True)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy: can't withdraw to non-wallet address")
 def test_sign_and_send_psbt(node_factory, bitcoind, chainparams):
     """
     Tests for the sign + send psbt RPCs
@@ -868,6 +870,7 @@ def test_sign_and_send_psbt(node_factory, bitcoind, chainparams):
     check_coin_moves(l1, 'wallet', wallet_coin_mvts, chainparams)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy: can't withdraw to non-wallet address")
 def test_txsend(node_factory, bitcoind, chainparams):
     amount = 1000000
     l1 = node_factory.get_node(random_hsm=True)
@@ -1257,6 +1260,7 @@ def test_withdraw_nlocktime_fuzz(node_factory, bitcoind):
         raise Exception("No transaction with fuzzed nLockTime !")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy: can't withdraw to non-wallet address")
 def test_multiwithdraw_simple(node_factory, bitcoind):
     """
     Test simple multiwithdraw usage.
