@@ -2,7 +2,6 @@ from collections import Counter
 from ephemeral_port_reserve import reserve
 from fixtures import *  # noqa: F401,F403
 from fixtures import TEST_NETWORK
-from flaky import flaky
 from pyln.client import RpcError, Millisatoshi
 from utils import (
     wait_for, TIMEOUT, only_one, sync_blockheight, expected_node_features, COMPAT
@@ -1468,7 +1467,6 @@ def test_gossip_store_load_no_channel_update(node_factory):
         assert bytearray(f.read()) == bytearray.fromhex("09")
 
 
-@flaky
 @unittest.skipIf(not DEVELOPER, "gossip without DEVELOPER=1 is slow")
 def test_gossip_store_compact_on_load(node_factory, bitcoind):
     l2 = setup_gossip_store_test(node_factory, bitcoind)

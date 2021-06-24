@@ -166,7 +166,6 @@ def test_bad_opening(node_factory):
     l2.daemon.wait_for_log('to_self_delay 100 larger than 99')
 
 
-@flaky
 @unittest.skipIf(not DEVELOPER, "gossip without DEVELOPER=1 is slow")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Fee computation and limits are network specific")
 @pytest.mark.slow_test
@@ -579,7 +578,6 @@ def test_connect_stresstest(node_factory, executor):
     assert successes > failures
 
 
-@flaky
 @unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1")
 def test_reconnect_normal(node_factory):
     # Should reconnect fine even if locked message gets lost.
@@ -1593,7 +1591,6 @@ def test_multifunding_disconnect(node_factory):
     l1.rpc.multifundchannel(destinations)
 
 
-@flaky
 def test_multifunding_wumbo(node_factory):
     '''
     Test wumbo channel imposition in multifundchannel.
@@ -1621,7 +1618,6 @@ def test_multifunding_wumbo(node_factory):
     l1.rpc.multifundchannel(destinations)
 
 
-@flaky
 @unittest.skipIf(TEST_NETWORK == 'liquid-regtest', "Fees on elements are different")
 @unittest.skipIf(not DEVELOPER, "uses dev-fail")
 def test_multifunding_feerates(node_factory, bitcoind):
@@ -1999,7 +1995,6 @@ def test_update_fee(node_factory, bitcoind):
     l2.daemon.wait_for_log('onchaind complete, forgetting peer')
 
 
-@flaky
 @unittest.skipIf(not DEVELOPER, "needs DEVELOPER=1")
 def test_fee_limits(node_factory, bitcoind):
     l1, l2, l3, l4 = node_factory.get_nodes(4, opts=[{'dev-max-fee-multiplier': 5, 'may_reconnect': True,
@@ -2288,7 +2283,6 @@ def test_peerinfo(node_factory, bitcoind):
     assert l2.rpc.listnodes()['nodes'] == []
 
 
-@flaky
 def test_disconnectpeer(node_factory, bitcoind):
     l1, l2, l3 = node_factory.get_nodes(3, opts={'may_reconnect': False})
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
@@ -2672,7 +2666,6 @@ def test_fulfill_incoming_first(node_factory, bitcoind):
     l3.daemon.wait_for_log('onchaind complete, forgetting peer')
 
 
-@flaky
 @unittest.skipIf(not DEVELOPER, "gossip without DEVELOPER=1 is slow")
 @pytest.mark.slow_test
 def test_restart_many_payments(node_factory, bitcoind):
