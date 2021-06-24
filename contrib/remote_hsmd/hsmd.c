@@ -1301,11 +1301,11 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 		&push_value,
 		&funding_txid,
 		funding_txout,
-		local_to_self_delay,
+		local_to_self_delay,	// locally imposed on counterparty to_self outputs
 		local_shutdown_script,
 		&remote_basepoints,
 		&remote_funding_pubkey,
-		remote_to_self_delay,
+		remote_to_self_delay,	// counterparty imposed on our to_self outputs
 		remote_shutdown_script,
 		channel_type);
 	if (PROXY_PERMANENT(rv))
@@ -1346,7 +1346,7 @@ static struct io_plan *handle_sign_withdrawal_tx(struct io_conn *conn,
 
 	u8 *** wits;
 	proxy_stat rv = proxy_handle_sign_withdrawal_tx(
-		&c->id, c->dbid, outputs, utxos, psbt, &wits);
+		outputs, utxos, psbt, &wits);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 			      "proxy_%s failed: %s", __FUNCTION__,

@@ -19,6 +19,7 @@ struct node_id;
 struct oneshot;
 struct peer;
 struct timers;
+struct wally_map;
 enum channel_state;
 enum state_change;
 
@@ -520,6 +521,11 @@ void wallet_confirm_utxos(struct wallet *w, const struct utxo **utxos);
  */
 bool wallet_can_spend(struct wallet *w, const u8 *script,
 		      u32 *index, bool *output_is_p2sh);
+
+/**
+ * wallet_set_keypath - set the keypath to the given wallet entry.
+ */
+void wallet_set_keypath(struct wallet *w, u32 index, struct wally_map *map_in);
 
 /**
  * wallet_get_newindex - get a new index from the wallet.
