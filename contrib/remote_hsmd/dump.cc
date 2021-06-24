@@ -44,7 +44,10 @@ string dump_hex(const void *vptr, size_t sz)
 
 string dump_bitcoin_txid(const struct bitcoin_txid *txid)
 {
-	return dump_hex(txid->shad.sha.u.u8, sizeof(txid->shad.sha.u.u8));
+	// reverse the bytes, a-la bitcoind
+	struct sha256_double rev = txid->shad;
+	reverse_bytes(rev.sha.u.u8, sizeof(rev.sha.u.u8));
+	return dump_hex(rev.sha.u.u8, sizeof(rev.sha.u.u8));
 }
 
 string dump_bitcoin_signature(const struct bitcoin_signature *sp)
@@ -213,6 +216,7 @@ string dump_wally_tx_witness_stack(const struct wally_tx_witness_stack *sp)
 string dump_wally_keypath_item(const struct wally_map_item *ip)
 {
 	size_t npath = (ip->value_len - BIP32_KEY_FINGERPRINT_LEN) / sizeof(uint32_t);
+	uint32_t * path = (uint32_t *) (ip->value + BIP32_KEY_FINGERPRINT_LEN);
 	ostringstream ostrm;
 	ostrm << "{ ";
 	ostrm << "\"pubkey\":" << dump_hex(ip->key, ip->key_len);
@@ -223,9 +227,7 @@ string dump_wally_keypath_item(const struct wally_map_item *ip)
 	for (size_t ii = 0; ii < npath; ++ii) {
 		if (ii != 0)
 			ostrm << ",";
-		uint32_t pelem = *(uint32_t *)
-			ip->value + BIP32_KEY_FINGERPRINT_LEN + ii * sizeof(uint32_t);
-		ostrm << pelem;
+		ostrm << le32_to_cpu(path[ii]);
 	}
 	ostrm << " ]";
 	ostrm << " }";
@@ -480,4 +482,16 @@ string dump_rhashes(const struct sha256 *rhashes, size_t num_rhashes)
 	}
 	ostrm << "]";
 	return ostrm.str();
+}
+
+/* <sigh>.  Bitcoind represents hashes as little-endian for RPC. */
+void reverse_bytes(u8 *arr, size_t len)
+{
+	unsigned int i;
+
+	for (i = 0; i < len / 2; i++) {
+		unsigned char tmp = arr[i];
+		arr[i] = arr[len - 1 - i];
+		arr[len - 1 - i] = tmp;
+	}
 }
