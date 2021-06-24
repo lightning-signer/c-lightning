@@ -38,4 +38,7 @@ std::string dump_wally_psbt(const struct wally_psbt *psbt);
 std::string dump_tx(const struct bitcoin_tx *tx);
 std::string dump_rhashes(const struct sha256 *rhashes, size_t num_rhashes);
 
+// needed for formatting txid
+void reverse_bytes(u8 *arr, size_t len);
+
 #endif /* LIGHTNING_CONTRIB_REMOTE_HSMD_DUMP_H */

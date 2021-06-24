@@ -2628,6 +2628,7 @@ def test_fundee_forget_funding_tx_unconfirmed(node_factory, bitcoind):
 
 
 @pytest.mark.developer("needs dev_fail")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy: can't withdraw to non-wallet address")
 def test_no_fee_estimate(node_factory, bitcoind, executor):
     l1 = node_factory.get_node(start=False, options={'dev-no-fake-fees': True})
 

@@ -9,6 +9,7 @@ extern "C" {
 #include <bitcoin/chainparams.h>
 #include <bitcoin/privkey.h>
 #include <bitcoin/psbt.h>
+#include <bitcoin/script.h>
 #include <bitcoin/short_channel_id.h>
 #include <bitcoin/tx.h>
 #include <common/derive_basepoints.h>
@@ -588,12 +589,12 @@ proxy_stat proxy_handle_ready_channel(
 	req.set_push_value_msat(push_value->millisatoshis);
 	marshal_outpoint(funding_txid,
 			 funding_txout, req.mutable_funding_outpoint());
-	req.set_holder_to_self_delay(holder_to_self_delay);
+	req.set_holder_selected_contest_delay(holder_to_self_delay);
 	marshal_script(holder_shutdown_script,
 		       req.mutable_holder_shutdown_script());
 	marshal_basepoints(counterparty_basepoints, counterparty_funding_pubkey,
 			   req.mutable_counterparty_basepoints());
-	req.set_counterparty_to_self_delay(counterparty_to_self_delay);
+	req.set_counterparty_selected_contest_delay(counterparty_to_self_delay);
 	marshal_script(counterparty_shutdown_script,
 		       req.mutable_counterparty_shutdown_script());
 	if (option_anchor_outputs)
@@ -623,8 +624,6 @@ proxy_stat proxy_handle_ready_channel(
 }
 
 proxy_stat proxy_handle_sign_withdrawal_tx(
-	struct node_id *peer_id,
-	u64 dbid,
 	struct bitcoin_tx_output **outputs,
 	struct utxo **utxos,
 	struct wally_psbt *psbt,
@@ -632,12 +631,10 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 {
 	STATUS_DEBUG(
 		"%s:%d %s { "
-		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"self_id\":%s, "
 		"\"utxos\":%s, \"outputs\":%s, \"psbt\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
-		dump_node_id(peer_id).c_str(),
-		dbid,
 		dump_utxos((const struct utxo **)utxos).c_str(),
 		dump_bitcoin_tx_outputs(
 			(const struct bitcoin_tx_output **)outputs).c_str(),
@@ -645,11 +642,40 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 		);
 
 	last_message = "";
+
+	// This code is mimicking psbt_txid at bitcoin/psbt.c:796:
+	//
+	/* You can *almost* take txid of global tx.  But @niftynei thought
+	 * about this far more than me and pointed out that P2SH
+	 * inputs would not be represented, so here we go. */
+	struct wally_tx *tx;
+	tal_wally_start();
+	wally_tx_clone_alloc(psbt->tx, 0, &tx);
+	for (size_t i = 0; i < tx->num_inputs; i++) {
+		if (psbt->inputs[i].final_scriptsig) {
+			wally_tx_set_input_script(tx, i,
+						  psbt->inputs[i].final_scriptsig,
+						  psbt->inputs[i].final_scriptsig_len);
+		} else if (psbt->inputs[i].redeem_script) {
+			u8 *script;
+
+			/* P2SH requires push of the redeemscript, from libwally src */
+			script = tal_arr(tmpctx, u8, 0);
+			script_push_bytes(&script,
+					  psbt->inputs[i].redeem_script,
+					  psbt->inputs[i].redeem_script_len);
+			wally_tx_set_input_script(tx, i, script, tal_bytelen(script));
+		}
+	}
+	tal_wally_end(tal_steal(psbt, tx));
+
+
 	SignFundingTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
-	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 
-	req.mutable_tx()->set_raw_tx_bytes(serialized_wtx(psbt->tx, true));
+	// Serialize the tx we modified above which includes witscripts.
+	req.mutable_tx()->set_raw_tx_bytes(serialized_wtx(tx, true));
+
 	assert(psbt->tx->num_inputs >= tal_count(utxos));
 	size_t uu = 0;
 	for (size_t ii = 0; ii < psbt->tx->num_inputs; ++ii) {
@@ -663,6 +689,20 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 		}
 	}
 	assert(uu == tal_count(utxos));
+
+	for (size_t ii = 0; ii < psbt->tx->num_outputs; ++ii) {
+		OutputDescriptor *odesc = req.mutable_tx()->add_output_descs();
+		struct wally_map *mp = &psbt->outputs[ii].keypaths;
+		if (mp->num_items == 1) {
+			const struct wally_map_item *ip = &mp->items[0];
+			size_t npath =
+				(ip->value_len - BIP32_KEY_FINGERPRINT_LEN) / sizeof(uint32_t);
+			uint32_t *path = (uint32_t *) (ip->value + BIP32_KEY_FINGERPRINT_LEN);
+			for (size_t jj = 0; jj < npath; ++jj) {
+				odesc->mutable_key_loc()->add_key_path(le32_to_cpu(path[jj]));
+			}
+		}
+	}
 
 	ClientContext context;
 	SignFundingTxReply rsp;
