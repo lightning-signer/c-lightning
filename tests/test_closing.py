@@ -2810,6 +2810,7 @@ def test_permfail_htlc_out(node_factory, bitcoind, executor):
 
 
 @pytest.mark.developer("needs DEVELOPER=1")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy: can't withdraw to non-wallet address")
 def test_permfail(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2)
 

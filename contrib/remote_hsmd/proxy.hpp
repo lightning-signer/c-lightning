@@ -88,7 +88,6 @@ proxy_stat proxy_handle_ready_channel(
 	struct channel_type *channel_type);
 
 proxy_stat proxy_handle_sign_withdrawal_tx(
-	struct node_id *peer_id, u64 dbid,
 	struct bitcoin_tx_output **outputs,
 	struct utxo **utxos,
 	struct wally_psbt *psbt,
