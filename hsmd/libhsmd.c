@@ -84,6 +84,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT:
 	case WIRE_HSMD_CHECK_FUTURE_SECRET:
+	case WIRE_HSMD_READY_CHANNEL:
 		return (client->capabilities & HSM_CAP_COMMITMENT_POINT) != 0;
 
 	case WIRE_HSMD_SIGN_REMOTE_COMMITMENT_TX:
@@ -94,6 +95,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 		return (client->capabilities & HSM_CAP_SIGN_CLOSING_TX) != 0;
 
 	case WIRE_HSMD_INIT:
+	case WIRE_HSMD_NEW_CHANNEL:
 	case WIRE_HSMD_CLIENT_HSMFD:
 	case WIRE_HSMD_SIGN_WITHDRAWAL:
 	case WIRE_HSMD_SIGN_INVOICE:
@@ -112,6 +114,8 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_CANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_CUPDATE_SIG_REPLY:
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:
+	case WIRE_HSMD_NEW_CHANNEL_REPLY:
+	case WIRE_HSMD_READY_CHANNEL_REPLY:
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
@@ -264,6 +268,70 @@ static void get_channel_seed(const struct node_id *peer_id, u64 dbid,
 		    input, sizeof(input),
 		    &channel_base, sizeof(channel_base),
 		    info, strlen(info));
+}
+
+/*~ This is used to declare a new channel. */
+static u8 *handle_new_channel(struct hsmd_client *c, const u8 *msg_in)
+{
+	struct node_id peer_id;
+	u64 dbid;
+
+	if (!fromwire_hsmd_new_channel(msg_in, &peer_id, &dbid))
+		return hsmd_status_malformed_request(c, msg_in);
+
+	return towire_hsmd_new_channel_reply(NULL);
+}
+
+static bool mem_is_zero(const void *mem, size_t len)
+{
+	size_t i;
+	for (i = 0; i < len; ++i)
+		if (((const unsigned char *)mem)[i])
+			return false;
+	return true;
+}
+
+/*~ This is used to provide all unchanging public channel parameters. */
+static u8 *handle_ready_channel(struct hsmd_client *c, const u8 *msg_in)
+{
+	bool is_outbound;
+	struct amount_sat channel_value;
+	struct amount_msat push_value;
+	struct bitcoin_txid funding_txid;
+	u16 funding_txout;
+	u16 local_to_self_delay;
+	u8 *local_shutdown_script;
+	struct basepoints remote_basepoints;
+	struct pubkey remote_funding_pubkey;
+	u16 remote_to_self_delay;
+	u8 *remote_shutdown_script;
+	bool option_static_remotekey;
+	bool option_anchor_outputs;
+	struct amount_msat value_msat;
+
+	if (!fromwire_hsmd_ready_channel(tmpctx, msg_in, &is_outbound,
+					&channel_value, &push_value, &funding_txid,
+					&funding_txout, &local_to_self_delay,
+					&local_shutdown_script,
+					&remote_basepoints,
+					&remote_funding_pubkey,
+					&remote_to_self_delay,
+					&remote_shutdown_script,
+					&option_static_remotekey,
+					&option_anchor_outputs))
+		return hsmd_status_malformed_request(c, msg_in);
+
+	/* Fail fast if any values are obviously uninitialized. */
+	assert(amount_sat_greater(channel_value, AMOUNT_SAT(0)));
+	assert(amount_sat_to_msat(&value_msat, channel_value));
+	assert(amount_msat_less_eq(push_value, value_msat));
+	assert(!mem_is_zero(&funding_txid, sizeof(funding_txid)));
+	assert(local_to_self_delay > 0);
+	assert(!mem_is_zero(&remote_basepoints, sizeof(remote_basepoints)));
+	assert(!mem_is_zero(&remote_funding_pubkey, sizeof(remote_funding_pubkey)));
+	assert(remote_to_self_delay > 0);
+
+	return towire_hsmd_ready_channel_reply(NULL);
 }
 
 /*~ For almost every wallet tx we use the BIP32 seed, but not for onchain
@@ -1080,12 +1148,15 @@ static u8 *handle_sign_remote_commitment_tx(struct hsmd_client *c, const u8 *msg
 	const u8 *funding_wscript;
 	struct pubkey remote_per_commit;
 	bool option_static_remotekey;
+	struct sha256 *htlc_rhash;
+	u64 commit_num;
 
 	if (!fromwire_hsmd_sign_remote_commitment_tx(tmpctx, msg_in,
 						    &tx,
 						    &remote_funding_pubkey,
 						    &remote_per_commit,
-						    &option_static_remotekey))
+						    &option_static_remotekey,
+						    &htlc_rhash, &commit_num))
 		return hsmd_status_malformed_request(c, msg_in);
 	tx->chainparams = c->chainparams;
 
@@ -1170,13 +1241,16 @@ static u8 *handle_sign_commitment_tx(struct hsmd_client *c, const u8 *msg_in)
 	struct secret channel_seed;
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
+	struct sha256 *rhashes;
+	u64 commit_num;
 	struct secrets secrets;
 	const u8 *funding_wscript;
 
 	if (!fromwire_hsmd_sign_commitment_tx(tmpctx, msg_in,
 					     &peer_id, &dbid,
 					     &tx,
-					     &remote_funding_pubkey))
+					     &remote_funding_pubkey,
+					     &rhashes, &commit_num))
 		return hsmd_status_malformed_request(c, msg_in);
 
 	tx->chainparams = c->chainparams;
@@ -1344,6 +1418,10 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 		    "libhsmd",
 		    hsmd_wire_name(t));
 
+	case WIRE_HSMD_NEW_CHANNEL:
+		return handle_new_channel(client, msg);
+	case WIRE_HSMD_READY_CHANNEL:
+		return handle_ready_channel(client, msg);
 	case WIRE_HSMD_GET_OUTPUT_SCRIPTPUBKEY:
 		return handle_get_output_scriptpubkey(client, msg);
 	case WIRE_HSMD_CHECK_FUTURE_SECRET:
@@ -1390,6 +1468,8 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 	case WIRE_HSMD_CANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_CUPDATE_SIG_REPLY:
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:
+	case WIRE_HSMD_NEW_CHANNEL_REPLY:
+	case WIRE_HSMD_READY_CHANNEL_REPLY:
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:

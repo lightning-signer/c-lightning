@@ -1032,6 +1032,7 @@ def test_funder_options(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_funder_contribution_limits(node_factory, bitcoind):
     opts = {'experimental-dual-fund': None,
             'feerates': (5000, 5000, 5000, 5000)}
