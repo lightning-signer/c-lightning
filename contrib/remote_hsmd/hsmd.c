@@ -808,6 +808,43 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 			 take(towire_hsmd_sign_commitment_tx_reply(NULL, &sig)));
 }
 
+/* Validate the peer's signatures for our commitment and htlc txs. */
+static struct io_plan *handle_validate_commitment_tx(struct io_conn *conn,
+						     struct client *c,
+						     const u8 *msg_in)
+{
+	struct bitcoin_tx *tx;
+	struct sha256 *rhashes;
+	u64 commit_num;
+	struct bitcoin_signature commit_sig;
+	struct bitcoin_signature *htlc_sigs;
+	struct secret *old_secret;
+
+	if (!fromwire_hsmd_validate_commitment_tx(tmpctx, msg_in,
+						  &tx,
+						  &rhashes, &commit_num,
+						  &commit_sig, &htlc_sigs))
+		bad_req(conn, c, msg_in);
+
+	proxy_stat rv = proxy_handle_validate_commitment_tx(
+		tx,
+		&c->id, c->dbid,
+		rhashes, commit_num,
+		&commit_sig, htlc_sigs,
+		&old_secret);
+	if (PROXY_PERMANENT(rv))
+		status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		              "proxy_%s failed: %s", __FUNCTION__,
+			      proxy_last_message());
+	else if (!PROXY_SUCCESS(rv))
+		return bad_req_fmt(conn, c, msg_in,
+				   "proxy_%s error: %s", __FUNCTION__,
+				   proxy_last_message());
+
+	return req_reply(conn, c,
+			 take(towire_hsmd_validate_commitment_tx_reply(NULL, old_secret)));
+}
+
 /*~ This is used by channeld to create signatures for the remote peer's
  * commitment transaction.  It's functionally identical to signing our own,
  * but we expect to do this repeatedly as commitment transactions are
@@ -1595,6 +1632,7 @@ static bool check_client_capabilities(struct client *client,
 
 	case WIRE_HSMD_SIGN_REMOTE_COMMITMENT_TX:
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TX:
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX:
 		return (client->capabilities & HSM_CAP_SIGN_REMOTE_TX) != 0;
 
 	case WIRE_HSMD_SIGN_MUTUAL_CLOSE_TX:
@@ -1628,6 +1666,7 @@ static bool check_client_capabilities(struct client *client,
 	case WIRE_HSMD_INIT_REPLY:
 	case WIRE_HSMSTATUS_CLIENT_BAD_REQUEST:
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY:
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY:
 	case WIRE_HSMD_SIGN_TX_REPLY:
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT_REPLY:
 	case WIRE_HSMD_CHECK_FUTURE_SECRET_REPLY:
@@ -1704,6 +1743,9 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_SIGN_COMMITMENT_TX:
 		return handle_sign_commitment_tx(conn, c, c->msg_in);
 
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX:
+		return handle_validate_commitment_tx(conn, c, c->msg_in);
+
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US:
 		return handle_sign_delayed_payment_to_us(conn, c, c->msg_in);
 
@@ -1754,6 +1796,7 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_INIT_REPLY:
 	case WIRE_HSMSTATUS_CLIENT_BAD_REQUEST:
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY:
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY:
 	case WIRE_HSMD_SIGN_TX_REPLY:
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT_REPLY:
 	case WIRE_HSMD_CHECK_FUTURE_SECRET_REPLY:

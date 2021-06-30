@@ -56,8 +56,21 @@ string dump_bitcoin_signature(const struct bitcoin_signature *sp)
 	ostrm << "{ "
 	      << "\"sighash_type\":" << int(sp->sighash_type)
 	      << ", \"s\":"
-	      << '"' << dump_secp256k1_ecdsa_signature(&sp->s) << '"'
+	      << dump_secp256k1_ecdsa_signature(&sp->s)
 	      << " }";
+	return ostrm.str();
+}
+
+string dump_htlc_signatures(const struct bitcoin_signature *sps)
+{
+	ostringstream ostrm;
+ 	ostrm << "[";
+	for (size_t input_ndx = 0; input_ndx < tal_count(sps); ++input_ndx) {
+		if (input_ndx != 0)
+			ostrm << ", ";
+		ostrm << dump_bitcoin_signature(&sps[input_ndx]);
+	}
+ 	ostrm << "]";
 	return ostrm.str();
 }
 

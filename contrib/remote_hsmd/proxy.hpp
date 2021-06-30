@@ -132,6 +132,16 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	u64 commit_num,
 	struct bitcoin_signature *o_sig);
 
+proxy_stat proxy_handle_validate_commitment_tx(
+	struct bitcoin_tx *tx,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct sha256 *rhashes,
+	u64 commit_num,
+	struct bitcoin_signature *commit_sig,
+	struct bitcoin_signature *htlc_sigs,
+	struct secret **o_old_secret);
+
 proxy_stat proxy_handle_cannouncement_sig(
 	struct node_id *peer_id,
 	u64 dbid,

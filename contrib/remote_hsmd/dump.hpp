@@ -11,6 +11,7 @@ std::string dump_hex(const void *vptr, size_t sz);
 std::string dump_basepoints(const struct basepoints *bp);
 std::string dump_bitcoin_txid(const struct bitcoin_txid *txid);
 std::string dump_bitcoin_signature(const struct bitcoin_signature *sp);
+std::string dump_htlc_signatures(const struct bitcoin_signature *sps);
 std::string dump_secp256k1_ecdsa_signature(const secp256k1_ecdsa_signature *sp);
 std::string dump_secp256k1_ecdsa_recoverable_signature(const secp256k1_ecdsa_recoverable_signature *sp);
 std::string dump_secret(const struct secret *sp);

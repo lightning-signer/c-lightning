@@ -53,6 +53,9 @@ enum hsmd_wire {
         /*  Master asks HSM to sign a commitment transaction. */
         WIRE_HSMD_SIGN_COMMITMENT_TX = 5,
         WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY = 105,
+        /*  Validate the counterparty's commitment signatures. */
+        WIRE_HSMD_VALIDATE_COMMITMENT_TX = 35,
+        WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY = 135,
         /*  Onchaind asks HSM to sign a spend to-us.  Four variants */
         /*  of keys is derived differently... */
         /*  FIXME: Have master tell hsmd the keyindex */
@@ -215,6 +218,15 @@ bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct no
 u8 *towire_hsmd_sign_commitment_tx_reply(const tal_t *ctx, const struct bitcoin_signature *sig);
 bool fromwire_hsmd_sign_commitment_tx_reply(const void *p, struct bitcoin_signature *sig);
 
+/* WIRE: HSMD_VALIDATE_COMMITMENT_TX */
+/*  Validate the counterparty's commitment signatures. */
+u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct sha256 *htlc_rhash, u64 commit_num, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs);
+bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct sha256 **htlc_rhash, u64 *commit_num, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs);
+
+/* WIRE: HSMD_VALIDATE_COMMITMENT_TX_REPLY */
+u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret);
+bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p, struct secret **old_commitment_secret);
+
 /* WIRE: HSMD_SIGN_DELAYED_PAYMENT_TO_US */
 /*  Onchaind asks HSM to sign a spend to-us.  Four variants */
 /*  of keys is derived differently... */
@@ -311,4 +323,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig);
 
 
 #endif /* LIGHTNING_HSMD_HSMD_WIREGEN_H */
-// SHA256STAMP:5959ea0d2c6ea1b1806b5e73d9c3635c50e120c8f5007295ae02fa2972136cda
+// SHA256STAMP:8a8edc8fc7586afae4211347bb98985189a3c22d1f2d13677bdc1faf17975e79

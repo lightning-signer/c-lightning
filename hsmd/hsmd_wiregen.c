@@ -46,6 +46,8 @@ const char *hsmd_wire_name(int e)
 	case WIRE_HSMD_CUPDATE_SIG_REPLY: return "WIRE_HSMD_CUPDATE_SIG_REPLY";
 	case WIRE_HSMD_SIGN_COMMITMENT_TX: return "WIRE_HSMD_SIGN_COMMITMENT_TX";
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY: return "WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY";
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX: return "WIRE_HSMD_VALIDATE_COMMITMENT_TX";
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY: return "WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY";
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US: return "WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US";
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US: return "WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US";
 	case WIRE_HSMD_SIGN_PENALTY_TO_US: return "WIRE_HSMD_SIGN_PENALTY_TO_US";
@@ -100,6 +102,8 @@ bool hsmd_wire_is_defined(u16 type)
 	case WIRE_HSMD_CUPDATE_SIG_REPLY:;
 	case WIRE_HSMD_SIGN_COMMITMENT_TX:;
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY:;
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX:;
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY:;
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US:;
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US:;
 	case WIRE_HSMD_SIGN_PENALTY_TO_US:;
@@ -869,6 +873,84 @@ bool fromwire_hsmd_sign_commitment_tx_reply(const void *p, struct bitcoin_signat
 	return cursor != NULL;
 }
 
+/* WIRE: HSMD_VALIDATE_COMMITMENT_TX */
+/* Validate the counterparty's commitment signatures. */
+u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct sha256 *htlc_rhash, u64 commit_num, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs)
+{
+	u16 num_htlc_rhash = tal_count(htlc_rhash);
+	u16 num_htlc_sigs = tal_count(htlc_sigs);
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_VALIDATE_COMMITMENT_TX);
+	towire_bitcoin_tx(&p, tx);
+	towire_u16(&p, num_htlc_rhash);
+	for (size_t i = 0; i < num_htlc_rhash; i++)
+		towire_sha256(&p, htlc_rhash + i);
+	towire_u64(&p, commit_num);
+	towire_bitcoin_signature(&p, sig);
+	towire_u16(&p, num_htlc_sigs);
+	for (size_t i = 0; i < num_htlc_sigs; i++)
+		towire_bitcoin_signature(&p, htlc_sigs + i);
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct sha256 **htlc_rhash, u64 *commit_num, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs)
+{
+	u16 num_htlc_rhash;
+	u16 num_htlc_sigs;
+
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_VALIDATE_COMMITMENT_TX)
+		return false;
+ 	*tx = fromwire_bitcoin_tx(ctx, &cursor, &plen);
+ 	num_htlc_rhash = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlc_rhash
+	*htlc_rhash = num_htlc_rhash ? tal_arr(ctx, struct sha256, num_htlc_rhash) : NULL;
+	for (size_t i = 0; i < num_htlc_rhash; i++)
+		fromwire_sha256(&cursor, &plen, *htlc_rhash + i);
+ 	*commit_num = fromwire_u64(&cursor, &plen);
+ 	fromwire_bitcoin_signature(&cursor, &plen, sig);
+ 	num_htlc_sigs = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlc_sigs
+	*htlc_sigs = num_htlc_sigs ? tal_arr(ctx, struct bitcoin_signature, num_htlc_sigs) : NULL;
+	for (size_t i = 0; i < num_htlc_sigs; i++)
+		fromwire_bitcoin_signature(&cursor, &plen, *htlc_sigs + i);
+	return cursor != NULL;
+}
+
+/* WIRE: HSMD_VALIDATE_COMMITMENT_TX_REPLY */
+u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret)
+{
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY);
+	if (!old_commitment_secret)
+		towire_bool(&p, false);
+	else {
+		towire_bool(&p, true);
+		towire_secret(&p, old_commitment_secret);
+	}
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p, struct secret **old_commitment_secret)
+{
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY)
+		return false;
+ 	if (!fromwire_bool(&cursor, &plen))
+		*old_commitment_secret = NULL;
+	else {
+		*old_commitment_secret = tal(ctx, struct secret);
+		fromwire_secret(&cursor, &plen, *old_commitment_secret);
+	}
+	return cursor != NULL;
+}
+
 /* WIRE: HSMD_SIGN_DELAYED_PAYMENT_TO_US */
 /* Onchaind asks HSM to sign a spend to-us.  Four variants */
 /* of keys is derived differently... */
@@ -1439,4 +1521,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig)
  	fromwire_bip340sig(&cursor, &plen, sig);
 	return cursor != NULL;
 }
-// SHA256STAMP:5959ea0d2c6ea1b1806b5e73d9c3635c50e120c8f5007295ae02fa2972136cda
+// SHA256STAMP:8a8edc8fc7586afae4211347bb98985189a3c22d1f2d13677bdc1faf17975e79

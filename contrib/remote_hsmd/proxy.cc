@@ -175,6 +175,13 @@ void marshal_script(u8 const *script, string *o_script)
 		o_script->assign((char const *)script, tal_count(script));
 }
 
+void marshal_bitcoin_signature(struct bitcoin_signature const *sp, BitcoinSignature *o_sig)
+{
+	u8 der[73];
+	size_t len = signature_to_der(der, sp);
+	o_sig->set_data(der, len);
+}
+
 void marshal_basepoints(struct basepoints const *bps,
 			struct pubkey *funding_pubkey,
 			Basepoints * o_bps)
@@ -1092,6 +1099,73 @@ proxy_stat proxy_handle_sign_commitment_tx(
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
 			     dump_bitcoin_signature(o_sig).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status);
+	}
+}
+
+proxy_stat proxy_handle_validate_commitment_tx(
+	struct bitcoin_tx *tx,
+	struct node_id *peer_id,
+	u64 dbid,
+	struct sha256 *rhashes, u64 commit_num,
+	struct bitcoin_signature *commit_sig,
+	struct bitcoin_signature *htlc_sigs,
+	struct secret **o_old_secret)
+{
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"tx\":%s, "
+		"\"rhashes\":%s, \"commit_num\":%" PRIu64 ", "
+		"\"commit_sig\":%s, \"htlc_sigs\":%s }",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		dump_tx(tx).c_str(),
+		dump_rhashes(rhashes, tal_count(rhashes)).c_str(),
+		commit_num,
+		dump_bitcoin_signature(commit_sig).c_str(),
+		dump_htlc_signatures(htlc_sigs).c_str()
+		);
+
+	last_message = "";
+	ValidateHolderCommitmentTxRequest req;
+	marshal_node_id(&self_id, req.mutable_node_id());
+	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
+	marshal_single_input_tx(tx, NULL, req.mutable_tx());
+	marshal_rhashes(rhashes, req.mutable_payment_hashes());
+	req.set_commit_num(commit_num);
+	marshal_bitcoin_signature(commit_sig, req.mutable_commit_signature());
+	for (size_t ii = 0; ii < tal_count(htlc_sigs); ++ii) {
+		marshal_bitcoin_signature(&htlc_sigs[ii], req.add_htlc_signatures());
+	}
+
+	ClientContext context;
+	ValidateHolderCommitmentTxReply rsp;
+	Status status = stub->ValidateHolderCommitmentTx(&context, req, &rsp);
+	if (status.ok()) {
+		if (rsp.old_secret().data().empty()) {
+			*o_old_secret = NULL;
+		} else {
+			*o_old_secret = tal_arr(tmpctx, struct secret, 1);
+			unmarshal_secret(rsp.old_secret(), *o_old_secret);
+		}
+		STATUS_DEBUG("%s:%d %s { "
+			     "\"self_id\":%s, "
+			     "\"old_secret\":%s }",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str(),
+			     (*o_old_secret ?
+			      dump_secret(*o_old_secret).c_str() : "<none>"));
 		last_message = "success";
 		return PROXY_OK;
 	} else {
