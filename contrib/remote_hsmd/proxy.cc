@@ -14,6 +14,7 @@ extern "C" {
 #include <bitcoin/tx.h>
 #include <common/derive_basepoints.h>
 #include <common/hash_u5.h>
+#include <common/htlc_wire.h>
 #include <common/node_id.h>
 #include <common/status.h>
 #include <common/utils.h>
@@ -226,6 +227,13 @@ void marshal_rhashes(const struct sha256 *rhashes,
 		payment_hashes->Add(string((const char *) &rhashes[ii],
 					   sizeof(struct sha256)));
 	}
+}
+
+void marshal_htlc(const struct existing_htlc *htlc, HTLCInfo *o_htlc)
+{
+	o_htlc->set_value_sat(htlc->amount.millisatoshis / 1000);
+	o_htlc->set_payment_hash(&htlc->payment_hash, sizeof(htlc->payment_hash));
+	o_htlc->set_cltv_expiry(htlc->cltv_expiry);
 }
 
 void unmarshal_secret(Secret const &ss, struct secret *o_sp)
@@ -1115,7 +1123,8 @@ proxy_stat proxy_handle_validate_commitment_tx(
 	struct bitcoin_tx *tx,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct sha256 *rhashes, u64 commit_num,
+	struct existing_htlc **htlcs,
+	u64 commit_num, u32 feerate,
 	struct bitcoin_signature *commit_sig,
 	struct bitcoin_signature *htlc_sigs,
 	struct secret **o_old_secret)
@@ -1124,15 +1133,17 @@ proxy_stat proxy_handle_validate_commitment_tx(
 		"%s:%d %s { "
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
 		"\"tx\":%s, "
-		"\"rhashes\":%s, \"commit_num\":%" PRIu64 ", "
+		"\"htlcs\":%s, "
+		"\"commit_num\":%" PRIu64 ", "
+		"\"feerate\":%d, "
 		"\"commit_sig\":%s, \"htlc_sigs\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
 		dump_tx(tx).c_str(),
-		dump_rhashes(rhashes, tal_count(rhashes)).c_str(),
-		commit_num,
+		dump_htlcs((const struct existing_htlc **) htlcs, tal_count(htlcs)).c_str(),
+		commit_num, feerate,
 		dump_bitcoin_signature(commit_sig).c_str(),
 		dump_htlc_signatures(htlc_sigs).c_str()
 		);
@@ -1142,8 +1153,15 @@ proxy_stat proxy_handle_validate_commitment_tx(
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_single_input_tx(tx, NULL, req.mutable_tx());
-	marshal_rhashes(rhashes, req.mutable_payment_hashes());
+	for (size_t ii = 0; ii < tal_count(htlcs); ++ii) {
+		if (htlc_state_owner(htlcs[ii]->state) == LOCAL) {
+			marshal_htlc(htlcs[ii], req.add_offered_htlcs());
+		} else {
+			marshal_htlc(htlcs[ii], req.add_received_htlcs());
+		}
+	}
 	req.set_commit_num(commit_num);
+	req.set_feerate_sat_per_kw(feerate);
 	marshal_bitcoin_signature(commit_sig, req.mutable_commit_signature());
 	for (size_t ii = 0; ii < tal_count(htlc_sigs); ++ii) {
 		marshal_bitcoin_signature(&htlc_sigs[ii], req.add_htlc_signatures());

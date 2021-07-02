@@ -136,8 +136,9 @@ proxy_stat proxy_handle_validate_commitment_tx(
 	struct bitcoin_tx *tx,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct sha256 *rhashes,
+	struct existing_htlc **htlc,
 	u64 commit_num,
+	u32 feerate,
 	struct bitcoin_signature *commit_sig,
 	struct bitcoin_signature *htlc_sigs,
 	struct secret **o_old_secret);

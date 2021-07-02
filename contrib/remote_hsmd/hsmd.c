@@ -814,22 +814,23 @@ static struct io_plan *handle_validate_commitment_tx(struct io_conn *conn,
 						     const u8 *msg_in)
 {
 	struct bitcoin_tx *tx;
-	struct sha256 *rhashes;
+	struct existing_htlc **htlc;
 	u64 commit_num;
+	u32 feerate;
 	struct bitcoin_signature commit_sig;
 	struct bitcoin_signature *htlc_sigs;
 	struct secret *old_secret;
 
 	if (!fromwire_hsmd_validate_commitment_tx(tmpctx, msg_in,
-						  &tx,
-						  &rhashes, &commit_num,
+						  &tx, &htlc,
+						  &commit_num, &feerate,
 						  &commit_sig, &htlc_sigs))
 		bad_req(conn, c, msg_in);
 
 	proxy_stat rv = proxy_handle_validate_commitment_tx(
 		tx,
 		&c->id, c->dbid,
-		rhashes, commit_num,
+		htlc, commit_num, feerate,
 		&commit_sig, htlc_sigs,
 		&old_secret);
 	if (PROXY_PERMANENT(rv))

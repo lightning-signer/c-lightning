@@ -1502,31 +1502,6 @@ static void handle_peer_commit_sig(struct peer *peer, const u8 *msg)
 			&funding_wscript, peer->channel, &peer->next_local_per_commit,
 			peer->next_index[LOCAL], LOCAL);
 
-	// Collect the payment_hashes for upcoming validate.
-	size_t num_entries = tal_count(htlc_map);
-	struct sha256 *rhashes = tal_arrz(tmpctx, struct sha256, num_entries);
-	size_t nrhash = 0;
-	for (size_t ndx = 0; ndx < num_entries; ++ndx) {
-		if (htlc_map[ndx]) {
-			memcpy(&rhashes[nrhash], &htlc_map[ndx]->rhash, sizeof(rhashes[nrhash]));
-			++nrhash;
-		}
-	}
-	tal_resize(&rhashes, nrhash);
-
-	// Validate the counterparty's signatures, returns old_secret.
-	const u8 * msg2 =
-		towire_hsmd_validate_commitment_tx(NULL, txs[0],
-						   rhashes, peer->next_index[LOCAL],
-						   &commit_sig, htlc_sigs);
-	msg2 = hsm_req(tmpctx, take(msg2));
-
-	struct secret *old_secret;
-	if (!fromwire_hsmd_validate_commitment_tx_reply(tmpctx, msg2, &old_secret))
-		status_failed(STATUS_FAIL_HSM_IO,
-			      "Reading validate_commitment_tx reply: %s",
-			      tal_hex(tmpctx, msg2));
-
 	/* Set the commit_sig on the commitment tx psbt */
 	if (!psbt_input_set_signature(txs[0]->psbt, 0,
 				      &peer->channel->funding_pubkey[REMOTE],
@@ -1606,6 +1581,52 @@ static void handle_peer_commit_sig(struct peer *peer, const u8 *msg)
 
 	status_debug("Received commit_sig with %zu htlc sigs",
 		     tal_count(htlc_sigs));
+
+	// Collect the htlcs for call to hsmd validate.
+	//
+	// We use the existing_htlc to_wire routines, it's unfortunate that
+	// we have to send a dummy onion_routing_packet ...
+	//
+	struct existing_htlc **htlcs = tal_arr(tmpctx, struct existing_htlc *, 0);
+	size_t num_entries = tal_count(htlc_map);
+	u8 dummy_onion_routing_packet[TOTAL_PACKET_SIZE(ROUTING_INFO_SIZE)];
+	memset(dummy_onion_routing_packet, 0, sizeof(dummy_onion_routing_packet));
+	for (size_t ndx = 0; ndx < num_entries; ++ndx) {
+		struct htlc const *hh = htlc_map[ndx];
+		if (hh) {
+			status_debug("HTLC[%lu]=%" PRIu64 ", %s",
+				     ndx, hh->id, htlc_state_name(hh->state));
+			struct existing_htlc *existing =
+				new_existing_htlc(htlcs,
+						  hh->id,
+						  hh->state,
+						  hh->amount,
+						  &hh->rhash,
+						  hh->expiry.locktime,
+						  dummy_onion_routing_packet,
+						  NULL,
+						  NULL,
+						  NULL);
+			tal_arr_expand(&htlcs, existing);
+		}
+	}
+
+	// Validate the counterparty's signatures, returns old_secret.
+	const u8 * msg2 =
+		towire_hsmd_validate_commitment_tx(NULL,
+						   txs[0],
+						   (const struct existing_htlc **) htlcs,
+						   peer->next_index[LOCAL],
+						   channel_feerate(peer->channel, LOCAL),
+						   &commit_sig,
+						   htlc_sigs);
+	msg2 = hsm_req(tmpctx, take(msg2));
+
+	struct secret *old_secret;
+	if (!fromwire_hsmd_validate_commitment_tx_reply(tmpctx, msg2, &old_secret))
+		status_failed(STATUS_FAIL_HSM_IO,
+			      "Reading validate_commitment_tx reply: %s",
+			      tal_hex(tmpctx, msg2));
 
 	send_revocation(peer,
 			&commit_sig, htlc_sigs, changed_htlcs, txs[0]);

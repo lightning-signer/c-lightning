@@ -1289,8 +1289,9 @@ static u8 *handle_sign_commitment_tx(struct hsmd_client *c, const u8 *msg_in)
 static u8 *handle_validate_commitment_tx(struct hsmd_client *c, const u8 *msg_in)
 {
 	struct bitcoin_tx *tx;
-	struct sha256 *rhashes;
+	struct existing_htlc **htlc;
 	u64 commit_num;
+	u32 feerate;
 	struct bitcoin_signature sig;
 	struct bitcoin_signature *htlc_sigs;
 	struct secret channel_seed;
@@ -1298,8 +1299,8 @@ static u8 *handle_validate_commitment_tx(struct hsmd_client *c, const u8 *msg_in
 	struct secret *old_secret;
 
 	if (!fromwire_hsmd_validate_commitment_tx(tmpctx, msg_in,
-						  &tx,
-						  &rhashes, &commit_num,
+						  &tx, &htlc,
+						  &commit_num, &feerate,
 						  &sig, &htlc_sigs))
 		return hsmd_status_malformed_request(c, msg_in);
 

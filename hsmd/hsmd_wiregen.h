@@ -12,6 +12,7 @@
 #include <common/derive_basepoints.h>
 #include <common/utxo.h>
 #include <bitcoin/psbt.h>
+#include <common/htlc_wire.h>
 
 enum hsmd_wire {
         /*  Clients should not give a bad request but not the HSM's decision to crash. */
@@ -220,8 +221,8 @@ bool fromwire_hsmd_sign_commitment_tx_reply(const void *p, struct bitcoin_signat
 
 /* WIRE: HSMD_VALIDATE_COMMITMENT_TX */
 /*  Validate the counterparty's commitment signatures. */
-u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct sha256 *htlc_rhash, u64 commit_num, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs);
-bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct sha256 **htlc_rhash, u64 *commit_num, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs);
+u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct existing_htlc **htlcs, u64 commit_num, u32 feerate, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs);
+bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct existing_htlc ***htlcs, u64 *commit_num, u32 *feerate, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs);
 
 /* WIRE: HSMD_VALIDATE_COMMITMENT_TX_REPLY */
 u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret);
@@ -323,4 +324,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig);
 
 
 #endif /* LIGHTNING_HSMD_HSMD_WIREGEN_H */
-// SHA256STAMP:8a8edc8fc7586afae4211347bb98985189a3c22d1f2d13677bdc1faf17975e79
+// SHA256STAMP:29a6c2bfe0761ff715ebd631fa50a3b3efe897e091ec82c87be47c6ace13d117

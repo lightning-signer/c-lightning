@@ -875,18 +875,19 @@ bool fromwire_hsmd_sign_commitment_tx_reply(const void *p, struct bitcoin_signat
 
 /* WIRE: HSMD_VALIDATE_COMMITMENT_TX */
 /* Validate the counterparty's commitment signatures. */
-u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct sha256 *htlc_rhash, u64 commit_num, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs)
+u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct existing_htlc **htlcs, u64 commit_num, u32 feerate, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs)
 {
-	u16 num_htlc_rhash = tal_count(htlc_rhash);
+	u16 num_existing_htlcs = tal_count(htlcs);
 	u16 num_htlc_sigs = tal_count(htlc_sigs);
 	u8 *p = tal_arr(ctx, u8, 0);
 
 	towire_u16(&p, WIRE_HSMD_VALIDATE_COMMITMENT_TX);
 	towire_bitcoin_tx(&p, tx);
-	towire_u16(&p, num_htlc_rhash);
-	for (size_t i = 0; i < num_htlc_rhash; i++)
-		towire_sha256(&p, htlc_rhash + i);
+	towire_u16(&p, num_existing_htlcs);
+	for (size_t i = 0; i < num_existing_htlcs; i++)
+		towire_existing_htlc(&p, htlcs[i]);
 	towire_u64(&p, commit_num);
+	towire_u32(&p, feerate);
 	towire_bitcoin_signature(&p, sig);
 	towire_u16(&p, num_htlc_sigs);
 	for (size_t i = 0; i < num_htlc_sigs; i++)
@@ -894,9 +895,9 @@ u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct sha256 **htlc_rhash, u64 *commit_num, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs)
+bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct existing_htlc ***htlcs, u64 *commit_num, u32 *feerate, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs)
 {
-	u16 num_htlc_rhash;
+	u16 num_existing_htlcs;
 	u16 num_htlc_sigs;
 
 	const u8 *cursor = p;
@@ -905,12 +906,13 @@ bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struc
 	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_VALIDATE_COMMITMENT_TX)
 		return false;
  	*tx = fromwire_bitcoin_tx(ctx, &cursor, &plen);
- 	num_htlc_rhash = fromwire_u16(&cursor, &plen);
- 	// 2nd case htlc_rhash
-	*htlc_rhash = num_htlc_rhash ? tal_arr(ctx, struct sha256, num_htlc_rhash) : NULL;
-	for (size_t i = 0; i < num_htlc_rhash; i++)
-		fromwire_sha256(&cursor, &plen, *htlc_rhash + i);
+ 	num_existing_htlcs = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlcs
+	*htlcs = num_existing_htlcs ? tal_arr(ctx, struct existing_htlc *, num_existing_htlcs) : NULL;
+	for (size_t i = 0; i < num_existing_htlcs; i++)
+		(*htlcs)[i] = fromwire_existing_htlc(*htlcs, &cursor, &plen);
  	*commit_num = fromwire_u64(&cursor, &plen);
+ 	*feerate = fromwire_u32(&cursor, &plen);
  	fromwire_bitcoin_signature(&cursor, &plen, sig);
  	num_htlc_sigs = fromwire_u16(&cursor, &plen);
  	// 2nd case htlc_sigs
@@ -1521,4 +1523,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig)
  	fromwire_bip340sig(&cursor, &plen, sig);
 	return cursor != NULL;
 }
-// SHA256STAMP:8a8edc8fc7586afae4211347bb98985189a3c22d1f2d13677bdc1faf17975e79
+// SHA256STAMP:29a6c2bfe0761ff715ebd631fa50a3b3efe897e091ec82c87be47c6ace13d117
