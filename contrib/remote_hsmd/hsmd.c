@@ -820,6 +820,7 @@ static struct io_plan *handle_validate_commitment_tx(struct io_conn *conn,
 	struct bitcoin_signature commit_sig;
 	struct bitcoin_signature *htlc_sigs;
 	struct secret *old_secret;
+	struct pubkey next_per_commitment_point;
 
 	if (!fromwire_hsmd_validate_commitment_tx(tmpctx, msg_in,
 						  &tx, &htlc,
@@ -832,7 +833,7 @@ static struct io_plan *handle_validate_commitment_tx(struct io_conn *conn,
 		&c->id, c->dbid,
 		htlc, commit_num, feerate,
 		&commit_sig, htlc_sigs,
-		&old_secret);
+		&old_secret, &next_per_commitment_point);
 	if (PROXY_PERMANENT(rv))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 		              "proxy_%s failed: %s", __FUNCTION__,
@@ -843,7 +844,8 @@ static struct io_plan *handle_validate_commitment_tx(struct io_conn *conn,
 				   proxy_last_message());
 
 	return req_reply(conn, c,
-			 take(towire_hsmd_validate_commitment_tx_reply(NULL, old_secret)));
+			 take(towire_hsmd_validate_commitment_tx_reply(
+				      NULL, old_secret, &next_per_commitment_point)));
 }
 
 /*~ This is used by channeld to create signatures for the remote peer's

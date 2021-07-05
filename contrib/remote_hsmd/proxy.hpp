@@ -141,7 +141,8 @@ proxy_stat proxy_handle_validate_commitment_tx(
 	u32 feerate,
 	struct bitcoin_signature *commit_sig,
 	struct bitcoin_signature *htlc_sigs,
-	struct secret **o_old_secret);
+	struct secret **o_old_secret,
+	struct pubkey *next_per_commitment_point);
 
 proxy_stat proxy_handle_cannouncement_sig(
 	struct node_id *peer_id,

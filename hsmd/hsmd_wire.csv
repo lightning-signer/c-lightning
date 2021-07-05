@@ -154,6 +154,7 @@ msgdata,hsmd_validate_commitment_tx,htlc_sigs,bitcoin_signature,num_htlc_sigs
 
 msgtype,hsmd_validate_commitment_tx_reply,135
 msgdata,hsmd_validate_commitment_tx_reply,old_commitment_secret,?secret,
+msgdata,hsmd_validate_commitment_tx_reply,next_per_commitment_point,pubkey,
 
 # Onchaind asks HSM to sign a spend to-us.  Four variants, since each set
 # of keys is derived differently...

@@ -1297,6 +1297,7 @@ static u8 *handle_validate_commitment_tx(struct hsmd_client *c, const u8 *msg_in
 	struct secret channel_seed;
 	struct sha256 shaseed;
 	struct secret *old_secret;
+	struct pubkey next_per_commitment_point;
 
 	if (!fromwire_hsmd_validate_commitment_tx(tmpctx, msg_in,
 						  &tx, &htlc,
@@ -1307,11 +1308,15 @@ static u8 *handle_validate_commitment_tx(struct hsmd_client *c, const u8 *msg_in
 	// FIXME - Not actually validating the commitment and htlc tx
 	// signatures here ...
 
-	if (commit_num >= 2) {
-		get_channel_seed(&c->id, c->dbid, &channel_seed);
-		if (!derive_shaseed(&channel_seed, &shaseed))
-			return hsmd_status_bad_request(c, msg_in, "bad derive_shaseed");
+	get_channel_seed(&c->id, c->dbid, &channel_seed);
+	if (!derive_shaseed(&channel_seed, &shaseed))
+		return hsmd_status_bad_request(c, msg_in, "bad derive_shaseed");
 
+	if (!per_commit_point(&shaseed, &next_per_commitment_point, commit_num))
+		return hsmd_status_bad_request_fmt(
+		    c, msg_in, "bad per_commit_point %" PRIu64, commit_num);
+
+	if (commit_num >= 2) {
 		old_secret = tal(tmpctx, struct secret);
 		if (!per_commit_secret(&shaseed, old_secret, commit_num - 2)) {
 			return hsmd_status_bad_request_fmt(
@@ -1321,7 +1326,8 @@ static u8 *handle_validate_commitment_tx(struct hsmd_client *c, const u8 *msg_in
 		old_secret = NULL;
 	}
 
-	return towire_hsmd_validate_commitment_tx_reply(NULL, old_secret);
+	return towire_hsmd_validate_commitment_tx_reply(
+		NULL, old_secret, &next_per_commitment_point);
 }
 
 /*~ This is used when a commitment transaction is onchain, and has an HTLC

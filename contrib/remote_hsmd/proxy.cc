@@ -833,7 +833,8 @@ proxy_stat proxy_handle_get_per_commitment_point(
 			unmarshal_secret(rsp.old_secret(), *o_old_secret);
 		}
 		STATUS_DEBUG("%s:%d %s { "
-			     "\"self_id\":%s, \"per_commitment_point\":%s, "
+			     "\"self_id\":%s, "
+			     "\"per_commitment_point\":%s, "
 			     "\"old_secret\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
@@ -1127,7 +1128,8 @@ proxy_stat proxy_handle_validate_commitment_tx(
 	u64 commit_num, u32 feerate,
 	struct bitcoin_signature *commit_sig,
 	struct bitcoin_signature *htlc_sigs,
-	struct secret **o_old_secret)
+	struct secret **o_old_secret,
+	struct pubkey *o_next_per_commitment_point)
 {
 	STATUS_DEBUG(
 		"%s:%d %s { "
@@ -1171,6 +1173,7 @@ proxy_stat proxy_handle_validate_commitment_tx(
 	ValidateHolderCommitmentTxReply rsp;
 	Status status = stub->ValidateHolderCommitmentTx(&context, req, &rsp);
 	if (status.ok()) {
+		unmarshal_pubkey(rsp.next_per_commitment_point(), o_next_per_commitment_point);
 		if (rsp.old_secret().data().empty()) {
 			*o_old_secret = NULL;
 		} else {
@@ -1179,9 +1182,11 @@ proxy_stat proxy_handle_validate_commitment_tx(
 		}
 		STATUS_DEBUG("%s:%d %s { "
 			     "\"self_id\":%s, "
+			     "\"next_per_commitment_point\":%s, "
 			     "\"old_secret\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
+			     dump_pubkey(o_next_per_commitment_point).c_str(),
 			     (*o_old_secret ?
 			      dump_secret(*o_old_secret).c_str() : "<none>"));
 		last_message = "success";

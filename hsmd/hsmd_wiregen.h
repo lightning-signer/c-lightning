@@ -225,8 +225,8 @@ u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx
 bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct existing_htlc ***htlcs, u64 *commit_num, u32 *feerate, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs);
 
 /* WIRE: HSMD_VALIDATE_COMMITMENT_TX_REPLY */
-u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret);
-bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p, struct secret **old_commitment_secret);
+u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret, const struct pubkey *next_per_commitment_point);
+bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p, struct secret **old_commitment_secret, struct pubkey *next_per_commitment_point);
 
 /* WIRE: HSMD_SIGN_DELAYED_PAYMENT_TO_US */
 /*  Onchaind asks HSM to sign a spend to-us.  Four variants */
@@ -324,4 +324,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig);
 
 
 #endif /* LIGHTNING_HSMD_HSMD_WIREGEN_H */
-// SHA256STAMP:29a6c2bfe0761ff715ebd631fa50a3b3efe897e091ec82c87be47c6ace13d117
+// SHA256STAMP:3ba74cc5eedefd63b0e47e6f7e58c5d7bbd354094ad2894f163f8f8ab81664d1

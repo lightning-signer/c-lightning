@@ -923,7 +923,7 @@ bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struc
 }
 
 /* WIRE: HSMD_VALIDATE_COMMITMENT_TX_REPLY */
-u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret)
+u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret, const struct pubkey *next_per_commitment_point)
 {
 	u8 *p = tal_arr(ctx, u8, 0);
 
@@ -934,10 +934,11 @@ u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secr
 		towire_bool(&p, true);
 		towire_secret(&p, old_commitment_secret);
 	}
+	towire_pubkey(&p, next_per_commitment_point);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p, struct secret **old_commitment_secret)
+bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p, struct secret **old_commitment_secret, struct pubkey *next_per_commitment_point)
 {
 	const u8 *cursor = p;
 	size_t plen = tal_count(p);
@@ -950,6 +951,7 @@ bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p,
 		*old_commitment_secret = tal(ctx, struct secret);
 		fromwire_secret(&cursor, &plen, *old_commitment_secret);
 	}
+ 	fromwire_pubkey(&cursor, &plen, next_per_commitment_point);
 	return cursor != NULL;
 }
 
@@ -1523,4 +1525,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig)
  	fromwire_bip340sig(&cursor, &plen, sig);
 	return cursor != NULL;
 }
-// SHA256STAMP:29a6c2bfe0761ff715ebd631fa50a3b3efe897e091ec82c87be47c6ace13d117
+// SHA256STAMP:3ba74cc5eedefd63b0e47e6f7e58c5d7bbd354094ad2894f163f8f8ab81664d1
