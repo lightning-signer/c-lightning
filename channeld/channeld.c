@@ -1636,16 +1636,12 @@ static void handle_peer_commit_sig(struct peer *peer, const u8 *msg)
 						   htlc_sigs);
 	tal_free(htlcs);
 	msg2 = hsm_req(tmpctx, take(msg2));
-
 	struct secret *old_secret;
 	struct pubkey next_point;
 	if (!fromwire_hsmd_validate_commitment_tx_reply(tmpctx, msg2, &old_secret, &next_point))
 		status_failed(STATUS_FAIL_HSM_IO,
 			      "Reading validate_commitment_tx reply: %s",
 			      tal_hex(tmpctx, msg2));
-	status_debug("hsmd_validate_commitment_tx for index %lu returns %s",
-		     peer->next_index[LOCAL],
-		     old_secret ? type_to_string(tmpctx, struct secret, old_secret) : "NULL");
 
 	send_revocation(peer, &commit_sig, htlc_sigs, changed_htlcs, txs[0],
 			old_secret, &next_point);
