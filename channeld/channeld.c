@@ -1341,6 +1341,17 @@ static u8 *make_revocation_msg(const struct peer *peer, u64 revoke_index,
 				     point);
 }
 
+static u8 *make_revocation_msg_from_secret(const struct peer *peer,
+					   u64 revoke_index,
+					   struct pubkey *point,
+					   const struct secret *old_commit_secret,
+					   const struct pubkey *next_point)
+{
+	*point = *next_point;
+	return towire_revoke_and_ack(peer, &peer->channel_id,
+				     old_commit_secret, next_point);
+}
+
 /* Convert changed htlcs into parts which lightningd expects. */
 static void marshall_htlc_info(const tal_t *ctx,
 			       const struct htlc **changed_htlcs,
@@ -1399,7 +1410,9 @@ static void send_revocation(struct peer *peer,
 			    const struct bitcoin_signature *commit_sig,
 			    const struct bitcoin_signature *htlc_sigs,
 			    const struct htlc **changed_htlcs,
-			    const struct bitcoin_tx *committx)
+			    const struct bitcoin_tx *committx,
+			    const struct secret *old_secret,
+			    const struct pubkey *next_point)
 {
 	struct changed_htlc *changed;
 	struct fulfilled_htlc *fulfilled;
@@ -1417,8 +1430,9 @@ static void send_revocation(struct peer *peer,
 			   &added);
 
 	/* Revoke previous commit, get new point. */
-	u8 *msg = make_revocation_msg(peer, peer->next_index[LOCAL]-1,
-				      &peer->next_local_per_commit);
+	u8 *msg = make_revocation_msg_from_secret(peer, peer->next_index[LOCAL]-1,
+						  &peer->next_local_per_commit,
+						  old_secret, next_point);
 
 	/* From now on we apply changes to the next commitment */
 	peer->next_index[LOCAL]++;
@@ -1582,8 +1596,55 @@ static void handle_peer_commit_sig(struct peer *peer, const u8 *msg)
 	status_debug("Received commit_sig with %zu htlc sigs",
 		     tal_count(htlc_sigs));
 
-	send_revocation(peer,
-			&commit_sig, htlc_sigs, changed_htlcs, txs[0]);
+	// Collect the htlcs for call to hsmd validate.
+	//
+	// We use the existing_htlc to_wire routines, it's unfortunate that
+	// we have to send a dummy onion_routing_packet ...
+	//
+	struct existing_htlc **htlcs = tal_arr(NULL, struct existing_htlc *, 0);
+	u8 dummy_onion_routing_packet[TOTAL_PACKET_SIZE(ROUTING_INFO_SIZE)];
+	memset(dummy_onion_routing_packet, 0, sizeof(dummy_onion_routing_packet));
+	size_t num_entries = tal_count(htlc_map);
+	for (size_t ndx = 0; ndx < num_entries; ++ndx) {
+		struct htlc const *hh = htlc_map[ndx];
+		if (hh) {
+			status_debug("HTLC[%lu]=%" PRIu64 ", %s",
+				     ndx, hh->id, htlc_state_name(hh->state));
+			struct existing_htlc *existing =
+				new_existing_htlc(NULL,
+						  hh->id,
+						  hh->state,
+						  hh->amount,
+						  &hh->rhash,
+						  hh->expiry.locktime,
+						  dummy_onion_routing_packet,
+						  NULL,
+						  NULL,
+						  NULL);
+			tal_arr_expand(&htlcs, tal_steal(htlcs, existing));
+		}
+	}
+
+	// Validate the counterparty's signatures, returns old_secret.
+	const u8 * msg2 =
+		towire_hsmd_validate_commitment_tx(NULL,
+						   txs[0],
+						   (const struct existing_htlc **) htlcs,
+						   peer->next_index[LOCAL],
+						   channel_feerate(peer->channel, LOCAL),
+						   &commit_sig,
+						   htlc_sigs);
+	tal_free(htlcs);
+	msg2 = hsm_req(tmpctx, take(msg2));
+	struct secret *old_secret;
+	struct pubkey next_point;
+	if (!fromwire_hsmd_validate_commitment_tx_reply(tmpctx, msg2, &old_secret, &next_point))
+		status_failed(STATUS_FAIL_HSM_IO,
+			      "Reading validate_commitment_tx reply: %s",
+			      tal_hex(tmpctx, msg2));
+
+	send_revocation(peer, &commit_sig, htlc_sigs, changed_htlcs, txs[0],
+			old_secret, &next_point);
 
 	/* We may now be quiescent on our side. */
 	maybe_send_stfu(peer);
