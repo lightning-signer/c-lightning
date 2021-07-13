@@ -1001,7 +1001,8 @@ def write_all(fd, bytestr):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support hsm_secrdef test_hsm_secret_encryption(node_factory):
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support hsm_secret file")
+def test_hsm_secret_encryption(node_factory):
     l1 = node_factory.get_node(may_fail=True)  # May fail when started without key
     password = "reckful&é🍕\n"
     # We need to simulate a terminal to use termios in `lightningd`.
@@ -1387,6 +1388,7 @@ def test_repro_4258(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK == 'liquid-regtest', "Uses regtest addresses")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy: can't withdraw to non-wallet address")
 def test_withdraw_bech32m(node_factory, bitcoind):
     l1 = node_factory.get_node()
     l1.fundwallet(10000000)

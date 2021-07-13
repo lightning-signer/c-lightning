@@ -43,18 +43,22 @@ RMTHSMD_COMMON_OBJS :=				\
 	common/daemon_conn.o			\
 	common/derive_basepoints.o		\
 	common/features.o			\
-	common/funding_tx.o			\
+	common/status_wire.o		\
 	common/status_wiregen.o		\
 	common/hash_u5.o			\
+	common/htlc_state.o			\
+	common/htlc_wire.o			\
 	common/key_derive.o			\
 	common/memleak.o			\
 	common/msg_queue.o			\
 	common/node_id.o			\
+	common/onionreply.o			\
 	common/permute_tx.o			\
 	common/pseudorand.o			\
 	common/setup.o				\
 	common/status.o				\
 	common/status_wire.o		\
+	common/status_wiregen.o		\
 	common/subdaemon.o			\
 	common/type_to_string.o		\
 	common/utils.o				\
