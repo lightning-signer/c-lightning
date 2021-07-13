@@ -6,6 +6,7 @@ extern "C" {
 #include <bitcoin/signature.h>
 #include <bitcoin/tx.h>
 #include <common/derive_basepoints.h>
+#include <common/htlc_wire.h>
 #include <common/node_id.h>
 #include <common/status.h>
 #include <common/utils.h>
@@ -56,8 +57,21 @@ string dump_bitcoin_signature(const struct bitcoin_signature *sp)
 	ostrm << "{ "
 	      << "\"sighash_type\":" << int(sp->sighash_type)
 	      << ", \"s\":"
-	      << '"' << dump_secp256k1_ecdsa_signature(&sp->s) << '"'
+	      << dump_secp256k1_ecdsa_signature(&sp->s)
 	      << " }";
+	return ostrm.str();
+}
+
+string dump_htlc_signatures(const struct bitcoin_signature *sps)
+{
+	ostringstream ostrm;
+ 	ostrm << "[";
+	for (size_t input_ndx = 0; input_ndx < tal_count(sps); ++input_ndx) {
+		if (input_ndx != 0)
+			ostrm << ", ";
+		ostrm << dump_bitcoin_signature(&sps[input_ndx]);
+	}
+ 	ostrm << "]";
 	return ostrm.str();
 }
 
@@ -428,7 +442,6 @@ string dump_wally_psbt_output(const struct wally_psbt_output *out)
 	ostrm << ", \"unknowns\":" << dump_wally_unknowns_map(&out->unknowns);
 	ostrm << " }";
 	return ostrm.str();
-
 }
 
 string dump_wally_psbt_outputs(const struct wally_psbt_output *outputs,
@@ -479,6 +492,32 @@ string dump_rhashes(const struct sha256 *rhashes, size_t num_rhashes)
 		if (ii != 0)
 			ostrm << ",";
 		ostrm << dump_hex(&rhashes[ii], sizeof(rhashes[ii]));
+	}
+	ostrm << "]";
+	return ostrm.str();
+}
+
+string dump_htlc(const struct existing_htlc *htlc)
+{
+	ostringstream ostrm;
+	ostrm << "{ "
+	      << "\"id\":" << htlc->id
+	      << ", \"state\":" << htlc_state_name(htlc->state)
+	      << ", \"amount_msat\":" << htlc->amount.millisatoshis
+	      << ", \"payment_hash\":" << dump_hex(&htlc->payment_hash, sizeof(htlc->payment_hash))
+	      << ", \"cltv_expiry\":" << htlc->cltv_expiry
+	      << " }";
+	return ostrm.str();
+}
+
+string dump_htlcs(const struct existing_htlc **htlc, size_t num_htlc)
+{
+	ostringstream ostrm;
+	ostrm << "[";
+	for (size_t ii = 0; ii < num_htlc; ii++) {
+		if (ii != 0)
+			ostrm << ",";
+		ostrm << dump_htlc(htlc[ii]);
 	}
 	ostrm << "]";
 	return ostrm.str();
