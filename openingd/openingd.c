@@ -505,6 +505,34 @@ static u8 *funder_channel_start(struct state *state, u8 channel_flags)
 						  state->channel_type);
 }
 
+static void validate_initial_commitment_signature(struct bitcoin_tx *tx,
+						  struct bitcoin_signature *sig)
+{
+	// Validate the counterparty's signature.
+	struct existing_htlc **htlcs = tal_arr(NULL, struct existing_htlc *, 0);
+	struct bitcoin_signature *htlc_sigs = tal_arr(NULL, struct bitcoin_signature, 0);
+	u32 feerate = 0; // unused since there are no htlcs
+	u64 commit_num = 0;
+	const u8 * msg =
+		towire_hsmd_validate_commitment_tx(NULL,
+						   tx,
+						   (const struct existing_htlc **) htlcs,
+						   commit_num,
+						   feerate,
+						   sig,
+						   htlc_sigs);
+	tal_free(htlc_sigs);
+	tal_free(htlcs);
+	wire_sync_write(HSM_FD, take(msg));
+	msg = wire_sync_read(tmpctx, HSM_FD);
+	struct secret *old_secret;
+	struct pubkey next_point;
+	if (!fromwire_hsmd_validate_commitment_tx_reply(tmpctx, msg, &old_secret, &next_point))
+		status_failed(STATUS_FAIL_HSM_IO,
+			      "Reading validate_commitment_tx reply: %s",
+			      tal_hex(tmpctx, msg));
+}
+
 static bool funder_finalize_channel_setup(struct state *state,
 					  struct amount_msat local_msat,
 					  struct bitcoin_signature *sig,
@@ -705,6 +733,8 @@ static bool funder_finalize_channel_setup(struct state *state,
 				   "Could not meet our fees and reserve: %s", err_reason);
 		goto fail;
 	}
+
+	validate_initial_commitment_signature(*tx, sig);
 
 	if (!check_tx_sig(*tx, 0, NULL, wscript, &state->their_funding_pubkey, sig)) {
 		peer_failed_err(state->pps, &state->channel_id,
@@ -1136,6 +1166,8 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 				   "Could not meet our fees and reserve: %s", err_reason);
 		return NULL;
 	}
+
+	validate_initial_commitment_signature(local_commit, &theirsig);
 
 	if (!check_tx_sig(local_commit, 0, NULL, wscript, &their_funding_pubkey,
 			  &theirsig)) {
