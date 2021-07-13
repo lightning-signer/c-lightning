@@ -24,10 +24,14 @@ const char *hsmd_wire_name(int e)
 	case WIRE_HSMSTATUS_CLIENT_BAD_REQUEST: return "WIRE_HSMSTATUS_CLIENT_BAD_REQUEST";
 	case WIRE_HSMD_INIT: return "WIRE_HSMD_INIT";
 	case WIRE_HSMD_INIT_REPLY: return "WIRE_HSMD_INIT_REPLY";
+	case WIRE_HSMD_NEW_CHANNEL: return "WIRE_HSMD_NEW_CHANNEL";
+	case WIRE_HSMD_NEW_CHANNEL_REPLY: return "WIRE_HSMD_NEW_CHANNEL_REPLY";
 	case WIRE_HSMD_CLIENT_HSMFD: return "WIRE_HSMD_CLIENT_HSMFD";
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY: return "WIRE_HSMD_CLIENT_HSMFD_REPLY";
 	case WIRE_HSMD_GET_CHANNEL_BASEPOINTS: return "WIRE_HSMD_GET_CHANNEL_BASEPOINTS";
 	case WIRE_HSMD_GET_CHANNEL_BASEPOINTS_REPLY: return "WIRE_HSMD_GET_CHANNEL_BASEPOINTS_REPLY";
+	case WIRE_HSMD_READY_CHANNEL: return "WIRE_HSMD_READY_CHANNEL";
+	case WIRE_HSMD_READY_CHANNEL_REPLY: return "WIRE_HSMD_READY_CHANNEL_REPLY";
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REQ: return "WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REQ";
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY: return "WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY";
 	case WIRE_HSMD_SIGN_WITHDRAWAL: return "WIRE_HSMD_SIGN_WITHDRAWAL";
@@ -42,6 +46,8 @@ const char *hsmd_wire_name(int e)
 	case WIRE_HSMD_CUPDATE_SIG_REPLY: return "WIRE_HSMD_CUPDATE_SIG_REPLY";
 	case WIRE_HSMD_SIGN_COMMITMENT_TX: return "WIRE_HSMD_SIGN_COMMITMENT_TX";
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY: return "WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY";
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX: return "WIRE_HSMD_VALIDATE_COMMITMENT_TX";
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY: return "WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY";
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US: return "WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US";
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US: return "WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US";
 	case WIRE_HSMD_SIGN_PENALTY_TO_US: return "WIRE_HSMD_SIGN_PENALTY_TO_US";
@@ -74,10 +80,14 @@ bool hsmd_wire_is_defined(u16 type)
 	case WIRE_HSMSTATUS_CLIENT_BAD_REQUEST:;
 	case WIRE_HSMD_INIT:;
 	case WIRE_HSMD_INIT_REPLY:;
+	case WIRE_HSMD_NEW_CHANNEL:;
+	case WIRE_HSMD_NEW_CHANNEL_REPLY:;
 	case WIRE_HSMD_CLIENT_HSMFD:;
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:;
 	case WIRE_HSMD_GET_CHANNEL_BASEPOINTS:;
 	case WIRE_HSMD_GET_CHANNEL_BASEPOINTS_REPLY:;
+	case WIRE_HSMD_READY_CHANNEL:;
+	case WIRE_HSMD_READY_CHANNEL_REPLY:;
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REQ:;
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:;
 	case WIRE_HSMD_SIGN_WITHDRAWAL:;
@@ -92,6 +102,8 @@ bool hsmd_wire_is_defined(u16 type)
 	case WIRE_HSMD_CUPDATE_SIG_REPLY:;
 	case WIRE_HSMD_SIGN_COMMITMENT_TX:;
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY:;
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX:;
+	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY:;
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US:;
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US:;
 	case WIRE_HSMD_SIGN_PENALTY_TO_US:;
@@ -263,6 +275,54 @@ bool fromwire_hsmd_init_reply(const void *p, struct node_id *node_id, struct ext
 	return cursor != NULL;
 }
 
+/* WIRE: HSMD_NEW_CHANNEL */
+/* Declare a new channel. */
+u8 *towire_hsmd_new_channel(const tal_t *ctx, const struct node_id *id, u64 dbid)
+{
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_NEW_CHANNEL);
+	/* Which identity to use for requests */
+	towire_node_id(&p, id);
+	/* Database id for this client. */
+	towire_u64(&p, dbid);
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_new_channel(const void *p, struct node_id *id, u64 *dbid)
+{
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_NEW_CHANNEL)
+		return false;
+ 	/* Which identity to use for requests */
+	fromwire_node_id(&cursor, &plen, id);
+ 	/* Database id for this client. */
+	*dbid = fromwire_u64(&cursor, &plen);
+	return cursor != NULL;
+}
+
+/* WIRE: HSMD_NEW_CHANNEL_REPLY */
+/* No value returned. */
+u8 *towire_hsmd_new_channel_reply(const tal_t *ctx)
+{
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_NEW_CHANNEL_REPLY);
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_new_channel_reply(const void *p)
+{
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_NEW_CHANNEL_REPLY)
+		return false;
+	return cursor != NULL;
+}
+
 /* WIRE: HSMD_CLIENT_HSMFD */
 /* Get a new HSM FD */
 u8 *towire_hsmd_client_hsmfd(const tal_t *ctx, const struct node_id *id, u64 dbid, u64 capabilities)
@@ -357,6 +417,85 @@ bool fromwire_hsmd_get_channel_basepoints_reply(const void *p, struct basepoints
 		return false;
  	fromwire_basepoints(&cursor, &plen, basepoints);
  	fromwire_pubkey(&cursor, &plen, funding_pubkey);
+	return cursor != NULL;
+}
+
+/* WIRE: HSMD_READY_CHANNEL */
+/* Provide channel parameters. */
+u8 *towire_hsmd_ready_channel(const tal_t *ctx, bool is_outbound, struct amount_sat channel_value, struct amount_msat push_value, const struct bitcoin_txid *funding_txid, u16 funding_txout, u16 local_to_self_delay, const u8 *local_shutdown_script, const struct basepoints *remote_basepoints, const struct pubkey *remote_funding_pubkey, u16 remote_to_self_delay, const u8 *remote_shutdown_script, bool option_static_remotekey, bool option_anchor_outputs)
+{
+	u16 local_shutdown_script_len = tal_count(local_shutdown_script);
+	u16 remote_shutdown_script_len = tal_count(remote_shutdown_script);
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_READY_CHANNEL);
+	towire_bool(&p, is_outbound);
+	towire_amount_sat(&p, channel_value);
+	towire_amount_msat(&p, push_value);
+	towire_bitcoin_txid(&p, funding_txid);
+	towire_u16(&p, funding_txout);
+	towire_u16(&p, local_to_self_delay);
+	towire_u16(&p, local_shutdown_script_len);
+	towire_u8_array(&p, local_shutdown_script, local_shutdown_script_len);
+	towire_basepoints(&p, remote_basepoints);
+	towire_pubkey(&p, remote_funding_pubkey);
+	towire_u16(&p, remote_to_self_delay);
+	towire_u16(&p, remote_shutdown_script_len);
+	towire_u8_array(&p, remote_shutdown_script, remote_shutdown_script_len);
+	towire_bool(&p, option_static_remotekey);
+	towire_bool(&p, option_anchor_outputs);
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_ready_channel(const tal_t *ctx, const void *p, bool *is_outbound, struct amount_sat *channel_value, struct amount_msat *push_value, struct bitcoin_txid *funding_txid, u16 *funding_txout, u16 *local_to_self_delay, u8 **local_shutdown_script, struct basepoints *remote_basepoints, struct pubkey *remote_funding_pubkey, u16 *remote_to_self_delay, u8 **remote_shutdown_script, bool *option_static_remotekey, bool *option_anchor_outputs)
+{
+	u16 local_shutdown_script_len;
+	u16 remote_shutdown_script_len;
+
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_READY_CHANNEL)
+		return false;
+ 	*is_outbound = fromwire_bool(&cursor, &plen);
+ 	*channel_value = fromwire_amount_sat(&cursor, &plen);
+ 	*push_value = fromwire_amount_msat(&cursor, &plen);
+ 	fromwire_bitcoin_txid(&cursor, &plen, funding_txid);
+ 	*funding_txout = fromwire_u16(&cursor, &plen);
+ 	*local_to_self_delay = fromwire_u16(&cursor, &plen);
+ 	local_shutdown_script_len = fromwire_u16(&cursor, &plen);
+ 	// 2nd case local_shutdown_script
+	*local_shutdown_script = local_shutdown_script_len ? tal_arr(ctx, u8, local_shutdown_script_len) : NULL;
+	fromwire_u8_array(&cursor, &plen, *local_shutdown_script, local_shutdown_script_len);
+ 	fromwire_basepoints(&cursor, &plen, remote_basepoints);
+ 	fromwire_pubkey(&cursor, &plen, remote_funding_pubkey);
+ 	*remote_to_self_delay = fromwire_u16(&cursor, &plen);
+ 	remote_shutdown_script_len = fromwire_u16(&cursor, &plen);
+ 	// 2nd case remote_shutdown_script
+	*remote_shutdown_script = remote_shutdown_script_len ? tal_arr(ctx, u8, remote_shutdown_script_len) : NULL;
+	fromwire_u8_array(&cursor, &plen, *remote_shutdown_script, remote_shutdown_script_len);
+ 	*option_static_remotekey = fromwire_bool(&cursor, &plen);
+ 	*option_anchor_outputs = fromwire_bool(&cursor, &plen);
+	return cursor != NULL;
+}
+
+/* WIRE: HSMD_READY_CHANNEL_REPLY */
+/* No value returned. */
+u8 *towire_hsmd_ready_channel_reply(const tal_t *ctx)
+{
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_READY_CHANNEL_REPLY);
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_ready_channel_reply(const void *p)
+{
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_READY_CHANNEL_REPLY)
+		return false;
 	return cursor != NULL;
 }
 
@@ -674,8 +813,9 @@ bool fromwire_hsmd_cupdate_sig_reply(const tal_t *ctx, const void *p, u8 **cu)
 
 /* WIRE: HSMD_SIGN_COMMITMENT_TX */
 /* Master asks HSM to sign a commitment transaction. */
-u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key)
+u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct sha256 *htlc_rhash, u64 commit_num)
 {
+	u16 num_htlc_rhash = tal_count(htlc_rhash);
 	u8 *p = tal_arr(ctx, u8, 0);
 
 	towire_u16(&p, WIRE_HSMD_SIGN_COMMITMENT_TX);
@@ -683,11 +823,17 @@ u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_
 	towire_u64(&p, channel_dbid);
 	towire_bitcoin_tx(&p, tx);
 	towire_pubkey(&p, remote_funding_key);
+	towire_u16(&p, num_htlc_rhash);
+	for (size_t i = 0; i < num_htlc_rhash; i++)
+		towire_sha256(&p, htlc_rhash + i);
+	towire_u64(&p, commit_num);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key)
+bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct sha256 **htlc_rhash, u64 *commit_num)
 {
+	u16 num_htlc_rhash;
+
 	const u8 *cursor = p;
 	size_t plen = tal_count(p);
 
@@ -697,6 +843,12 @@ bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct no
  	*channel_dbid = fromwire_u64(&cursor, &plen);
  	*tx = fromwire_bitcoin_tx(ctx, &cursor, &plen);
  	fromwire_pubkey(&cursor, &plen, remote_funding_key);
+ 	num_htlc_rhash = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlc_rhash
+	*htlc_rhash = num_htlc_rhash ? tal_arr(ctx, struct sha256, num_htlc_rhash) : NULL;
+	for (size_t i = 0; i < num_htlc_rhash; i++)
+		fromwire_sha256(&cursor, &plen, *htlc_rhash + i);
+ 	*commit_num = fromwire_u64(&cursor, &plen);
 	return cursor != NULL;
 }
 
@@ -718,6 +870,88 @@ bool fromwire_hsmd_sign_commitment_tx_reply(const void *p, struct bitcoin_signat
 	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY)
 		return false;
  	fromwire_bitcoin_signature(&cursor, &plen, sig);
+	return cursor != NULL;
+}
+
+/* WIRE: HSMD_VALIDATE_COMMITMENT_TX */
+/* Validate the counterparty's commitment signatures. */
+u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct existing_htlc **htlcs, u64 commit_num, u32 feerate, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs)
+{
+	u16 num_existing_htlcs = tal_count(htlcs);
+	u16 num_htlc_sigs = tal_count(htlc_sigs);
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_VALIDATE_COMMITMENT_TX);
+	towire_bitcoin_tx(&p, tx);
+	towire_u16(&p, num_existing_htlcs);
+	for (size_t i = 0; i < num_existing_htlcs; i++)
+		towire_existing_htlc(&p, htlcs[i]);
+	towire_u64(&p, commit_num);
+	towire_u32(&p, feerate);
+	towire_bitcoin_signature(&p, sig);
+	towire_u16(&p, num_htlc_sigs);
+	for (size_t i = 0; i < num_htlc_sigs; i++)
+		towire_bitcoin_signature(&p, htlc_sigs + i);
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct existing_htlc ***htlcs, u64 *commit_num, u32 *feerate, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs)
+{
+	u16 num_existing_htlcs;
+	u16 num_htlc_sigs;
+
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_VALIDATE_COMMITMENT_TX)
+		return false;
+ 	*tx = fromwire_bitcoin_tx(ctx, &cursor, &plen);
+ 	num_existing_htlcs = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlcs
+	*htlcs = num_existing_htlcs ? tal_arr(ctx, struct existing_htlc *, num_existing_htlcs) : NULL;
+	for (size_t i = 0; i < num_existing_htlcs; i++)
+		(*htlcs)[i] = fromwire_existing_htlc(*htlcs, &cursor, &plen);
+ 	*commit_num = fromwire_u64(&cursor, &plen);
+ 	*feerate = fromwire_u32(&cursor, &plen);
+ 	fromwire_bitcoin_signature(&cursor, &plen, sig);
+ 	num_htlc_sigs = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlc_sigs
+	*htlc_sigs = num_htlc_sigs ? tal_arr(ctx, struct bitcoin_signature, num_htlc_sigs) : NULL;
+	for (size_t i = 0; i < num_htlc_sigs; i++)
+		fromwire_bitcoin_signature(&cursor, &plen, *htlc_sigs + i);
+	return cursor != NULL;
+}
+
+/* WIRE: HSMD_VALIDATE_COMMITMENT_TX_REPLY */
+u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret, const struct pubkey *next_per_commitment_point)
+{
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY);
+	if (!old_commitment_secret)
+		towire_bool(&p, false);
+	else {
+		towire_bool(&p, true);
+		towire_secret(&p, old_commitment_secret);
+	}
+	towire_pubkey(&p, next_per_commitment_point);
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p, struct secret **old_commitment_secret, struct pubkey *next_per_commitment_point)
+{
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY)
+		return false;
+ 	if (!fromwire_bool(&cursor, &plen))
+		*old_commitment_secret = NULL;
+	else {
+		*old_commitment_secret = tal(ctx, struct secret);
+		fromwire_secret(&cursor, &plen, *old_commitment_secret);
+	}
+ 	fromwire_pubkey(&cursor, &plen, next_per_commitment_point);
 	return cursor != NULL;
 }
 
@@ -859,8 +1093,9 @@ bool fromwire_hsmd_sign_local_htlc_tx(const tal_t *ctx, const void *p, u64 *comm
 
 /* WIRE: HSMD_SIGN_REMOTE_COMMITMENT_TX */
 /* Openingd/channeld asks HSM to sign the other sides' commitment tx. */
-u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct pubkey *remote_per_commit, bool option_static_remotekey)
+u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct pubkey *remote_per_commit, bool option_static_remotekey, const struct sha256 *htlc_rhash, u64 commit_num)
 {
+	u16 num_htlc_rhash = tal_count(htlc_rhash);
 	u8 *p = tal_arr(ctx, u8, 0);
 
 	towire_u16(&p, WIRE_HSMD_SIGN_REMOTE_COMMITMENT_TX);
@@ -868,11 +1103,17 @@ u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin
 	towire_pubkey(&p, remote_funding_key);
 	towire_pubkey(&p, remote_per_commit);
 	towire_bool(&p, option_static_remotekey);
+	towire_u16(&p, num_htlc_rhash);
+	for (size_t i = 0; i < num_htlc_rhash; i++)
+		towire_sha256(&p, htlc_rhash + i);
+	towire_u64(&p, commit_num);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct pubkey *remote_per_commit, bool *option_static_remotekey)
+bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct pubkey *remote_per_commit, bool *option_static_remotekey, struct sha256 **htlc_rhash, u64 *commit_num)
 {
+	u16 num_htlc_rhash;
+
 	const u8 *cursor = p;
 	size_t plen = tal_count(p);
 
@@ -882,6 +1123,12 @@ bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, st
  	fromwire_pubkey(&cursor, &plen, remote_funding_key);
  	fromwire_pubkey(&cursor, &plen, remote_per_commit);
  	*option_static_remotekey = fromwire_bool(&cursor, &plen);
+ 	num_htlc_rhash = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlc_rhash
+	*htlc_rhash = num_htlc_rhash ? tal_arr(ctx, struct sha256, num_htlc_rhash) : NULL;
+	for (size_t i = 0; i < num_htlc_rhash; i++)
+		fromwire_sha256(&cursor, &plen, *htlc_rhash + i);
+ 	*commit_num = fromwire_u64(&cursor, &plen);
 	return cursor != NULL;
 }
 
@@ -1278,4 +1525,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig)
  	fromwire_bip340sig(&cursor, &plen, sig);
 	return cursor != NULL;
 }
-// SHA256STAMP:d802e57862a2ced1580824c7419e6c1075864496478c7ca6c47456df279d88df
+// SHA256STAMP:3ba74cc5eedefd63b0e47e6f7e58c5d7bbd354094ad2894f163f8f8ab81664d1

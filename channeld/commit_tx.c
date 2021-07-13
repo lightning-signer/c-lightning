@@ -261,6 +261,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 		struct amount_sat amount = amount_msat_to_sat_round_down(other_pay);
 		u8 *scriptpubkey;
 		int pos;
+		u8 *wscript = NULL;
 
 		/* BOLT #3:
 		 *
@@ -275,13 +276,13 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 		 * Otherwise, this output is a simple P2WPKH to `remotepubkey`.
 		 */
 		if (option_anchor_outputs) {
-			scriptpubkey = scriptpubkey_p2wsh(tmpctx,
-							  anchor_to_remote_redeem(tmpctx, &keyset->other_payment_key));
+			wscript = anchor_to_remote_redeem(tmpctx, &keyset->other_payment_key);
+			scriptpubkey = scriptpubkey_p2wsh(tmpctx, wscript);
 		} else {
 			scriptpubkey = scriptpubkey_p2wpkh(tmpctx,
 							   &keyset->other_payment_key);
 		}
-		pos = bitcoin_tx_add_output(tx, scriptpubkey, NULL, amount);
+		pos = bitcoin_tx_add_output(tx, scriptpubkey, wscript, amount);
 		assert(pos == n);
 		(*htlcmap)[n] = direct_outputs ? dummy_to_remote : NULL;
 		/* We don't assign cltvs[n]: if we use it, order doesn't matter.

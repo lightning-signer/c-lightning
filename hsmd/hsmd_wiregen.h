@@ -12,6 +12,7 @@
 #include <common/derive_basepoints.h>
 #include <common/utxo.h>
 #include <bitcoin/psbt.h>
+#include <common/htlc_wire.h>
 
 enum hsmd_wire {
         /*  Clients should not give a bad request but not the HSM's decision to crash. */
@@ -19,6 +20,10 @@ enum hsmd_wire {
         /*  Start the HSM. */
         WIRE_HSMD_INIT = 11,
         WIRE_HSMD_INIT_REPLY = 111,
+        /*  Declare a new channel. */
+        WIRE_HSMD_NEW_CHANNEL = 30,
+        /*  No value returned. */
+        WIRE_HSMD_NEW_CHANNEL_REPLY = 130,
         /*  Get a new HSM FD */
         WIRE_HSMD_CLIENT_HSMFD = 9,
         /*  No content */
@@ -26,6 +31,10 @@ enum hsmd_wire {
         /*  Get the basepoints and funding key for this specific channel. */
         WIRE_HSMD_GET_CHANNEL_BASEPOINTS = 10,
         WIRE_HSMD_GET_CHANNEL_BASEPOINTS_REPLY = 110,
+        /*  Provide channel parameters. */
+        WIRE_HSMD_READY_CHANNEL = 31,
+        /*  No value returned. */
+        WIRE_HSMD_READY_CHANNEL_REPLY = 131,
         /*  Master asks the HSM to sign a node_announcement */
         WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REQ = 6,
         WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY = 106,
@@ -45,6 +54,9 @@ enum hsmd_wire {
         /*  Master asks HSM to sign a commitment transaction. */
         WIRE_HSMD_SIGN_COMMITMENT_TX = 5,
         WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY = 105,
+        /*  Validate the counterparty's commitment signatures. */
+        WIRE_HSMD_VALIDATE_COMMITMENT_TX = 35,
+        WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY = 135,
         /*  Onchaind asks HSM to sign a spend to-us.  Four variants */
         /*  of keys is derived differently... */
         /*  FIXME: Have master tell hsmd the keyindex */
@@ -107,6 +119,16 @@ bool fromwire_hsmd_init(const tal_t *ctx, const void *p, struct bip32_key_versio
 u8 *towire_hsmd_init_reply(const tal_t *ctx, const struct node_id *node_id, const struct ext_key *bip32, const struct pubkey32 *bolt12);
 bool fromwire_hsmd_init_reply(const void *p, struct node_id *node_id, struct ext_key *bip32, struct pubkey32 *bolt12);
 
+/* WIRE: HSMD_NEW_CHANNEL */
+/*  Declare a new channel. */
+u8 *towire_hsmd_new_channel(const tal_t *ctx, const struct node_id *id, u64 dbid);
+bool fromwire_hsmd_new_channel(const void *p, struct node_id *id, u64 *dbid);
+
+/* WIRE: HSMD_NEW_CHANNEL_REPLY */
+/*  No value returned. */
+u8 *towire_hsmd_new_channel_reply(const tal_t *ctx);
+bool fromwire_hsmd_new_channel_reply(const void *p);
+
 /* WIRE: HSMD_CLIENT_HSMFD */
 /*  Get a new HSM FD */
 u8 *towire_hsmd_client_hsmfd(const tal_t *ctx, const struct node_id *id, u64 dbid, u64 capabilities);
@@ -125,6 +147,16 @@ bool fromwire_hsmd_get_channel_basepoints(const void *p, struct node_id *peerid,
 /* WIRE: HSMD_GET_CHANNEL_BASEPOINTS_REPLY */
 u8 *towire_hsmd_get_channel_basepoints_reply(const tal_t *ctx, const struct basepoints *basepoints, const struct pubkey *funding_pubkey);
 bool fromwire_hsmd_get_channel_basepoints_reply(const void *p, struct basepoints *basepoints, struct pubkey *funding_pubkey);
+
+/* WIRE: HSMD_READY_CHANNEL */
+/*  Provide channel parameters. */
+u8 *towire_hsmd_ready_channel(const tal_t *ctx, bool is_outbound, struct amount_sat channel_value, struct amount_msat push_value, const struct bitcoin_txid *funding_txid, u16 funding_txout, u16 local_to_self_delay, const u8 *local_shutdown_script, const struct basepoints *remote_basepoints, const struct pubkey *remote_funding_pubkey, u16 remote_to_self_delay, const u8 *remote_shutdown_script, bool option_static_remotekey, bool option_anchor_outputs);
+bool fromwire_hsmd_ready_channel(const tal_t *ctx, const void *p, bool *is_outbound, struct amount_sat *channel_value, struct amount_msat *push_value, struct bitcoin_txid *funding_txid, u16 *funding_txout, u16 *local_to_self_delay, u8 **local_shutdown_script, struct basepoints *remote_basepoints, struct pubkey *remote_funding_pubkey, u16 *remote_to_self_delay, u8 **remote_shutdown_script, bool *option_static_remotekey, bool *option_anchor_outputs);
+
+/* WIRE: HSMD_READY_CHANNEL_REPLY */
+/*  No value returned. */
+u8 *towire_hsmd_ready_channel_reply(const tal_t *ctx);
+bool fromwire_hsmd_ready_channel_reply(const void *p);
 
 /* WIRE: HSMD_NODE_ANNOUNCEMENT_SIG_REQ */
 /*  Master asks the HSM to sign a node_announcement */
@@ -180,12 +212,21 @@ bool fromwire_hsmd_cupdate_sig_reply(const tal_t *ctx, const void *p, u8 **cu);
 
 /* WIRE: HSMD_SIGN_COMMITMENT_TX */
 /*  Master asks HSM to sign a commitment transaction. */
-u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key);
-bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key);
+u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct sha256 *htlc_rhash, u64 commit_num);
+bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct sha256 **htlc_rhash, u64 *commit_num);
 
 /* WIRE: HSMD_SIGN_COMMITMENT_TX_REPLY */
 u8 *towire_hsmd_sign_commitment_tx_reply(const tal_t *ctx, const struct bitcoin_signature *sig);
 bool fromwire_hsmd_sign_commitment_tx_reply(const void *p, struct bitcoin_signature *sig);
+
+/* WIRE: HSMD_VALIDATE_COMMITMENT_TX */
+/*  Validate the counterparty's commitment signatures. */
+u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct existing_htlc **htlcs, u64 commit_num, u32 feerate, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs);
+bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct existing_htlc ***htlcs, u64 *commit_num, u32 *feerate, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs);
+
+/* WIRE: HSMD_VALIDATE_COMMITMENT_TX_REPLY */
+u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret, const struct pubkey *next_per_commitment_point);
+bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p, struct secret **old_commitment_secret, struct pubkey *next_per_commitment_point);
 
 /* WIRE: HSMD_SIGN_DELAYED_PAYMENT_TO_US */
 /*  Onchaind asks HSM to sign a spend to-us.  Four variants */
@@ -209,8 +250,8 @@ bool fromwire_hsmd_sign_local_htlc_tx(const tal_t *ctx, const void *p, u64 *comm
 
 /* WIRE: HSMD_SIGN_REMOTE_COMMITMENT_TX */
 /*  Openingd/channeld asks HSM to sign the other sides' commitment tx. */
-u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct pubkey *remote_per_commit, bool option_static_remotekey);
-bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct pubkey *remote_per_commit, bool *option_static_remotekey);
+u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct pubkey *remote_per_commit, bool option_static_remotekey, const struct sha256 *htlc_rhash, u64 commit_num);
+bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct pubkey *remote_per_commit, bool *option_static_remotekey, struct sha256 **htlc_rhash, u64 *commit_num);
 
 /* WIRE: HSMD_SIGN_REMOTE_HTLC_TX */
 /*  channeld asks HSM to sign remote HTLC tx. */
@@ -283,4 +324,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig);
 
 
 #endif /* LIGHTNING_HSMD_HSMD_WIREGEN_H */
-// SHA256STAMP:d802e57862a2ced1580824c7419e6c1075864496478c7ca6c47456df279d88df
+// SHA256STAMP:3ba74cc5eedefd63b0e47e6f7e58c5d7bbd354094ad2894f163f8f8ab81664d1
