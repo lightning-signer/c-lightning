@@ -3,7 +3,7 @@
 SUBDAEMON='hsmd:remote_hsmd' \
 REMOTE_SIGNER_CMD=$(pwd)/../rust-lightning-signer/target/debug/server \
 make \
--j32 PYTEST_PAR=64 \
+-j16 PYTEST_PAR=32 \
 DEVELOPER=1 \
 VALGRIND=0 \
 SLOW_MACHINE=0 \

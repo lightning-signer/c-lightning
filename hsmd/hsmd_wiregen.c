@@ -48,6 +48,8 @@ const char *hsmd_wire_name(int e)
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY: return "WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY";
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX: return "WIRE_HSMD_VALIDATE_COMMITMENT_TX";
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY: return "WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY";
+	case WIRE_HSMD_VALIDATE_REVOCATION: return "WIRE_HSMD_VALIDATE_REVOCATION";
+	case WIRE_HSMD_VALIDATE_REVOCATION_REPLY: return "WIRE_HSMD_VALIDATE_REVOCATION_REPLY";
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US: return "WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US";
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US: return "WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US";
 	case WIRE_HSMD_SIGN_PENALTY_TO_US: return "WIRE_HSMD_SIGN_PENALTY_TO_US";
@@ -104,6 +106,8 @@ bool hsmd_wire_is_defined(u16 type)
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY:;
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX:;
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY:;
+	case WIRE_HSMD_VALIDATE_REVOCATION:;
+	case WIRE_HSMD_VALIDATE_REVOCATION_REPLY:;
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US:;
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US:;
 	case WIRE_HSMD_SIGN_PENALTY_TO_US:;
@@ -955,6 +959,50 @@ bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p,
 	return cursor != NULL;
 }
 
+/* WIRE: HSMD_VALIDATE_REVOCATION */
+/* Vaidate the counterparty's revocation secret */
+u8 *towire_hsmd_validate_revocation(const tal_t *ctx, u64 revoke_num, const struct secret *per_commitment_secret)
+{
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_VALIDATE_REVOCATION);
+	towire_u64(&p, revoke_num);
+	towire_secret(&p, per_commitment_secret);
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_validate_revocation(const void *p, u64 *revoke_num, struct secret *per_commitment_secret)
+{
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_VALIDATE_REVOCATION)
+		return false;
+ 	*revoke_num = fromwire_u64(&cursor, &plen);
+ 	fromwire_secret(&cursor, &plen, per_commitment_secret);
+	return cursor != NULL;
+}
+
+/* WIRE: HSMD_VALIDATE_REVOCATION_REPLY */
+/* No value returned. */
+u8 *towire_hsmd_validate_revocation_reply(const tal_t *ctx)
+{
+	u8 *p = tal_arr(ctx, u8, 0);
+
+	towire_u16(&p, WIRE_HSMD_VALIDATE_REVOCATION_REPLY);
+
+	return memcheck(p, tal_count(p));
+}
+bool fromwire_hsmd_validate_revocation_reply(const void *p)
+{
+	const u8 *cursor = p;
+	size_t plen = tal_count(p);
+
+	if (fromwire_u16(&cursor, &plen) != WIRE_HSMD_VALIDATE_REVOCATION_REPLY)
+		return false;
+	return cursor != NULL;
+}
+
 /* WIRE: HSMD_SIGN_DELAYED_PAYMENT_TO_US */
 /* Onchaind asks HSM to sign a spend to-us.  Four variants */
 /* of keys is derived differently... */
@@ -1525,4 +1573,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig)
  	fromwire_bip340sig(&cursor, &plen, sig);
 	return cursor != NULL;
 }
-// SHA256STAMP:3ba74cc5eedefd63b0e47e6f7e58c5d7bbd354094ad2894f163f8f8ab81664d1
+// SHA256STAMP:2796cc896a3a5ee78393296b6730cd182bb9febeb1ae4b7ca637fcc93a01e9d1
