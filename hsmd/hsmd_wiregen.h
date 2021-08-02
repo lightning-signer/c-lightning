@@ -57,6 +57,10 @@ enum hsmd_wire {
         /*  Validate the counterparty's commitment signatures. */
         WIRE_HSMD_VALIDATE_COMMITMENT_TX = 35,
         WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY = 135,
+        /*  Vaidate the counterparty's revocation secret */
+        WIRE_HSMD_VALIDATE_REVOCATION = 36,
+        /*  No value returned. */
+        WIRE_HSMD_VALIDATE_REVOCATION_REPLY = 136,
         /*  Onchaind asks HSM to sign a spend to-us.  Four variants */
         /*  of keys is derived differently... */
         /*  FIXME: Have master tell hsmd the keyindex */
@@ -228,6 +232,16 @@ bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struc
 u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret, const struct pubkey *next_per_commitment_point);
 bool fromwire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const void *p, struct secret **old_commitment_secret, struct pubkey *next_per_commitment_point);
 
+/* WIRE: HSMD_VALIDATE_REVOCATION */
+/*  Vaidate the counterparty's revocation secret */
+u8 *towire_hsmd_validate_revocation(const tal_t *ctx, u64 revoke_num, const struct secret *per_commitment_secret);
+bool fromwire_hsmd_validate_revocation(const void *p, u64 *revoke_num, struct secret *per_commitment_secret);
+
+/* WIRE: HSMD_VALIDATE_REVOCATION_REPLY */
+/*  No value returned. */
+u8 *towire_hsmd_validate_revocation_reply(const tal_t *ctx);
+bool fromwire_hsmd_validate_revocation_reply(const void *p);
+
 /* WIRE: HSMD_SIGN_DELAYED_PAYMENT_TO_US */
 /*  Onchaind asks HSM to sign a spend to-us.  Four variants */
 /*  of keys is derived differently... */
@@ -324,4 +338,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig);
 
 
 #endif /* LIGHTNING_HSMD_HSMD_WIREGEN_H */
-// SHA256STAMP:3ba74cc5eedefd63b0e47e6f7e58c5d7bbd354094ad2894f163f8f8ab81664d1
+// SHA256STAMP:2796cc896a3a5ee78393296b6730cd182bb9febeb1ae4b7ca637fcc93a01e9d1

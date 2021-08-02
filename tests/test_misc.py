@@ -1077,6 +1077,7 @@ def test_cli(node_factory):
     assert [l for l in lines if not re.search(r'^help\[[0-9]*\].', l)] == ['format-hint=simple']
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd integration test job control fails here")
 def test_daemon_option(node_factory):
     """
     Make sure --daemon at least vaguely works!
@@ -1585,6 +1586,7 @@ def test_logging(node_factory):
 
 @unittest.skipIf(VALGRIND,
                  "Valgrind sometimes fails assert on injected SEGV")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "temporary, until fedora-34 gets crashlog libs fixed")
 def test_crashlog(node_factory):
     l1 = node_factory.get_node(may_fail=True, allow_broken_log=True)
 

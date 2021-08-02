@@ -1,6 +1,8 @@
 #!/usr/bin/sh
 
-THETEST=$1
+echo "accepts log w/ failures on stdin"
+
+TESTS=`awk '/^FAILED tests/ {print $2}'`
 
 PYTHONPATH=\
 $PWD/contrib/pyln-client:\
@@ -9,9 +11,8 @@ $PWD/contrib/pyln-proto \
 TEST_DEBUG=1 \
 DEVELOPER=1 \
 VALGRIND=0 \
-SLOW_MACHINE=0 \
 SUBDAEMON='hsmd:remote_hsmd' \
 REMOTE_SIGNER_CMD=$(pwd)/../rust-lightning-signer/target/debug/server \
 pytest \
-$THETEST \
--v --timeout=300 --timeout_method=thread -x
+$TESTS \
+-n=32 --timeout=300 --timeout_method=thread

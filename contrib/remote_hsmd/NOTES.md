@@ -32,6 +32,10 @@ Run all of the integration tests:
 Run a single test:
 
     ./contrib/remote_hsmd/scripts/run-one-test $THETEST |& tee log
+    
+Re-run failures from prior run:
+
+    ./contrib/remote_hsmd/scripts/rerun-failed-tests < log |& tee log2
 
 Some popular tests:
 
