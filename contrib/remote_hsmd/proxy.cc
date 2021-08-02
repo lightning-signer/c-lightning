@@ -1205,6 +1205,52 @@ proxy_stat proxy_handle_validate_commitment_tx(
 	}
 }
 
+proxy_stat proxy_handle_validate_revocation(
+	struct node_id *peer_id,
+	u64 dbid,
+	u64 revoke_num,
+	struct secret *old_secret)
+{
+	STATUS_DEBUG(
+		"%s:%d %s { "
+		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
+		"\"revoke_num\":%" PRIu64 ", "
+		"\"old_secret\":%s }",
+		__FILE__, __LINE__, __FUNCTION__,
+		dump_node_id(&self_id).c_str(),
+		dump_node_id(peer_id).c_str(),
+		dbid,
+		revoke_num,
+		dump_secret(old_secret).c_str()
+		);
+
+	last_message = "";
+	ValidateCounterpartyRevocationRequest req;
+	marshal_node_id(&self_id, req.mutable_node_id());
+	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
+	req.set_revoke_num(revoke_num);
+	marshal_secret(old_secret, req.mutable_old_secret());
+
+	ClientContext context;
+	ValidateCounterpartyRevocationReply rsp;
+	Status status = stub->ValidateCounterpartyRevocation(&context, req, &rsp);
+	if (status.ok()) {
+		STATUS_DEBUG("%s:%d %s { "
+			     "\"self_id\":%s } ",
+			     __FILE__, __LINE__, __FUNCTION__,
+			     dump_node_id(&self_id).c_str());
+		last_message = "success";
+		return PROXY_OK;
+	} else {
+		status_unusual("%s:%d %s: self_id=%s %s",
+			       __FILE__, __LINE__, __FUNCTION__,
+			       dump_node_id(&self_id).c_str(),
+			       status.error_message().c_str());
+		last_message = status.error_message();
+		return map_status(status);
+	}
+}
+
 proxy_stat proxy_handle_cannouncement_sig(
 	struct node_id *peer_id,
 	u64 dbid,
