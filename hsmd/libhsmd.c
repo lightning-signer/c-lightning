@@ -91,6 +91,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_SIGN_REMOTE_COMMITMENT_TX:
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TX:
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX:
+	case WIRE_HSMD_VALIDATE_REVOCATION:
 		return (client->capabilities & HSM_CAP_SIGN_REMOTE_TX) != 0;
 
 	case WIRE_HSMD_SIGN_MUTUAL_CLOSE_TX:
@@ -128,6 +129,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMSTATUS_CLIENT_BAD_REQUEST:
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY:
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY:
+	case WIRE_HSMD_VALIDATE_REVOCATION_REPLY:
 	case WIRE_HSMD_SIGN_TX_REPLY:
 	case WIRE_HSMD_SIGN_OPTION_WILL_FUND_OFFER_REPLY:
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT_REPLY:
@@ -1375,6 +1377,21 @@ static u8 *handle_validate_commitment_tx(struct hsmd_client *c, const u8 *msg_in
 		NULL, old_secret, &next_per_commitment_point);
 }
 
+/* Validate the peer's signatures for our commitment and htlc txs. */
+static u8 *handle_validate_revocation(struct hsmd_client *c, const u8 *msg_in)
+{
+	u64 revoke_num;
+	struct secret old_secret;
+
+	if (!fromwire_hsmd_validate_revocation(msg_in,
+					       &revoke_num, &old_secret))
+		return hsmd_status_malformed_request(c, msg_in);
+
+	// FIXME - Not actually validating the old_secret here.
+
+	return towire_hsmd_validate_revocation_reply(NULL);
+}
+
 /*~ This is used when a commitment transaction is onchain, and has an HTLC
  * output paying to us (because we have the preimage); this signs that
  * transaction, which lightningd will broadcast to collect the funds. */
@@ -1554,6 +1571,8 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 		return handle_sign_commitment_tx(client, msg);
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX:
 		return handle_validate_commitment_tx(client, msg);
+	case WIRE_HSMD_VALIDATE_REVOCATION:
+		return handle_validate_revocation(client, msg);
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TO_US:
 		return handle_sign_remote_htlc_to_us(client, msg);
 	case WIRE_HSMD_SIGN_DELAYED_PAYMENT_TO_US:
@@ -1573,6 +1592,7 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 	case WIRE_HSMSTATUS_CLIENT_BAD_REQUEST:
 	case WIRE_HSMD_SIGN_COMMITMENT_TX_REPLY:
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY:
+	case WIRE_HSMD_VALIDATE_REVOCATION_REPLY:
 	case WIRE_HSMD_SIGN_TX_REPLY:
 	case WIRE_HSMD_SIGN_OPTION_WILL_FUND_OFFER_REPLY:
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT_REPLY:

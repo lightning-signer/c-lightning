@@ -1883,6 +1883,15 @@ static void handle_peer_revoke_and_ack(struct peer *peer, const u8 *msg)
 				 "Unexpected revoke_and_ack");
 	}
 
+	const u8 *msg2 = towire_hsmd_validate_revocation(tmpctx,
+							peer->next_index[REMOTE] - 2,
+							&old_commit_secret);
+	msg2 = hsm_req(tmpctx, take(msg2));
+	if (!fromwire_hsmd_validate_revocation_reply(msg2))
+		status_failed(STATUS_FAIL_HSM_IO,
+			      "Bad hsm_validate_revocation_reply: %s",
+			      tal_hex(tmpctx, msg));
+
 	/* BOLT #2:
 	 *
 	 * A receiving node:
