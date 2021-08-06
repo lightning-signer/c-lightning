@@ -14,4 +14,4 @@ SUBDAEMON='hsmd:remote_hsmd' \
 REMOTE_SIGNER_CMD=$(pwd)/../rust-lightning-signer/target/debug/server \
 pytest \
 $THETEST \
--v --timeout=300 --timeout_method=thread -x
+-v --timeout=300 --timeout_method=thread -x -s
