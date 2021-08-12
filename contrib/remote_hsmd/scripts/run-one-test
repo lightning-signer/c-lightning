@@ -6,6 +6,7 @@ PYTHONPATH=\
 $PWD/contrib/pyln-client:\
 $PWD/contrib/pyln-testing:\
 $PWD/contrib/pyln-proto \
+TEST_KEEPDIR=1 \
 TEST_DEBUG=1 \
 DEVELOPER=1 \
 VALGRIND=0 \

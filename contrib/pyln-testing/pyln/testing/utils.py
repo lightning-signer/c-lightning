@@ -519,7 +519,7 @@ class RemoteSignerD(TailableProc):
         TailableProc.__init__(self, rsignerd_dir)
         self.executable = env("REMOTE_SIGNER_CMD", 'rsignerd')
         self.opts = [
-            '--log-level-console=DEBUG',
+            '--log-level-console=TRACE',
             '--log-level-disk=TRACE',
             '--datadir={}'.format(rsignerd_dir),
             '--port={}'.format(rsignerd_port),
