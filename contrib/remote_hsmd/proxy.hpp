@@ -90,8 +90,9 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct node_id *peer_id,
 	u64 dbid,
 	const struct pubkey *remote_per_commit,
-	struct sha256 *rhashes,
+	struct existing_htlc **htlc,
 	u64 commit_num,
+	u32 feerate,
 	struct bitcoin_signature *o_sig);
 
 proxy_stat proxy_handle_get_per_commitment_point(
@@ -128,8 +129,9 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	const struct pubkey *remote_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct sha256 *rhashes,
+	struct existing_htlc **htlc,
 	u64 commit_num,
+	u32 feerate,
 	struct bitcoin_signature *o_sig);
 
 proxy_stat proxy_handle_validate_commitment_tx(

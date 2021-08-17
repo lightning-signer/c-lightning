@@ -1061,23 +1061,42 @@ static struct bitcoin_signature *calc_commitsigs(const tal_t *ctx,
 	const u8 *msg;
 	struct bitcoin_signature *htlc_sigs;
 
+	// Collect the htlcs for call to hsmd.
+	//
+	// We use the existing_htlc to_wire routines, it's unfortunate that
+	// we have to send a dummy onion_routing_packet ...
+	//
+	struct existing_htlc **htlcs = tal_arr(tmpctx, struct existing_htlc *, 0);
+	u8 dummy_onion_routing_packet[TOTAL_PACKET_SIZE(ROUTING_INFO_SIZE)];
+	memset(dummy_onion_routing_packet, 0, sizeof(dummy_onion_routing_packet));
 	size_t num_entries = tal_count(htlc_map);
-	struct sha256 *rhashes = tal_arrz(tmpctx, struct sha256, num_entries);
-	size_t nrhash = 0;
 	for (size_t ndx = 0; ndx < num_entries; ++ndx) {
-		if (htlc_map[ndx]) {
-			memcpy(&rhashes[nrhash], &htlc_map[ndx]->rhash, sizeof(rhashes[nrhash]));
-			++nrhash;
+		struct htlc const *hh = htlc_map[ndx];
+		if (hh) {
+			status_debug("HTLC[%lu]=%" PRIu64 ", %s",
+				     ndx, hh->id, htlc_state_name(hh->state));
+			struct existing_htlc *existing =
+				new_existing_htlc(NULL,
+						  hh->id,
+						  hh->state,
+						  hh->amount,
+						  &hh->rhash,
+						  hh->expiry.locktime,
+						  dummy_onion_routing_packet,
+						  NULL,
+						  NULL,
+						  NULL);
+			tal_arr_expand(&htlcs, tal_steal(htlcs, existing));
 		}
 	}
-	tal_resize(&rhashes, nrhash);
 
 	msg = towire_hsmd_sign_remote_commitment_tx(NULL, txs[0],
 						   &peer->channel->funding_pubkey[REMOTE],
 						   &peer->remote_per_commit,
-						   peer->channel->option_static_remotekey,
-						   rhashes, commit_index);
-
+						    peer->channel->option_static_remotekey,
+						    commit_index,
+						    (const struct existing_htlc **) htlcs,
+						    channel_feerate(peer->channel, REMOTE));
 	msg = hsm_req(tmpctx, take(msg));
 	if (!fromwire_hsmd_sign_tx_reply(msg, commit_sig))
 		status_failed(STATUS_FAIL_HSM_IO,
