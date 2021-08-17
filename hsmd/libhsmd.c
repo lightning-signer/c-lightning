@@ -1300,8 +1300,9 @@ static u8 *handle_sign_commitment_tx(struct hsmd_client *c, const u8 *msg_in)
 	struct secret channel_seed;
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
-	struct sha256 *rhashes;
+	struct existing_htlc **htlc;
 	u64 commit_num;
+	u32 feerate;
 	struct secrets secrets;
 	const u8 *funding_wscript;
 
@@ -1309,7 +1310,7 @@ static u8 *handle_sign_commitment_tx(struct hsmd_client *c, const u8 *msg_in)
 					     &peer_id, &dbid,
 					     &tx,
 					     &remote_funding_pubkey,
-					     &rhashes, &commit_num))
+					     &commit_num, &htlc, &feerate))
 		return hsmd_status_malformed_request(c, msg_in);
 
 	tx->chainparams = c->chainparams;
