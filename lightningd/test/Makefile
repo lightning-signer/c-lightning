@@ -13,6 +13,7 @@ LIGHTNINGD_TEST_COMMON_OBJS :=			\
 	common/bech32.o				\
 	common/daemon_conn.o			\
 	common/htlc_state.o			\
+	common/htlc_wire.o			\
 	common/io_lock.o			\
 	common/json.o				\
 	common/key_derive.o			\
@@ -20,6 +21,7 @@ LIGHTNINGD_TEST_COMMON_OBJS :=			\
 	common/random_select.o			\
 	common/memleak.o			\
 	common/msg_queue.o			\
+	common/onionreply.o			\
 	common/setup.o				\
 	common/utils.o				\
 	common/utxo.o				\

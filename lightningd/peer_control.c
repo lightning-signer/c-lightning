@@ -175,6 +175,73 @@ u8 *p2wpkh_for_keyidx(const tal_t *ctx, struct lightningd *ld, u64 keyidx)
 	return scriptpubkey_p2wpkh(ctx, &shutdownkey);
 }
 
+static struct existing_htlc **collect_htlcs(struct channel *channel, u32 local_feerate) {
+	// Collect the htlcs for call to hsmd.
+	//
+	// We use the existing_htlc to_wire routines, it's unfortunate that
+	// we have to send a dummy onion_routing_packet ...
+	//
+	struct htlc_in_map *htlcs_in = &channel->peer->ld->htlcs_in;
+	struct htlc_out_map *htlcs_out = &channel->peer->ld->htlcs_out;
+	struct existing_htlc **htlcs = tal_arr(tmpctx, struct existing_htlc *, 0);
+	u8 dummy_onion_routing_packet[TOTAL_PACKET_SIZE(ROUTING_INFO_SIZE)];
+	memset(dummy_onion_routing_packet, 0, sizeof(dummy_onion_routing_packet));
+
+	const struct htlc_in *hin;
+	struct htlc_in_map_iter ini;
+	for (hin = htlc_in_map_first(htlcs_in, &ini);
+	     hin;
+	     hin = htlc_in_map_next(htlcs_in, &ini)) {
+		if (hin->key.channel != channel)
+			continue;
+		// FIXME - Do we need a hin->hstate filter here?  The
+		// integration tests pass without having one ...
+		if (htlc_is_trimmed(REMOTE, hin->msat, local_feerate,
+				    channel->our_config.dust_limit, LOCAL,
+				    channel_has(channel, OPT_ANCHOR_OUTPUTS)))
+			continue;
+		struct existing_htlc *existing =
+			new_existing_htlc(NULL,
+					  hin->dbid,
+					  hin->hstate,
+					  hin->msat,
+					  &hin->payment_hash,
+					  hin->cltv_expiry,
+					  dummy_onion_routing_packet,
+					  NULL,
+					  NULL,
+					  NULL);
+		tal_arr_expand(&htlcs, tal_steal(htlcs, existing));
+	}
+	const struct htlc_out *hout;
+	struct htlc_out_map_iter outi;
+	for (hout = htlc_out_map_first(htlcs_out, &outi);
+	     hout;
+	     hout = htlc_out_map_next(htlcs_out, &outi)) {
+		if (hout->key.channel != channel)
+			continue;
+		if (hout->hstate < RCVD_ADD_REVOCATION || hout->hstate > RCVD_REMOVE_COMMIT)
+			continue;
+		if (htlc_is_trimmed(REMOTE, hout->msat, local_feerate,
+				    channel->our_config.dust_limit, LOCAL,
+				    channel_has(channel, OPT_ANCHOR_OUTPUTS)))
+			continue;
+		struct existing_htlc *existing =
+			new_existing_htlc(NULL,
+					  hout->dbid,
+					  hout->hstate,
+					  hout->msat,
+					  &hout->payment_hash,
+					  hout->cltv_expiry,
+					  dummy_onion_routing_packet,
+					  NULL,
+					  NULL,
+					  NULL);
+		tal_arr_expand(&htlcs, tal_steal(htlcs, existing));
+	}
+	return htlcs;
+}
+
 static void sign_last_tx(struct channel *channel,
 			 struct bitcoin_tx *last_tx,
 			 struct bitcoin_signature *last_sig)
@@ -183,48 +250,9 @@ static void sign_last_tx(struct channel *channel,
 	struct bitcoin_signature sig;
 	u8 *msg, **witness;
 
-	struct htlc_in_map *htlcs_in = &channel->peer->ld->htlcs_in;
-	struct htlc_out_map *htlcs_out = &channel->peer->ld->htlcs_out;
-
-	// Count how many payment hashes we will be sending.
-	size_t num_entries = 0;
-	struct htlc_in_map_iter ini;
-	struct htlc_in *hin;
-	for (hin = htlc_in_map_first(htlcs_in, &ini);
-	     hin;
-	     hin = htlc_in_map_next(htlcs_in, &ini))
-		if (hin->key.channel == channel)
-			++num_entries;
-	struct htlc_out_map_iter outi;
-	struct htlc_out *hout;
-	for (hout = htlc_out_map_first(htlcs_out, &outi);
-	     hout;
-	     hout = htlc_out_map_next(htlcs_out, &outi))
-		if (hout->key.channel == channel)
-			++num_entries;
-
-	// Gather the payment hashes.
-	struct sha256 *rhashes = tal_arrz(tmpctx, struct sha256, num_entries);
-	size_t nrhash = 0;
-	for (hin = htlc_in_map_first(htlcs_in, &ini);
-	     hin;
-	     hin = htlc_in_map_next(htlcs_in, &ini)) {
-		if (hin->key.channel != channel)
-			continue;
-		memcpy(&rhashes[nrhash], &hin->payment_hash, sizeof(rhashes[nrhash]));
-		++nrhash;
-	}
-	for (hout = htlc_out_map_first(htlcs_out, &outi);
-	     hout;
-	     hout = htlc_out_map_next(htlcs_out, &outi)) {
-		if (hout->key.channel != channel)
-			continue;
-		memcpy(&rhashes[nrhash], &hout->payment_hash, sizeof(rhashes[nrhash]));
-		++nrhash;
-	}
-	assert(nrhash == num_entries);
-
 	u64 commit_index = channel->next_index[LOCAL] - 1;
+	u32 local_feerate = get_feerate(channel->fee_states, channel->opener, LOCAL);
+	struct existing_htlc **htlcs = collect_htlcs(channel, local_feerate);
 
 	assert(!last_tx->wtx->inputs[0].witness);
 	msg = towire_hsmd_sign_commitment_tx(tmpctx,
@@ -233,7 +261,9 @@ static void sign_last_tx(struct channel *channel,
 					     last_tx,
 					     &channel->channel_info
 					     .remote_fundingkey,
-					     rhashes, commit_index);
+					     commit_index,
+					     (const struct existing_htlc **) htlcs,
+					     local_feerate);
 
 	if (!wire_sync_write(ld->hsm_fd, take(msg)))
 		fatal("Could not write to HSM: %s", strerror(errno));
