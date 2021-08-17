@@ -817,9 +817,9 @@ bool fromwire_hsmd_cupdate_sig_reply(const tal_t *ctx, const void *p, u8 **cu)
 
 /* WIRE: HSMD_SIGN_COMMITMENT_TX */
 /* Master asks HSM to sign a commitment transaction. */
-u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct sha256 *htlc_rhash, u64 commit_num)
+u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, u64 commit_num, const struct existing_htlc **htlcs, u32 feerate)
 {
-	u16 num_htlc_rhash = tal_count(htlc_rhash);
+	u16 num_existing_htlcs = tal_count(htlcs);
 	u8 *p = tal_arr(ctx, u8, 0);
 
 	towire_u16(&p, WIRE_HSMD_SIGN_COMMITMENT_TX);
@@ -827,16 +827,17 @@ u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_
 	towire_u64(&p, channel_dbid);
 	towire_bitcoin_tx(&p, tx);
 	towire_pubkey(&p, remote_funding_key);
-	towire_u16(&p, num_htlc_rhash);
-	for (size_t i = 0; i < num_htlc_rhash; i++)
-		towire_sha256(&p, htlc_rhash + i);
 	towire_u64(&p, commit_num);
+	towire_u16(&p, num_existing_htlcs);
+	for (size_t i = 0; i < num_existing_htlcs; i++)
+		towire_existing_htlc(&p, htlcs[i]);
+	towire_u32(&p, feerate);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct sha256 **htlc_rhash, u64 *commit_num)
+bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, u64 *commit_num, struct existing_htlc ***htlcs, u32 *feerate)
 {
-	u16 num_htlc_rhash;
+	u16 num_existing_htlcs;
 
 	const u8 *cursor = p;
 	size_t plen = tal_count(p);
@@ -847,12 +848,13 @@ bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct no
  	*channel_dbid = fromwire_u64(&cursor, &plen);
  	*tx = fromwire_bitcoin_tx(ctx, &cursor, &plen);
  	fromwire_pubkey(&cursor, &plen, remote_funding_key);
- 	num_htlc_rhash = fromwire_u16(&cursor, &plen);
- 	// 2nd case htlc_rhash
-	*htlc_rhash = num_htlc_rhash ? tal_arr(ctx, struct sha256, num_htlc_rhash) : NULL;
-	for (size_t i = 0; i < num_htlc_rhash; i++)
-		fromwire_sha256(&cursor, &plen, *htlc_rhash + i);
  	*commit_num = fromwire_u64(&cursor, &plen);
+ 	num_existing_htlcs = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlcs
+	*htlcs = num_existing_htlcs ? tal_arr(ctx, struct existing_htlc *, num_existing_htlcs) : NULL;
+	for (size_t i = 0; i < num_existing_htlcs; i++)
+		(*htlcs)[i] = fromwire_existing_htlc(*htlcs, &cursor, &plen);
+ 	*feerate = fromwire_u32(&cursor, &plen);
 	return cursor != NULL;
 }
 
@@ -1141,9 +1143,9 @@ bool fromwire_hsmd_sign_local_htlc_tx(const tal_t *ctx, const void *p, u64 *comm
 
 /* WIRE: HSMD_SIGN_REMOTE_COMMITMENT_TX */
 /* Openingd/channeld asks HSM to sign the other sides' commitment tx. */
-u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct pubkey *remote_per_commit, bool option_static_remotekey, const struct sha256 *htlc_rhash, u64 commit_num)
+u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct pubkey *remote_per_commit, bool option_static_remotekey, u64 commit_num, const struct existing_htlc **htlcs, u32 feerate)
 {
-	u16 num_htlc_rhash = tal_count(htlc_rhash);
+	u16 num_existing_htlcs = tal_count(htlcs);
 	u8 *p = tal_arr(ctx, u8, 0);
 
 	towire_u16(&p, WIRE_HSMD_SIGN_REMOTE_COMMITMENT_TX);
@@ -1151,16 +1153,17 @@ u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin
 	towire_pubkey(&p, remote_funding_key);
 	towire_pubkey(&p, remote_per_commit);
 	towire_bool(&p, option_static_remotekey);
-	towire_u16(&p, num_htlc_rhash);
-	for (size_t i = 0; i < num_htlc_rhash; i++)
-		towire_sha256(&p, htlc_rhash + i);
 	towire_u64(&p, commit_num);
+	towire_u16(&p, num_existing_htlcs);
+	for (size_t i = 0; i < num_existing_htlcs; i++)
+		towire_existing_htlc(&p, htlcs[i]);
+	towire_u32(&p, feerate);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct pubkey *remote_per_commit, bool *option_static_remotekey, struct sha256 **htlc_rhash, u64 *commit_num)
+bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct pubkey *remote_per_commit, bool *option_static_remotekey, u64 *commit_num, struct existing_htlc ***htlcs, u32 *feerate)
 {
-	u16 num_htlc_rhash;
+	u16 num_existing_htlcs;
 
 	const u8 *cursor = p;
 	size_t plen = tal_count(p);
@@ -1171,12 +1174,13 @@ bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, st
  	fromwire_pubkey(&cursor, &plen, remote_funding_key);
  	fromwire_pubkey(&cursor, &plen, remote_per_commit);
  	*option_static_remotekey = fromwire_bool(&cursor, &plen);
- 	num_htlc_rhash = fromwire_u16(&cursor, &plen);
- 	// 2nd case htlc_rhash
-	*htlc_rhash = num_htlc_rhash ? tal_arr(ctx, struct sha256, num_htlc_rhash) : NULL;
-	for (size_t i = 0; i < num_htlc_rhash; i++)
-		fromwire_sha256(&cursor, &plen, *htlc_rhash + i);
  	*commit_num = fromwire_u64(&cursor, &plen);
+ 	num_existing_htlcs = fromwire_u16(&cursor, &plen);
+ 	// 2nd case htlcs
+	*htlcs = num_existing_htlcs ? tal_arr(ctx, struct existing_htlc *, num_existing_htlcs) : NULL;
+	for (size_t i = 0; i < num_existing_htlcs; i++)
+		(*htlcs)[i] = fromwire_existing_htlc(*htlcs, &cursor, &plen);
+ 	*feerate = fromwire_u32(&cursor, &plen);
 	return cursor != NULL;
 }
 
@@ -1573,4 +1577,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig)
  	fromwire_bip340sig(&cursor, &plen, sig);
 	return cursor != NULL;
 }
-// SHA256STAMP:2796cc896a3a5ee78393296b6730cd182bb9febeb1ae4b7ca637fcc93a01e9d1
+// SHA256STAMP:81e9e646ba14f9f4f1605822079539d2f377b9bbba0bfb4584c31d5f0263559e
