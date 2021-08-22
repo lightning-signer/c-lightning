@@ -523,6 +523,8 @@ class RemoteSignerD(TailableProc):
             '--log-level-disk=DEBUG',
             '--datadir={}'.format(rsignerd_dir),
             '--port={}'.format(rsignerd_port),
+            '--initial-allowlist-file={}'.format(env('REMOTE_SIGNER_ALLOWLIST',
+                                                     'contrib/remote_hsmd/TESTING_ALLOWLIST')),
         ]
         self.prefix = 'rsignerd'
         self.rsignerd_port = rsignerd_port
