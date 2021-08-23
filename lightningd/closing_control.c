@@ -38,6 +38,7 @@
 #include <lightningd/peer_control.h>
 #include <lightningd/subd.h>
 #include <openingd/dualopend_wiregen.h>
+#include <wally_bip32.h>
 #include <wire/common_wiregen.h>
 
 struct close_command {
@@ -453,6 +454,32 @@ void peer_start_closingd(struct channel *channel,
 		return;
 	}
 
+	// Determine the wallet index for our output, UINT32_MAX if not found.
+	u32 local_wallet_index;
+	struct ext_key local_wallet_ext_key;
+	bool is_p2sh;
+	if (wallet_can_spend(
+		    ld->wallet,
+		    channel->shutdown_scriptpubkey[LOCAL],
+		    &local_wallet_index,
+		    &is_p2sh)) {
+		if (bip32_key_from_parent(
+			    ld->wallet->bip32_base,
+			    local_wallet_index,
+			    BIP32_FLAG_KEY_PUBLIC,
+			    &local_wallet_ext_key) != WALLY_OK) {
+			abort();
+		}
+	} else {
+		local_wallet_index = UINT32_MAX;
+		char *dummy_bip32 =
+			"tpubDAY5hwtonH4NE8zY46ZMFf6B6F3fqMis7cwfNihXXpAg6XzBZNo"
+			"HAdAzAZx2peoU8nTWFqvUncXwJ9qgE5VxcnUKxdut8F6mptVmKjfiwDQ";
+		if (bip32_key_from_base58(dummy_bip32, &local_wallet_ext_key) != WALLY_OK) {
+			abort();
+		}
+	}
+
 	initmsg = towire_closingd_init(tmpctx,
 				       chainparams,
 				       pps,
@@ -467,6 +494,8 @@ void peer_start_closingd(struct channel *channel,
 				       channel->our_config.dust_limit,
 				       min_feerate, feerate, max_feerate,
 				       feelimit,
+				       local_wallet_index,
+				       &local_wallet_ext_key,
 				       channel->shutdown_scriptpubkey[LOCAL],
 				       channel->shutdown_scriptpubkey[REMOTE],
 				       channel->closing_fee_negotiation_step,
