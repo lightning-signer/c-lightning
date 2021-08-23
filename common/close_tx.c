@@ -5,8 +5,39 @@
 #include <assert.h>
 #include <common/utils.h>
 
+static void add_keypath_item_to_last_output(struct bitcoin_tx *tx,
+					    u32 index,
+					    const struct ext_key *ext) {
+	// Skip if there is no wallet keypath for this output.
+	if (index == UINT32_MAX)
+		return;
+
+	size_t outndx = tx->psbt->num_outputs - 1;
+	struct wally_map *map_in = &tx->psbt->outputs[outndx].keypaths;
+
+	u8 fingerprint[BIP32_KEY_FINGERPRINT_LEN];
+	if (bip32_key_get_fingerprint(
+		    (struct ext_key *) ext, fingerprint, sizeof(fingerprint)) != WALLY_OK) {
+		abort();
+	}
+
+	u32 path[1];
+	path[0] = index;
+
+	tal_wally_start();
+	if (wally_map_add_keypath_item(map_in,
+				       ext->pub_key, sizeof(ext->pub_key),
+				       fingerprint, sizeof(fingerprint),
+				       path, 1) != WALLY_OK) {
+		abort();
+	}
+	tal_wally_end(tx->psbt);
+}
+
 struct bitcoin_tx *create_close_tx(const tal_t *ctx,
 				   const struct chainparams *chainparams,
+				   u32 local_wallet_index,
+				   const struct ext_key *local_wallet_ext_key,
 				   const u8 *our_script,
 				   const u8 *their_script,
 				   const u8 *funding_wscript,
@@ -47,6 +78,7 @@ struct bitcoin_tx *create_close_tx(const tal_t *ctx,
 		script = tal_dup_talarr(tx, u8, our_script);
 		/* One output is to us. */
 		bitcoin_tx_add_output(tx, script, NULL, to_us);
+		add_keypath_item_to_last_output(tx, local_wallet_index, local_wallet_ext_key);
 		num_outputs++;
 	}
 
