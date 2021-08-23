@@ -36,6 +36,8 @@ static struct bitcoin_tx *close_tx(const tal_t *ctx,
 				   const struct chainparams *chainparams,
 				   struct per_peer_state *pps,
 				   const struct channel_id *channel_id,
+				   u32 local_wallet_index,
+				   const struct ext_key *local_wallet_ext_key,
 				   u8 *scriptpubkey[NUM_SIDES],
 				   const struct bitcoin_txid *funding_txid,
 				   unsigned int funding_txout,
@@ -69,6 +71,7 @@ static struct bitcoin_tx *close_tx(const tal_t *ctx,
 	/* FIXME: We need to allow this! */
 	tx = create_close_tx(ctx,
 			     chainparams,
+			     local_wallet_index, local_wallet_ext_key,
 			     scriptpubkey[LOCAL], scriptpubkey[REMOTE],
 			     funding_wscript,
 			     funding_txid,
@@ -135,6 +138,8 @@ static void send_offer(struct per_peer_state *pps,
 		       const struct channel_id *channel_id,
 		       const struct pubkey funding_pubkey[NUM_SIDES],
 		       const u8 *funding_wscript,
+		       u32 local_wallet_index,
+		       const struct ext_key *local_wallet_ext_key,
 		       u8 *scriptpubkey[NUM_SIDES],
 		       const struct bitcoin_txid *funding_txid,
 		       unsigned int funding_txout,
@@ -156,6 +161,8 @@ static void send_offer(struct per_peer_state *pps,
 	 *     #3](03-transactions.md#closing-transaction).
 	 */
 	tx = close_tx(tmpctx, chainparams, pps, channel_id,
+		      local_wallet_index,
+		      local_wallet_ext_key,
 		      scriptpubkey,
 		      funding_txid,
 		      funding_txout,
@@ -215,6 +222,8 @@ receive_offer(struct per_peer_state *pps,
 	      const struct channel_id *channel_id,
 	      const struct pubkey funding_pubkey[NUM_SIDES],
 	      const u8 *funding_wscript,
+	      u32 local_wallet_index,
+	      const struct ext_key *local_wallet_ext_key,
 	      u8 *scriptpubkey[NUM_SIDES],
 	      const struct bitcoin_txid *funding_txid,
 	      unsigned int funding_txout,
@@ -269,6 +278,8 @@ receive_offer(struct per_peer_state *pps,
 	 *     - MUST fail the connection.
 	 */
 	tx = close_tx(tmpctx, chainparams, pps, channel_id,
+		      local_wallet_index,
+		      local_wallet_ext_key,
 		      scriptpubkey,
 		      funding_txid,
 		      funding_txout,
@@ -300,6 +311,8 @@ receive_offer(struct per_peer_state *pps,
 		 *   - MAY eliminate its own output.
 		 */
 		trimmed = close_tx(tmpctx, chainparams, pps, channel_id,
+				   local_wallet_index,
+				   local_wallet_ext_key,
 				   scriptpubkey,
 				   funding_txid,
 				   funding_txout,
@@ -506,6 +519,8 @@ int main(int argc, char *argv[])
 	struct amount_sat min_fee_to_accept, commitment_fee, offer[NUM_SIDES];
 	struct feerange feerange;
 	enum side opener;
+	u32 local_wallet_index;
+	struct ext_key local_wallet_ext_key;
 	u8 *scriptpubkey[NUM_SIDES], *funding_wscript;
 	u64 fee_negotiation_step;
 	u8 fee_negotiation_step_unit;
@@ -533,6 +548,8 @@ int main(int argc, char *argv[])
 				    &our_dust_limit,
 				    &min_fee_to_accept, &commitment_fee,
 				    &offer[LOCAL],
+				    &local_wallet_index,
+				    &local_wallet_ext_key,
 				    &scriptpubkey[LOCAL],
 				    &scriptpubkey[REMOTE],
 				    &fee_negotiation_step,
@@ -590,6 +607,8 @@ int main(int argc, char *argv[])
 		if (whose_turn == LOCAL) {
 			send_offer(pps, chainparams,
 				   &channel_id, funding_pubkey, funding_wscript,
+				   local_wallet_index,
+				   &local_wallet_ext_key,
 				   scriptpubkey, &funding_txid, funding_txout,
 				   funding, out, opener,
 				   our_dust_limit,
@@ -610,6 +629,8 @@ int main(int argc, char *argv[])
 				= receive_offer(pps, chainparams,
 						&channel_id, funding_pubkey,
 						funding_wscript,
+						local_wallet_index,
+						&local_wallet_ext_key,
 						scriptpubkey, &funding_txid,
 						funding_txout, funding,
 						out, opener,
@@ -641,6 +662,8 @@ int main(int argc, char *argv[])
 						    fee_negotiation_step_unit);
 			send_offer(pps, chainparams, &channel_id,
 				   funding_pubkey, funding_wscript,
+				   local_wallet_index,
+				   &local_wallet_ext_key,
 				   scriptpubkey, &funding_txid, funding_txout,
 				   funding, out, opener,
 				   our_dust_limit,
@@ -656,6 +679,8 @@ int main(int argc, char *argv[])
 				= receive_offer(pps, chainparams, &channel_id,
 						funding_pubkey,
 						funding_wscript,
+						local_wallet_index,
+						&local_wallet_ext_key,
 						scriptpubkey, &funding_txid,
 						funding_txout, funding,
 						out, opener,
