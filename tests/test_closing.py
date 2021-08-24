@@ -3083,6 +3083,7 @@ Try a range of future segwit versions as shutdown scripts.  We create many nodes
             l1.rpc.fundchannel(l2.info['id'], 10**6)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remotesigner won't sign close w/ wrong txid")
 @pytest.mark.openchannel('v1')
 def test_shutdown_alternate_txid(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, fundchannel=False,
