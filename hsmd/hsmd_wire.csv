@@ -65,6 +65,7 @@ msgdata,hsmd_ready_channel,funding_txout,u16,
 msgdata,hsmd_ready_channel,local_to_self_delay,u16,
 msgdata,hsmd_ready_channel,local_shutdown_script_len,u16,
 msgdata,hsmd_ready_channel,local_shutdown_script,u8,local_shutdown_script_len
+msgdata,hsmd_ready_channel,local_shutdown_wallet_index,u32,
 msgdata,hsmd_ready_channel,remote_basepoints,basepoints,
 msgdata,hsmd_ready_channel,remote_funding_pubkey,pubkey,
 msgdata,hsmd_ready_channel,remote_to_self_delay,u16,
