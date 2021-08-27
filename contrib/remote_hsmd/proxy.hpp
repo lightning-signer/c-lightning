@@ -81,6 +81,7 @@ proxy_stat proxy_handle_ready_channel(
 	u16 funding_txout,
 	u16 local_to_self_delay,
 	u8 *local_shutdown_script,
+	u32 *local_shutdown_wallet_index,
 	struct basepoints *remote_basepoints,
 	struct pubkey *remote_funding_pubkey,
 	u16 remote_to_self_delay,

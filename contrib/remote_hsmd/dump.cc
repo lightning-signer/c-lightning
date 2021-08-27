@@ -27,6 +27,18 @@ bool pubkey_is_compressed(const unsigned char pubkey[EC_PUBLIC_KEY_UNCOMPRESSED_
     return pubkey[0] == 0x02 || pubkey[0] == 0x03;
 }
 
+/* dump an optional wallet index */
+string dump_optional_wallet_index(u32 *optional_wallet_index)
+{
+	ostringstream ostrm;
+	if (optional_wallet_index == NULL) {
+		ostrm << "NONE";
+	} else {
+		ostrm << *optional_wallet_index;
+	}
+	return ostrm.str();
+}
+
 /* type_to_string has issues in the C++ environment, use this to
    dump binary data as hex instead. */
 string dump_hex(const void *vptr, size_t sz)

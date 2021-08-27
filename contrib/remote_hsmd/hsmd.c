@@ -1348,6 +1348,7 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 	u16 funding_txout;
 	u16 local_to_self_delay;
 	u8 *local_shutdown_script;
+	u32 *local_shutdown_wallet_index;
 	struct basepoints remote_basepoints;
 	struct pubkey remote_funding_pubkey;
 	u16 remote_to_self_delay;
@@ -1358,6 +1359,7 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 					&channel_value, &push_value, &funding_txid,
 					&funding_txout, &local_to_self_delay,
 					&local_shutdown_script,
+					&local_shutdown_wallet_index,
 					&remote_basepoints,
 					&remote_funding_pubkey,
 					&remote_to_self_delay,
@@ -1374,6 +1376,7 @@ static struct io_plan *handle_ready_channel(struct io_conn *conn,
 		funding_txout,
 		local_to_self_delay,	// locally imposed on counterparty to_self outputs
 		local_shutdown_script,
+		local_shutdown_wallet_index,
 		&remote_basepoints,
 		&remote_funding_pubkey,
 		remote_to_self_delay,	// counterparty imposed on our to_self outputs

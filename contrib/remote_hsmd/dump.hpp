@@ -7,6 +7,7 @@ extern "C" {
 }
 #include <string>
 
+std::string dump_optional_wallet_index(u32 *optional_wallet_index);
 std::string dump_hex(const void *vptr, size_t sz);
 std::string dump_basepoints(const struct basepoints *bp);
 std::string dump_bitcoin_txid(const struct bitcoin_txid *txid);
