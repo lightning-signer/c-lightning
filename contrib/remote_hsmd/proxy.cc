@@ -569,6 +569,7 @@ proxy_stat proxy_handle_ready_channel(
 	u16 funding_txout,
 	u16 holder_to_self_delay,
 	u8 *holder_shutdown_script,
+	u32 holder_shutdown_wallet_index,
 	struct basepoints *counterparty_basepoints,
 	struct pubkey *counterparty_funding_pubkey,
 	u16 counterparty_to_self_delay,
@@ -582,7 +583,9 @@ proxy_stat proxy_handle_ready_channel(
 		"\"is_outbound\":%s, \"channel_value\":%" PRIu64 ", "
 		"\"push_value\":%" PRIu64 ", "
 		"\"funding_txid\":%s, \"funding_txout\":%d, "
-		"\"holder_to_self_delay\":%d, \"holder_shutdown_script\":%s, "
+		"\"holder_to_self_delay\":%d, "
+		"\"holder_shutdown_script\":%s, "
+		"\"holder_shutdown_wallet_index\":%d, "
 		"\"counterparty_basepoints\":%s, "
 		"\"counterparty_funding_pubkey\":%s, "
 		"\"counterparty_to_self_delay\":%d, "
@@ -601,6 +604,7 @@ proxy_stat proxy_handle_ready_channel(
 		holder_to_self_delay,
 		dump_hex(holder_shutdown_script,
 			 tal_count(holder_shutdown_script)).c_str(),
+		holder_shutdown_wallet_index,
 		dump_basepoints(counterparty_basepoints).c_str(),
 		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		counterparty_to_self_delay,
@@ -622,6 +626,8 @@ proxy_stat proxy_handle_ready_channel(
 	req.set_holder_selected_contest_delay(holder_to_self_delay);
 	marshal_script(holder_shutdown_script,
 		       req.mutable_holder_shutdown_script());
+	if (holder_shutdown_wallet_index != UINT32_MAX)
+		req.add_holder_shutdown_key_path(holder_shutdown_wallet_index);
 	marshal_basepoints(counterparty_basepoints, counterparty_funding_pubkey,
 			   req.mutable_counterparty_basepoints());
 	req.set_counterparty_selected_contest_delay(counterparty_to_self_delay);

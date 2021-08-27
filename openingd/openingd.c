@@ -105,6 +105,9 @@ struct state {
 	/* If non-NULL, this is the scriptpubkey we/they *must* close with */
 	u8 *upfront_shutdown_script[NUM_SIDES];
 
+	/* If not UINT32_MAX, the wallet index for the LOCAL script */
+	u32 local_upfront_shutdown_wallet_index;
+
 	/* This is a cluster of fields in open_channel and accept_channel which
 	 * indicate the restrictions each side places on the channel. */
 	struct channel_config localconf, remoteconf;
@@ -531,6 +534,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 				       state->funding_txout,
 				       state->localconf.to_self_delay,
 				       state->upfront_shutdown_script[LOCAL],
+				       state->local_upfront_shutdown_wallet_index,
 				       &state->their_points,
 				       &state->their_funding_pubkey,
 				       state->remoteconf.to_self_delay,
@@ -980,7 +984,8 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	/* We don't allocate off tmpctx, because that's freed inside
 	 * opening_negotiate_msg */
 	if (!fromwire_openingd_got_offer_reply(state, msg, &err_reason,
-					      &state->upfront_shutdown_script[LOCAL]))
+					      &state->upfront_shutdown_script[LOCAL],
+					      &state->local_upfront_shutdown_wallet_index))
 		master_badmsg(WIRE_OPENINGD_GOT_OFFER_REPLY, msg);
 
 	/* If they give us a reason to reject, do so. */
@@ -1060,6 +1065,7 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 				       state->funding_txout,
 				       state->localconf.to_self_delay,
 				       state->upfront_shutdown_script[LOCAL],
+				       state->local_upfront_shutdown_wallet_index,
 				       &theirs,
 				       &their_funding_pubkey,
 				       state->remoteconf.to_self_delay,
@@ -1343,6 +1349,7 @@ static u8 *handle_master_in(struct state *state)
 		if (!fromwire_openingd_funder_start(state, msg, &state->funding,
 						   &state->push_msat,
 						   &state->upfront_shutdown_script[LOCAL],
+						   &state->local_upfront_shutdown_wallet_index,
 						   &state->feerate_per_kw,
 						   &channel_flags))
 			master_badmsg(WIRE_OPENINGD_FUNDER_START, msg);
