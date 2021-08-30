@@ -2917,6 +2917,7 @@ def test_shutdown(node_factory):
 
 @flaky
 @pytest.mark.developer("needs to set upfront_shutdown_script")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy failure: validate_mutual_close_tx: holder_script doesn't match upfront holder_shutdown_script")
 def test_option_upfront_shutdown_script(node_factory, bitcoind, executor):
     # There's a workaround in channeld, that it treats incoming errors
     # before both sides are locked in as warnings; this happens in
