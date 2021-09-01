@@ -212,11 +212,26 @@ void marshal_single_input_tx(struct bitcoin_tx const *tx,
 
 	for (size_t ii = 0; ii < tx->wtx->num_outputs; ii++) {
 		OutputDescriptor *odesc = o_tp->add_output_descs();
+
+		// Add witness script
 		if (tx->psbt->outputs[ii].witness_script_len)
 			odesc->set_witscript(
 				(const char *)
 				tx->psbt->outputs[ii].witness_script,
 				tx->psbt->outputs[ii].witness_script_len);
+
+		// Add keypath
+		struct wally_map *mp = &tx->psbt->outputs[ii].keypaths;
+		if (mp->num_items == 1) {
+			const struct wally_map_item *ip = &mp->items[0];
+			size_t npath =
+				(ip->value_len - BIP32_KEY_FINGERPRINT_LEN) / sizeof(uint32_t);
+			uint32_t *path = (uint32_t *) (ip->value + BIP32_KEY_FINGERPRINT_LEN);
+			for (size_t jj = 0; jj < npath; ++jj) {
+				odesc->mutable_key_loc()->add_key_path(le32_to_cpu(path[jj]));
+			}
+		}
+
 	}
 }
 
