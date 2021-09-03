@@ -75,8 +75,8 @@ bool fromwire_openingd_got_offer(const tal_t *ctx, const void *p, struct amount_
 
 /* WIRE: OPENINGD_GOT_OFFER_REPLY */
 /*  master->openingd: optional rejection message */
-u8 *towire_openingd_got_offer_reply(const tal_t *ctx, const wirestring *rejection, const u8 *our_shutdown_scriptpubkey);
-bool fromwire_openingd_got_offer_reply(const tal_t *ctx, const void *p, wirestring **rejection, u8 **our_shutdown_scriptpubkey);
+u8 *towire_openingd_got_offer_reply(const tal_t *ctx, const wirestring *rejection, const u8 *our_shutdown_scriptpubkey, u32 our_shutdown_wallet_index);
+bool fromwire_openingd_got_offer_reply(const tal_t *ctx, const void *p, wirestring **rejection, u8 **our_shutdown_scriptpubkey, u32 *our_shutdown_wallet_index);
 
 /* WIRE: OPENINGD_FUNDER_REPLY */
 /*  Openingd->master: we've successfully offered channel. */
@@ -86,8 +86,8 @@ bool fromwire_openingd_funder_reply(const tal_t *ctx, const void *p, struct chan
 
 /* WIRE: OPENINGD_FUNDER_START */
 /*  master->openingd: start channel establishment for a funding tx */
-u8 *towire_openingd_funder_start(const tal_t *ctx, struct amount_sat funding_satoshis, struct amount_msat push_msat, const u8 *upfront_shutdown_script, u32 feerate_per_kw, u8 channel_flags);
-bool fromwire_openingd_funder_start(const tal_t *ctx, const void *p, struct amount_sat *funding_satoshis, struct amount_msat *push_msat, u8 **upfront_shutdown_script, u32 *feerate_per_kw, u8 *channel_flags);
+u8 *towire_openingd_funder_start(const tal_t *ctx, struct amount_sat funding_satoshis, struct amount_msat push_msat, const u8 *upfront_shutdown_script, u32 upfront_shutdown_wallet_index, u32 feerate_per_kw, u8 channel_flags);
+bool fromwire_openingd_funder_start(const tal_t *ctx, const void *p, struct amount_sat *funding_satoshis, struct amount_msat *push_msat, u8 **upfront_shutdown_script, u32 *upfront_shutdown_wallet_index, u32 *feerate_per_kw, u8 *channel_flags);
 
 /* WIRE: OPENINGD_FUNDER_START_REPLY */
 /*  openingd->master: send back output script for 2-of-2 funding output */
@@ -128,4 +128,4 @@ bool fromwire_openingd_dev_memleak_reply(const void *p, bool *leak);
 
 
 #endif /* LIGHTNING_OPENINGD_OPENINGD_WIREGEN_H */
-// SHA256STAMP:3dc596105e65c16cc549a7ae739c7e83ed11cce7d7effb206f317522ba741506
+// SHA256STAMP:62b67d26df5425df230c0b7beb7dffcbef2a1597fa8acac4a95354e7bbc74816

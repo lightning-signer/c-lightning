@@ -224,7 +224,7 @@ bool fromwire_openingd_got_offer(const tal_t *ctx, const void *p, struct amount_
 
 /* WIRE: OPENINGD_GOT_OFFER_REPLY */
 /* master->openingd: optional rejection message */
-u8 *towire_openingd_got_offer_reply(const tal_t *ctx, const wirestring *rejection, const u8 *our_shutdown_scriptpubkey)
+u8 *towire_openingd_got_offer_reply(const tal_t *ctx, const wirestring *rejection, const u8 *our_shutdown_scriptpubkey, u32 our_shutdown_wallet_index)
 {
 	u16 shutdown_len = tal_count(our_shutdown_scriptpubkey);
 	u8 *p = tal_arr(ctx, u8, 0);
@@ -238,10 +238,11 @@ u8 *towire_openingd_got_offer_reply(const tal_t *ctx, const wirestring *rejectio
 	}
 	towire_u16(&p, shutdown_len);
 	towire_u8_array(&p, our_shutdown_scriptpubkey, shutdown_len);
+	towire_u32(&p, our_shutdown_wallet_index);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_openingd_got_offer_reply(const tal_t *ctx, const void *p, wirestring **rejection, u8 **our_shutdown_scriptpubkey)
+bool fromwire_openingd_got_offer_reply(const tal_t *ctx, const void *p, wirestring **rejection, u8 **our_shutdown_scriptpubkey, u32 *our_shutdown_wallet_index)
 {
 	u16 shutdown_len;
 
@@ -259,6 +260,7 @@ bool fromwire_openingd_got_offer_reply(const tal_t *ctx, const void *p, wirestri
  	// 2nd case our_shutdown_scriptpubkey
 	*our_shutdown_scriptpubkey = shutdown_len ? tal_arr(ctx, u8, shutdown_len) : NULL;
 	fromwire_u8_array(&cursor, &plen, *our_shutdown_scriptpubkey, shutdown_len);
+ 	*our_shutdown_wallet_index = fromwire_u32(&cursor, &plen);
 	return cursor != NULL;
 }
 
@@ -336,7 +338,7 @@ bool fromwire_openingd_funder_reply(const tal_t *ctx, const void *p, struct chan
 
 /* WIRE: OPENINGD_FUNDER_START */
 /* master->openingd: start channel establishment for a funding tx */
-u8 *towire_openingd_funder_start(const tal_t *ctx, struct amount_sat funding_satoshis, struct amount_msat push_msat, const u8 *upfront_shutdown_script, u32 feerate_per_kw, u8 channel_flags)
+u8 *towire_openingd_funder_start(const tal_t *ctx, struct amount_sat funding_satoshis, struct amount_msat push_msat, const u8 *upfront_shutdown_script, u32 upfront_shutdown_wallet_index, u32 feerate_per_kw, u8 channel_flags)
 {
 	u16 len_upfront = tal_count(upfront_shutdown_script);
 	u8 *p = tal_arr(ctx, u8, 0);
@@ -346,12 +348,13 @@ u8 *towire_openingd_funder_start(const tal_t *ctx, struct amount_sat funding_sat
 	towire_amount_msat(&p, push_msat);
 	towire_u16(&p, len_upfront);
 	towire_u8_array(&p, upfront_shutdown_script, len_upfront);
+	towire_u32(&p, upfront_shutdown_wallet_index);
 	towire_u32(&p, feerate_per_kw);
 	towire_u8(&p, channel_flags);
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_openingd_funder_start(const tal_t *ctx, const void *p, struct amount_sat *funding_satoshis, struct amount_msat *push_msat, u8 **upfront_shutdown_script, u32 *feerate_per_kw, u8 *channel_flags)
+bool fromwire_openingd_funder_start(const tal_t *ctx, const void *p, struct amount_sat *funding_satoshis, struct amount_msat *push_msat, u8 **upfront_shutdown_script, u32 *upfront_shutdown_wallet_index, u32 *feerate_per_kw, u8 *channel_flags)
 {
 	u16 len_upfront;
 
@@ -366,6 +369,7 @@ bool fromwire_openingd_funder_start(const tal_t *ctx, const void *p, struct amou
  	// 2nd case upfront_shutdown_script
 	*upfront_shutdown_script = len_upfront ? tal_arr(ctx, u8, len_upfront) : NULL;
 	fromwire_u8_array(&cursor, &plen, *upfront_shutdown_script, len_upfront);
+ 	*upfront_shutdown_wallet_index = fromwire_u32(&cursor, &plen);
  	*feerate_per_kw = fromwire_u32(&cursor, &plen);
  	*channel_flags = fromwire_u8(&cursor, &plen);
 	return cursor != NULL;
@@ -604,4 +608,4 @@ bool fromwire_openingd_dev_memleak_reply(const void *p, bool *leak)
  	*leak = fromwire_bool(&cursor, &plen);
 	return cursor != NULL;
 }
-// SHA256STAMP:3dc596105e65c16cc549a7ae739c7e83ed11cce7d7effb206f317522ba741506
+// SHA256STAMP:62b67d26df5425df230c0b7beb7dffcbef2a1597fa8acac4a95354e7bbc74816

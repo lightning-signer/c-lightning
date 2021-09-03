@@ -426,7 +426,7 @@ bool fromwire_hsmd_get_channel_basepoints_reply(const void *p, struct basepoints
 
 /* WIRE: HSMD_READY_CHANNEL */
 /* Provide channel parameters. */
-u8 *towire_hsmd_ready_channel(const tal_t *ctx, bool is_outbound, struct amount_sat channel_value, struct amount_msat push_value, const struct bitcoin_txid *funding_txid, u16 funding_txout, u16 local_to_self_delay, const u8 *local_shutdown_script, const struct basepoints *remote_basepoints, const struct pubkey *remote_funding_pubkey, u16 remote_to_self_delay, const u8 *remote_shutdown_script, bool option_static_remotekey, bool option_anchor_outputs)
+u8 *towire_hsmd_ready_channel(const tal_t *ctx, bool is_outbound, struct amount_sat channel_value, struct amount_msat push_value, const struct bitcoin_txid *funding_txid, u16 funding_txout, u16 local_to_self_delay, const u8 *local_shutdown_script, u32 local_shutdown_wallet_index, const struct basepoints *remote_basepoints, const struct pubkey *remote_funding_pubkey, u16 remote_to_self_delay, const u8 *remote_shutdown_script, bool option_static_remotekey, bool option_anchor_outputs)
 {
 	u16 local_shutdown_script_len = tal_count(local_shutdown_script);
 	u16 remote_shutdown_script_len = tal_count(remote_shutdown_script);
@@ -441,6 +441,7 @@ u8 *towire_hsmd_ready_channel(const tal_t *ctx, bool is_outbound, struct amount_
 	towire_u16(&p, local_to_self_delay);
 	towire_u16(&p, local_shutdown_script_len);
 	towire_u8_array(&p, local_shutdown_script, local_shutdown_script_len);
+	towire_u32(&p, local_shutdown_wallet_index);
 	towire_basepoints(&p, remote_basepoints);
 	towire_pubkey(&p, remote_funding_pubkey);
 	towire_u16(&p, remote_to_self_delay);
@@ -451,7 +452,7 @@ u8 *towire_hsmd_ready_channel(const tal_t *ctx, bool is_outbound, struct amount_
 
 	return memcheck(p, tal_count(p));
 }
-bool fromwire_hsmd_ready_channel(const tal_t *ctx, const void *p, bool *is_outbound, struct amount_sat *channel_value, struct amount_msat *push_value, struct bitcoin_txid *funding_txid, u16 *funding_txout, u16 *local_to_self_delay, u8 **local_shutdown_script, struct basepoints *remote_basepoints, struct pubkey *remote_funding_pubkey, u16 *remote_to_self_delay, u8 **remote_shutdown_script, bool *option_static_remotekey, bool *option_anchor_outputs)
+bool fromwire_hsmd_ready_channel(const tal_t *ctx, const void *p, bool *is_outbound, struct amount_sat *channel_value, struct amount_msat *push_value, struct bitcoin_txid *funding_txid, u16 *funding_txout, u16 *local_to_self_delay, u8 **local_shutdown_script, u32 *local_shutdown_wallet_index, struct basepoints *remote_basepoints, struct pubkey *remote_funding_pubkey, u16 *remote_to_self_delay, u8 **remote_shutdown_script, bool *option_static_remotekey, bool *option_anchor_outputs)
 {
 	u16 local_shutdown_script_len;
 	u16 remote_shutdown_script_len;
@@ -471,6 +472,7 @@ bool fromwire_hsmd_ready_channel(const tal_t *ctx, const void *p, bool *is_outbo
  	// 2nd case local_shutdown_script
 	*local_shutdown_script = local_shutdown_script_len ? tal_arr(ctx, u8, local_shutdown_script_len) : NULL;
 	fromwire_u8_array(&cursor, &plen, *local_shutdown_script, local_shutdown_script_len);
+ 	*local_shutdown_wallet_index = fromwire_u32(&cursor, &plen);
  	fromwire_basepoints(&cursor, &plen, remote_basepoints);
  	fromwire_pubkey(&cursor, &plen, remote_funding_pubkey);
  	*remote_to_self_delay = fromwire_u16(&cursor, &plen);
@@ -1577,4 +1579,4 @@ bool fromwire_hsmd_sign_bolt12_reply(const void *p, struct bip340sig *sig)
  	fromwire_bip340sig(&cursor, &plen, sig);
 	return cursor != NULL;
 }
-// SHA256STAMP:81e9e646ba14f9f4f1605822079539d2f377b9bbba0bfb4584c31d5f0263559e
+// SHA256STAMP:c8d8a35b61c8bf91cac8135cc7b5269cdf4c8d2fc1b7edfd69ba101a4e7b39b9
