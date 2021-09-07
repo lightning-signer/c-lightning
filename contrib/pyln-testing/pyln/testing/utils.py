@@ -83,7 +83,6 @@ SUBDAEMON = env("SUBDAEMON", "")
 EXPERIMENTAL_DUAL_FUND = env("EXPERIMENTAL_DUAL_FUND", "0") == "1"
 
 
-
 def wait_for(success, timeout=TIMEOUT):
     start_time = time.time()
     interval = 0.25
@@ -514,6 +513,7 @@ class ElementsD(BitcoinD):
         info = self.rpc.getaddressinfo(addr)
         return info['unconfidential']
 
+
 class RemoteSignerD(TailableProc):
     def __init__(self, rsignerd_dir, rsignerd_port):
         TailableProc.__init__(self, rsignerd_dir)
@@ -546,6 +546,7 @@ class RemoteSignerD(TailableProc):
         logging.info("rsignerd stopped")
         return rc
 
+
 class LightningD(TailableProc):
     def __init__(self, lightning_dir, bitcoindproxy, port=9735, random_hsm=False, node_id=0):
         TailableProc.__init__(self, lightning_dir)
@@ -556,7 +557,7 @@ class LightningD(TailableProc):
         self.disconnect_file = None
         self.lightning_dir = lightning_dir
         self.rsignerd_dir = os.path.join(lightning_dir, "remotesigner")
-                
+
         self.rpcproxy = bitcoindproxy
 
         self.opts = LIGHTNINGD_CONFIG.copy()
@@ -635,7 +636,7 @@ class LightningD(TailableProc):
             if wait_for_initialized:
                 self.wait_for_log("Server started with public key")
             logging.info("LightningD started")
-        except:
+        except Exception:
             # LightningD didn't start, stop the remotesigner
             self.rsignerd.stop()
             raise
