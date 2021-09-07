@@ -588,7 +588,9 @@ static size_t closing_tx_weight_estimate(u8 *scriptpubkey[NUM_SIDES],
 					 const u8 *funding_wscript,
 					 const struct amount_sat *out,
 					 struct amount_sat funding_sats,
-					 struct amount_sat dust_limit)
+					 struct amount_sat dust_limit,
+					 u32 local_wallet_index,
+					 const struct ext_key *local_wallet_ext_key)
 {
 	/* We create a dummy close */
 	struct bitcoin_tx *tx;
@@ -600,6 +602,7 @@ static size_t closing_tx_weight_estimate(u8 *scriptpubkey[NUM_SIDES],
 
 	memset(&dummy_funding, 0, sizeof(dummy_funding));
 	tx = create_close_tx(tmpctx, chainparams,
+			     local_wallet_index, local_wallet_ext_key,
 			     scriptpubkey[LOCAL], scriptpubkey[REMOTE],
 			     funding_wscript,
 			     &dummy_funding,
