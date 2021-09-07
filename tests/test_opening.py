@@ -5,6 +5,7 @@ from utils import (
     only_one, wait_for, sync_blockheight, first_channel_id, calc_lease_fee
 )
 
+import os
 import pytest
 import re
 import unittest
@@ -240,7 +241,6 @@ def test_v2_open_sigs_restart_while_dead(node_factory, bitcoind):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
-## @unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
 def test_v2_rbf_single(node_factory, bitcoind, chainparams):
     l1, l2 = node_factory.get_nodes(2, opts={'wumbo': None})
 
