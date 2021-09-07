@@ -508,7 +508,9 @@ static size_t closing_tx_weight_estimate(u8 *scriptpubkey[NUM_SIDES],
 					 const u8 *funding_wscript,
 					 const struct amount_sat *out,
 					 struct amount_sat funding,
-					 struct amount_sat dust_limit)
+					 struct amount_sat dust_limit,
+					 u32 local_wallet_index,
+					 const struct ext_key *local_wallet_ext_key)
 {
 	/* We create a dummy close */
 	struct bitcoin_tx *tx;
@@ -520,6 +522,7 @@ static size_t closing_tx_weight_estimate(u8 *scriptpubkey[NUM_SIDES],
 
 	memset(&dummy_txid, 0, sizeof(dummy_txid));
 	tx = create_close_tx(tmpctx, chainparams,
+			     local_wallet_index, local_wallet_ext_key,
 			     scriptpubkey[LOCAL], scriptpubkey[REMOTE],
 			     funding_wscript,
 			     &dummy_txid, 0,
@@ -623,7 +626,7 @@ int main(int argc, char *argv[])
 				    &out[LOCAL],
 				    &out[REMOTE],
 				    &our_dust_limit,
-				    &min_fee_to_accept, &initial_feerate,
+				    &min_feerate, &initial_feerate,
 				    &commitment_fee,
 				    &local_wallet_index,
 				    &local_wallet_ext_key,
@@ -645,7 +648,9 @@ int main(int argc, char *argv[])
 	/* Start at what we consider a reasonable feerate for this tx. */
 	calc_fee_bounds(closing_tx_weight_estimate(scriptpubkey,
 						   funding_wscript,
-						   out, funding, our_dust_limit),
+						   out, funding, our_dust_limit,
+						   local_wallet_index,
+						   &local_wallet_ext_key),
 			min_feerate, initial_feerate, commitment_fee,
 			&min_fee_to_accept, &offer[LOCAL]);
 

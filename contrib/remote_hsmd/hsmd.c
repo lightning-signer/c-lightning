@@ -1581,6 +1581,28 @@ static struct io_plan *handle_sign_message(struct io_conn *conn,
 			 take(towire_hsmd_sign_message_reply(NULL, &rsig)));
 }
 
+/*~ lightningd asks us to sign a liquidity ad offer */
+static struct io_plan *handle_sign_option_will_fund_offer(struct io_conn *conn,
+					      struct client *c,
+					      const u8 *msg_in)
+{
+	struct pubkey funding_pubkey;
+	u32 lease_expiry, channel_fee_base_max_msat;
+	u16 channel_fee_max_ppt;
+
+	if (!fromwire_hsmd_sign_option_will_fund_offer(msg_in,
+						       &funding_pubkey,
+						       &lease_expiry,
+						       &channel_fee_base_max_msat,
+						       &channel_fee_max_ppt))
+		return bad_req(conn, c, msg_in);
+
+	status_failed(STATUS_FAIL_INTERNAL_ERROR,
+		      "handle_sign_option_will_fund_offer unimplemented");
+	return bad_req_fmt(conn, c, msg_in,
+			   "handle_sign_option_will_fund_offer unimplemented");
+}
+
 /*~ lightningd asks us to sign a bolt12 (e.g. offer). */
 static struct io_plan *handle_sign_bolt12(struct io_conn *conn,
 					   struct client *c,
@@ -1676,6 +1698,9 @@ static bool check_client_capabilities(struct client *client,
 	case WIRE_HSMD_SIGN_MUTUAL_CLOSE_TX:
 		return (client->capabilities & HSM_CAP_SIGN_CLOSING_TX) != 0;
 
+	case WIRE_HSMD_SIGN_OPTION_WILL_FUND_OFFER:
+		return (client->capabilities & HSM_CAP_SIGN_WILL_FUND_OFFER) != 0;
+
 	case WIRE_HSMD_INIT:
 	case WIRE_HSMD_NEW_CHANNEL:
 	case WIRE_HSMD_CLIENT_HSMFD:
@@ -1707,6 +1732,7 @@ static bool check_client_capabilities(struct client *client,
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY:
 	case WIRE_HSMD_VALIDATE_REVOCATION_REPLY:
 	case WIRE_HSMD_SIGN_TX_REPLY:
+	case WIRE_HSMD_SIGN_OPTION_WILL_FUND_OFFER_REPLY:
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT_REPLY:
 	case WIRE_HSMD_CHECK_FUTURE_SECRET_REPLY:
 	case WIRE_HSMD_GET_CHANNEL_BASEPOINTS_REPLY:
@@ -1818,6 +1844,9 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_SIGN_MESSAGE:
 		return handle_sign_message(conn, c, c->msg_in);
 
+	case WIRE_HSMD_SIGN_OPTION_WILL_FUND_OFFER:
+		return handle_sign_option_will_fund_offer(conn, c, c->msg_in);
+
 	case WIRE_HSMD_SIGN_BOLT12:
 		return handle_sign_bolt12(conn, c, c->msg_in);
 #if DEVELOPER
@@ -1841,6 +1870,7 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_VALIDATE_COMMITMENT_TX_REPLY:
 	case WIRE_HSMD_VALIDATE_REVOCATION_REPLY:
 	case WIRE_HSMD_SIGN_TX_REPLY:
+	case WIRE_HSMD_SIGN_OPTION_WILL_FUND_OFFER_REPLY:
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT_REPLY:
 	case WIRE_HSMD_CHECK_FUTURE_SECRET_REPLY:
 	case WIRE_HSMD_GET_CHANNEL_BASEPOINTS_REPLY:

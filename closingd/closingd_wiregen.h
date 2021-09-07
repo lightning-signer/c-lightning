@@ -8,6 +8,7 @@
 #include <wire/tlvstream.h>
 #include <wire/wire.h>
 #include <bitcoin/tx.h>
+#include <common/bip32.h>
 #include <common/channel_id.h>
 #include <common/cryptomsg.h>
 #include <common/htlc_wire.h>
@@ -37,8 +38,8 @@ bool closingd_wire_is_defined(u16 type);
 
 /* WIRE: CLOSINGD_INIT */
 /*  Begin!  (passes peer fd */
-u8 *towire_closingd_init(const tal_t *ctx, const struct chainparams *chainparams, const struct per_peer_state *pps, const struct channel_id *channel_id, const struct bitcoin_txid *funding_txid, u16 funding_txout, struct amount_sat funding_satoshi, const struct pubkey *local_fundingkey, const struct pubkey *remote_fundingkey, enum side opener, struct amount_sat local_sat, struct amount_sat remote_sat, struct amount_sat our_dust_limit, u32 min_feerate_perksipa, u32 preferred_feerate_perksipa, struct amount_sat fee_limit_satoshi, const u8 *local_scriptpubkey, const u8 *remote_scriptpubkey, u64 fee_negotiation_step, u8 fee_negotiation_step_unit, bool dev_fast_gossip, const struct bitcoin_outpoint *shutdown_wrong_funding);
-bool fromwire_closingd_init(const tal_t *ctx, const void *p, const struct chainparams **chainparams, struct per_peer_state **pps, struct channel_id *channel_id, struct bitcoin_txid *funding_txid, u16 *funding_txout, struct amount_sat *funding_satoshi, struct pubkey *local_fundingkey, struct pubkey *remote_fundingkey, enum side *opener, struct amount_sat *local_sat, struct amount_sat *remote_sat, struct amount_sat *our_dust_limit, u32 *min_feerate_perksipa, u32 *preferred_feerate_perksipa, struct amount_sat *fee_limit_satoshi, u8 **local_scriptpubkey, u8 **remote_scriptpubkey, u64 *fee_negotiation_step, u8 *fee_negotiation_step_unit, bool *dev_fast_gossip, struct bitcoin_outpoint **shutdown_wrong_funding);
+u8 *towire_closingd_init(const tal_t *ctx, const struct chainparams *chainparams, const struct per_peer_state *pps, const struct channel_id *channel_id, const struct bitcoin_txid *funding_txid, u16 funding_txout, struct amount_sat funding_satoshi, const struct pubkey *local_fundingkey, const struct pubkey *remote_fundingkey, enum side opener, struct amount_sat local_sat, struct amount_sat remote_sat, struct amount_sat our_dust_limit, u32 min_feerate_perksipa, u32 preferred_feerate_perksipa, struct amount_sat fee_limit_satoshi, u32 local_wallet_index, const struct ext_key *local_wallet_ext_key, const u8 *local_scriptpubkey, const u8 *remote_scriptpubkey, u64 fee_negotiation_step, u8 fee_negotiation_step_unit, bool dev_fast_gossip, const struct bitcoin_outpoint *shutdown_wrong_funding);
+bool fromwire_closingd_init(const tal_t *ctx, const void *p, const struct chainparams **chainparams, struct per_peer_state **pps, struct channel_id *channel_id, struct bitcoin_txid *funding_txid, u16 *funding_txout, struct amount_sat *funding_satoshi, struct pubkey *local_fundingkey, struct pubkey *remote_fundingkey, enum side *opener, struct amount_sat *local_sat, struct amount_sat *remote_sat, struct amount_sat *our_dust_limit, u32 *min_feerate_perksipa, u32 *preferred_feerate_perksipa, struct amount_sat *fee_limit_satoshi, u32 *local_wallet_index, struct ext_key *local_wallet_ext_key, u8 **local_scriptpubkey, u8 **remote_scriptpubkey, u64 *fee_negotiation_step, u8 *fee_negotiation_step_unit, bool *dev_fast_gossip, struct bitcoin_outpoint **shutdown_wrong_funding);
 
 /* WIRE: CLOSINGD_RECEIVED_SIGNATURE */
 /*  We received an offer */
@@ -56,4 +57,4 @@ bool fromwire_closingd_complete(const void *p);
 
 
 #endif /* LIGHTNING_CLOSINGD_CLOSINGD_WIREGEN_H */
-// SHA256STAMP:961ca5ceef03f911684ba0e7863d69993e692b9b418108e6038a567cb7cc7b3e
+// SHA256STAMP:a2f6a1bc6e57f070aead13823004c38837a1134da91faa1ff0558bee597eb2de
