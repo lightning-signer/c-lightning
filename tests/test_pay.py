@@ -4337,6 +4337,7 @@ def test_fetchinvoice(node_factory, bitcoind):
 
 
 @pytest.mark.developer("Needs dev-allow-localhost for autoconnect, dev-force-features to avoid routing onionmsgs")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support bolt12 yet")
 def test_fetchinvoice_autoconnect(node_factory, bitcoind):
     """We should autoconnect if we need to, to route."""
 
@@ -4403,6 +4404,7 @@ def test_pay_waitblockheight_timeout(node_factory, bitcoind):
 
 
 @pytest.mark.developer("dev-rawrequest is DEVELOPER-only")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support bolt12 yet")
 def test_dev_rawrequest(node_factory):
     l1, l2 = node_factory.line_graph(2, fundchannel=False,
                                      opts={'experimental-offers': None})
