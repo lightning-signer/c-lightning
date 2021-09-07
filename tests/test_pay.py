@@ -4234,6 +4234,7 @@ def test_offer(node_factory, bitcoind):
     assert 'recurrence: every 600 seconds paywindow -10 to +600 (pay proportional)\n' in output
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support bolt12 yet")
 @pytest.mark.developer("dev-no-modern-onion is DEVELOPER-only")
 def test_fetchinvoice_3hop(node_factory, bitcoind):
     l1, l2, l3, l4 = node_factory.line_graph(4, wait_for_announce=True,
@@ -4481,6 +4482,7 @@ def test_fetchinvoice(node_factory, bitcoind):
 
 
 @pytest.mark.developer("Needs dev-allow-localhost for autoconnect, dev-force-features to avoid routing onionmsgs")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support bolt12 yet")
 def test_fetchinvoice_autoconnect(node_factory, bitcoind):
     """We should autoconnect if we need to, to route."""
 
@@ -4547,6 +4549,7 @@ def test_pay_waitblockheight_timeout(node_factory, bitcoind):
 
 
 @pytest.mark.developer("dev-rawrequest is DEVELOPER-only")
+@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support bolt12 yet")
 def test_dev_rawrequest(node_factory):
     l1, l2 = node_factory.line_graph(2, fundchannel=False,
                                      opts={'experimental-offers': None})
