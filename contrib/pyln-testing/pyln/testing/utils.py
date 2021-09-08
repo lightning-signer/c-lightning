@@ -556,6 +556,7 @@ class LightningD(TailableProc):
         self.cmd_prefix = []
         self.disconnect_file = None
         self.lightning_dir = lightning_dir
+        self.use_rsignerd = False;
         self.rsignerd_dir = os.path.join(lightning_dir, "remotesigner")
 
         self.rpcproxy = bitcoindproxy
@@ -577,15 +578,18 @@ class LightningD(TailableProc):
 
         if SUBDAEMON:
             opts['subdaemon'] = SUBDAEMON
-
+            if SUBDAEMON == 'hsmd:remote_hsmd':
+                self.use_rsignerd = True
+                
         for k, v in opts.items():
             self.opts[k] = v
 
         if not os.path.exists(os.path.join(lightning_dir, TEST_NETWORK)):
             os.makedirs(os.path.join(lightning_dir, TEST_NETWORK))
 
-        if not os.path.exists(self.rsignerd_dir):
-            os.makedirs(self.rsignerd_dir)
+        if self.use_rsignerd:
+            if not os.path.exists(self.rsignerd_dir):
+                os.makedirs(self.rsignerd_dir)
 
         # Last 32-bytes of final part of dir -> seed.
         seed = (bytes(re.search('([^/]+)/*$', lightning_dir).group(1), encoding='utf-8') + bytes(32))[:32]
@@ -598,8 +602,11 @@ class LightningD(TailableProc):
         self.prefix = 'lightningd-%d' % (node_id)
 
     def cleanup(self):
-        # Make sure the remotesigner is shutdown
-        self.rsignerd.stop()
+        if self.use_rsignerd:
+            if self.use_rsignerd:
+                # Make sure the remotesigner is shutdown
+                self.rsignerd.stop()
+
         # To force blackhole to exit, disconnect file must be truncated!
         if self.disconnect_file:
             with open(self.disconnect_file, "w") as f:
@@ -623,13 +630,14 @@ class LightningD(TailableProc):
     def start(self, stdin=None, stdout=None, stderr=None,
               wait_for_initialized=True):
         try:
-            # Start the remote signer first
-            rsignerd_port = reserve()
-            self.rsignerd = RemoteSignerD(self.rsignerd_dir, rsignerd_port)
-            self.rsignerd.start(stdin, stdout, stderr, wait_for_initialized)
+            if self.use_rsignerd:
+                # Start the remote signer first
+                rsignerd_port = reserve()
+                self.rsignerd = RemoteSignerD(self.rsignerd_dir, rsignerd_port)
+                self.rsignerd.start(stdin, stdout, stderr, wait_for_initialized)
 
-            # We can't do this in the constructor because we need a new port on each restart.
-            self.env['REMOTE_HSMD_ENDPOINT'] = 'localhost:{}'.format(rsignerd_port)
+                # We can't do this in the constructor because we need a new port on each restart.
+                self.env['REMOTE_HSMD_ENDPOINT'] = 'localhost:{}'.format(rsignerd_port)
 
             self.opts['bitcoin-rpcport'] = self.rpcproxy.rpcport
             TailableProc.start(self, stdin, stdout, stderr)
@@ -637,18 +645,21 @@ class LightningD(TailableProc):
                 self.wait_for_log("Server started with public key")
             logging.info("LightningD started")
         except Exception:
-            # LightningD didn't start, stop the remotesigner
-            self.rsignerd.stop()
+            if self.use_rsignerd:
+                # LightningD didn't start, stop the remotesigner
+                self.rsignerd.stop()
             raise
 
     def stop(self, timeout=10):
-        # Stop the remote signer first
-        self.rsignerd.stop(timeout)
+        if self.use_rsignerd:
+            # Stop the remote signer first
+            self.rsignerd.stop(timeout)
         return TailableProc.stop(self, timeout)
 
     def kill(self):
-        # Kill the remote signer first
-        self.rsignerd.kill()
+        if self.use_rsignerd:
+            # Kill the remote signer first
+            self.rsignerd.kill()
         TailableProc.kill(self)
 
     def wait(self, timeout=10):
