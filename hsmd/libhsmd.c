@@ -1365,15 +1365,15 @@ static u8 *handle_validate_commitment_tx(struct hsmd_client *c, const u8 *msg_in
 	if (!derive_shaseed(&channel_seed, &shaseed))
 		return hsmd_status_bad_request(c, msg_in, "bad derive_shaseed");
 
-	if (!per_commit_point(&shaseed, &next_per_commitment_point, commit_num))
+	if (!per_commit_point(&shaseed, &next_per_commitment_point, commit_num + 1))
 		return hsmd_status_bad_request_fmt(
-		    c, msg_in, "bad per_commit_point %" PRIu64, commit_num);
+		    c, msg_in, "bad per_commit_point %" PRIu64, commit_num + 1);
 
-	if (commit_num >= 2) {
+	if (commit_num >= 1) {
 		old_secret = tal(tmpctx, struct secret);
-		if (!per_commit_secret(&shaseed, old_secret, commit_num - 2)) {
+		if (!per_commit_secret(&shaseed, old_secret, commit_num - 1)) {
 			return hsmd_status_bad_request_fmt(
-			    c, msg_in, "Cannot derive secret %" PRIu64, commit_num - 2);
+			    c, msg_in, "Cannot derive secret %" PRIu64, commit_num - 1);
 		}
 	} else {
 		old_secret = NULL;
