@@ -14,6 +14,10 @@ Building
 
 Dependencies
 
+- libgrpc-dev
+- libgrpc++-dev
+- grpc-plugins
+
 Build libsecp256k1 with `./configure --enable-module-recovery`, see
 https://github.com/golemfactory/golem/issues/2168 for background.
 
