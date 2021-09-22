@@ -372,8 +372,9 @@ proxy_stat proxy_init_hsm(struct bip32_key_version *bip32_key_version,
 			  struct node_id *o_node_id)
 {
 	STATUS_DEBUG(
-		"%s:%d %s { \"hsm_secret\":%s, \"coldstart\":%s }",
+		"%s:%d %s { \"network\":%s, \"hsm_secret\":%s, \"coldstart\":%s }",
 		__FILE__, __LINE__, __FUNCTION__,
+		chainparams->network_name,
 		hsm_secret != NULL ? dump_secret(hsm_secret).c_str() : "\"\"",
 		coldstart ? "true" : "false"
 		);
