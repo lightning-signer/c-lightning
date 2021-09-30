@@ -176,7 +176,7 @@ u8 *p2wpkh_for_keyidx(const tal_t *ctx, struct lightningd *ld, u64 keyidx)
 	return scriptpubkey_p2wpkh(ctx, &shutdownkey);
 }
 
-static struct existing_htlc **collect_htlcs(struct channel *channel, u32 local_feerate) {
+static struct simple_htlc **collect_htlcs(struct channel *channel, u32 local_feerate) {
 	// Collect the htlcs for call to hsmd.
 	//
 	// We use the existing_htlc to_wire routines, it's unfortunate that
@@ -184,7 +184,7 @@ static struct existing_htlc **collect_htlcs(struct channel *channel, u32 local_f
 	//
 	struct htlc_in_map *htlcs_in = &channel->peer->ld->htlcs_in;
 	struct htlc_out_map *htlcs_out = &channel->peer->ld->htlcs_out;
-	struct existing_htlc **htlcs = tal_arr(tmpctx, struct existing_htlc *, 0);
+	struct simple_htlc **htlcs = tal_arr(tmpctx, struct simple_htlc *, 0);
 	u8 dummy_onion_routing_packet[TOTAL_PACKET_SIZE(ROUTING_INFO_SIZE)];
 	memset(dummy_onion_routing_packet, 0, sizeof(dummy_onion_routing_packet));
 
@@ -201,18 +201,14 @@ static struct existing_htlc **collect_htlcs(struct channel *channel, u32 local_f
 				    channel->our_config.dust_limit, LOCAL,
 				    channel_has(channel, OPT_ANCHOR_OUTPUTS)))
 			continue;
-		struct existing_htlc *existing =
-			new_existing_htlc(NULL,
-					  hin->dbid,
-					  hin->hstate,
-					  hin->msat,
-					  &hin->payment_hash,
-					  hin->cltv_expiry,
-					  dummy_onion_routing_packet,
-					  NULL,
-					  NULL,
-					  NULL);
-		tal_arr_expand(&htlcs, tal_steal(htlcs, existing));
+		struct simple_htlc *simple =
+		    new_simple_htlc(NULL,
+				    htlc_state_owner(hin->hstate),
+				    hin->msat,
+				    &hin->payment_hash,
+				    hin->cltv_expiry
+				    );
+		tal_arr_expand(&htlcs, tal_steal(htlcs, simple));
 	}
 	const struct htlc_out *hout;
 	struct htlc_out_map_iter outi;
@@ -227,18 +223,14 @@ static struct existing_htlc **collect_htlcs(struct channel *channel, u32 local_f
 				    channel->our_config.dust_limit, LOCAL,
 				    channel_has(channel, OPT_ANCHOR_OUTPUTS)))
 			continue;
-		struct existing_htlc *existing =
-			new_existing_htlc(NULL,
-					  hout->dbid,
-					  hout->hstate,
-					  hout->msat,
-					  &hout->payment_hash,
-					  hout->cltv_expiry,
-					  dummy_onion_routing_packet,
-					  NULL,
-					  NULL,
-					  NULL);
-		tal_arr_expand(&htlcs, tal_steal(htlcs, existing));
+		struct simple_htlc *simple =
+		    new_simple_htlc(NULL,
+				    htlc_state_owner(hout->hstate),
+				    hout->msat,
+				    &hout->payment_hash,
+				    hout->cltv_expiry
+				    );
+		tal_arr_expand(&htlcs, tal_steal(htlcs, simple));
 	}
 	return htlcs;
 }
@@ -253,7 +245,7 @@ static void sign_last_tx(struct channel *channel,
 
 	u64 commit_index = channel->next_index[LOCAL] - 1;
 	u32 local_feerate = get_feerate(channel->fee_states, channel->opener, LOCAL);
-	struct existing_htlc **htlcs = collect_htlcs(channel, local_feerate);
+	struct simple_htlc **htlcs = collect_htlcs(channel, local_feerate);
 
 	assert(!last_tx->wtx->inputs[0].witness);
 	msg = towire_hsmd_sign_commitment_tx(tmpctx,
@@ -263,7 +255,7 @@ static void sign_last_tx(struct channel *channel,
 					     &channel->channel_info
 					     .remote_fundingkey,
 					     commit_index,
-					     (const struct existing_htlc **) htlcs,
+					     (const struct simple_htlc **) htlcs,
 					     local_feerate);
 
 	if (!wire_sync_write(ld->hsm_fd, take(msg)))

@@ -1206,7 +1206,7 @@ static u8 *handle_sign_remote_commitment_tx(struct hsmd_client *c, const u8 *msg
 	struct pubkey remote_per_commit;
 	bool option_static_remotekey;
 	u64 commit_num;
-	struct existing_htlc **htlc;
+	struct simple_htlc **htlc;
 	u32 feerate;
 
 	if (!fromwire_hsmd_sign_remote_commitment_tx(tmpctx, msg_in,
@@ -1300,7 +1300,7 @@ static u8 *handle_sign_commitment_tx(struct hsmd_client *c, const u8 *msg_in)
 	struct secret channel_seed;
 	struct bitcoin_tx *tx;
 	struct bitcoin_signature sig;
-	struct existing_htlc **htlc;
+	struct simple_htlc **htlc;
 	u64 commit_num;
 	u32 feerate;
 	struct secrets secrets;
@@ -1347,7 +1347,7 @@ static u8 *handle_sign_commitment_tx(struct hsmd_client *c, const u8 *msg_in)
 static u8 *handle_validate_commitment_tx(struct hsmd_client *c, const u8 *msg_in)
 {
 	struct bitcoin_tx *tx;
-	struct existing_htlc **htlc;
+	struct simple_htlc **htlc;
 	u64 commit_num;
 	u32 feerate;
 	struct bitcoin_signature sig;
