@@ -3969,7 +3969,7 @@ def test_large_mpp_presplit(node_factory):
 
 @pytest.mark.developer("builds large network, which is slow if not DEVELOPER")
 @pytest.mark.slow_test
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't allow push of greater than 20k sat")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't allow push of greater than 20k sat")
 def test_mpp_overload_payee(node_factory, bitcoind):
     """
     We had a bug where if the payer is unusually well-connected compared
@@ -4041,7 +4041,7 @@ def test_offer_needs_option(node_factory):
     assert l1.rpc.decode('lno1qgsqvgnwgcg35z6ee2h3yczraddm72xrfua9uve2rlrm9deu7xyfzrcgqyys5qq7ypnwgkvdr57yzh6h92zg3qctvrm7w38djg67kzcm4yeg8vc4cq633uzqaxlsxzxergsrav494jjrpuy9hcldjeglha57lxvz20fhha6hjwhv69nnzwzjsajntyf0c4z8h9e70dfdlfq8jdvc9rdht8vr955udtg')['valid']
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support bolt12 yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support bolt12 yet")
 def test_offer(node_factory, bitcoind):
     plugin = os.path.join(os.path.dirname(__file__), 'plugins/currencyUSDAUD5000.py')
     l1 = node_factory.get_node(options={'plugin': plugin, 'experimental-offers': None})
@@ -4264,7 +4264,7 @@ def test_fetchinvoice_3hop(node_factory, bitcoind):
     l1.rpc.call('fetchinvoice', {'offer': offer1['bolt12']})
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support bolt12 yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support bolt12 yet")
 def test_fetchinvoice(node_factory, bitcoind):
     # We remove the conversion plugin on l3, causing it to get upset.
     l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True,
@@ -4482,7 +4482,7 @@ def test_fetchinvoice(node_factory, bitcoind):
 
 
 @pytest.mark.developer("Needs dev-allow-localhost for autoconnect, dev-force-features to avoid routing onionmsgs")
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support bolt12 yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support bolt12 yet")
 def test_fetchinvoice_autoconnect(node_factory, bitcoind):
     """We should autoconnect if we need to, to route."""
 
@@ -4549,7 +4549,7 @@ def test_pay_waitblockheight_timeout(node_factory, bitcoind):
 
 
 @pytest.mark.developer("dev-rawrequest is DEVELOPER-only")
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support bolt12 yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support bolt12 yet")
 def test_dev_rawrequest(node_factory):
     l1, l2 = node_factory.line_graph(2, fundchannel=False,
                                      opts={'experimental-offers': None})
@@ -4566,7 +4566,7 @@ def test_dev_rawrequest(node_factory):
     assert 'invoice' in ret
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support bolt12 yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support bolt12 yet")
 def do_test_sendinvoice(node_factory, bitcoind, disable):
     l2opts = {'experimental-offers': None}
     if disable:
