@@ -1066,27 +1066,20 @@ static struct bitcoin_signature *calc_commitsigs(const tal_t *ctx,
 	// We use the existing_htlc to_wire routines, it's unfortunate that
 	// we have to send a dummy onion_routing_packet ...
 	//
-	struct existing_htlc **htlcs = tal_arr(tmpctx, struct existing_htlc *, 0);
-	u8 dummy_onion_routing_packet[TOTAL_PACKET_SIZE(ROUTING_INFO_SIZE)];
-	memset(dummy_onion_routing_packet, 0, sizeof(dummy_onion_routing_packet));
+	struct simple_htlc **htlcs = tal_arr(tmpctx, struct simple_htlc *, 0);
 	size_t num_entries = tal_count(htlc_map);
 	for (size_t ndx = 0; ndx < num_entries; ++ndx) {
 		struct htlc const *hh = htlc_map[ndx];
 		if (hh) {
 			status_debug("HTLC[%lu]=%" PRIu64 ", %s",
 				     ndx, hh->id, htlc_state_name(hh->state));
-			struct existing_htlc *existing =
-				new_existing_htlc(NULL,
-						  hh->id,
-						  hh->state,
-						  hh->amount,
-						  &hh->rhash,
-						  hh->expiry.locktime,
-						  dummy_onion_routing_packet,
-						  NULL,
-						  NULL,
-						  NULL);
-			tal_arr_expand(&htlcs, tal_steal(htlcs, existing));
+			struct simple_htlc *simple =
+			    new_simple_htlc(NULL,
+					    htlc_state_owner(hh->state),
+					    hh->amount,
+					    &hh->rhash,
+					    hh->expiry.locktime);
+			tal_arr_expand(&htlcs, tal_steal(htlcs, simple));
 		}
 	}
 
@@ -1095,7 +1088,7 @@ static struct bitcoin_signature *calc_commitsigs(const tal_t *ctx,
 						   &peer->remote_per_commit,
 						    peer->channel->option_static_remotekey,
 						    commit_index,
-						    (const struct existing_htlc **) htlcs,
+						    (const struct simple_htlc **) htlcs,
 						    channel_feerate(peer->channel, REMOTE));
 	msg = hsm_req(tmpctx, take(msg));
 	if (!fromwire_hsmd_sign_tx_reply(msg, commit_sig))
@@ -1766,30 +1759,23 @@ static void handle_peer_commit_sig(struct peer *peer, const u8 *msg)
 
 	// Collect the htlcs for call to hsmd validate.
 	//
-	// We use the existing_htlc to_wire routines, it's unfortunate that
+	// We use the simple_htlc to_wire routines, it's unfortunate that
 	// we have to send a dummy onion_routing_packet ...
 	//
-	struct existing_htlc **htlcs = tal_arr(NULL, struct existing_htlc *, 0);
-	u8 dummy_onion_routing_packet[TOTAL_PACKET_SIZE(ROUTING_INFO_SIZE)];
-	memset(dummy_onion_routing_packet, 0, sizeof(dummy_onion_routing_packet));
+	struct simple_htlc **htlcs = tal_arr(NULL, struct simple_htlc *, 0);
 	size_t num_entries = tal_count(htlc_map);
 	for (size_t ndx = 0; ndx < num_entries; ++ndx) {
 		struct htlc const *hh = htlc_map[ndx];
 		if (hh) {
 			status_debug("HTLC[%lu]=%" PRIu64 ", %s",
 				     ndx, hh->id, htlc_state_name(hh->state));
-			struct existing_htlc *existing =
-				new_existing_htlc(NULL,
-						  hh->id,
-						  hh->state,
-						  hh->amount,
-						  &hh->rhash,
-						  hh->expiry.locktime,
-						  dummy_onion_routing_packet,
-						  NULL,
-						  NULL,
-						  NULL);
-			tal_arr_expand(&htlcs, tal_steal(htlcs, existing));
+			struct simple_htlc *simple =
+			    new_simple_htlc(NULL,
+					    htlc_state_owner(hh->state),
+					    hh->amount,
+					    &hh->rhash,
+					    hh->expiry.locktime);
+			tal_arr_expand(&htlcs, tal_steal(htlcs, simple));
 		}
 	}
 
@@ -1797,7 +1783,7 @@ static void handle_peer_commit_sig(struct peer *peer, const u8 *msg)
 	const u8 * msg2 =
 		towire_hsmd_validate_commitment_tx(NULL,
 						   txs[0],
-						   (const struct existing_htlc **) htlcs,
+						   (const struct simple_htlc **) htlcs,
 						   peer->next_index[LOCAL],
 						   channel_feerate(peer->channel, LOCAL),
 						   &commit_sig,

@@ -219,8 +219,8 @@ bool fromwire_hsmd_cupdate_sig_reply(const tal_t *ctx, const void *p, u8 **cu);
 
 /* WIRE: HSMD_SIGN_COMMITMENT_TX */
 /*  Master asks HSM to sign a commitment transaction. */
-u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, u64 commit_num, const struct existing_htlc **htlcs, u32 feerate);
-bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, u64 *commit_num, struct existing_htlc ***htlcs, u32 *feerate);
+u8 *towire_hsmd_sign_commitment_tx(const tal_t *ctx, const struct node_id *peer_id, u64 channel_dbid, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, u64 commit_num, const struct simple_htlc **htlcs, u32 feerate);
+bool fromwire_hsmd_sign_commitment_tx(const tal_t *ctx, const void *p, struct node_id *peer_id, u64 *channel_dbid, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, u64 *commit_num, struct simple_htlc ***htlcs, u32 *feerate);
 
 /* WIRE: HSMD_SIGN_COMMITMENT_TX_REPLY */
 u8 *towire_hsmd_sign_commitment_tx_reply(const tal_t *ctx, const struct bitcoin_signature *sig);
@@ -228,8 +228,8 @@ bool fromwire_hsmd_sign_commitment_tx_reply(const void *p, struct bitcoin_signat
 
 /* WIRE: HSMD_VALIDATE_COMMITMENT_TX */
 /*  Validate the counterparty's commitment signatures. */
-u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct existing_htlc **htlcs, u64 commit_num, u32 feerate, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs);
-bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct existing_htlc ***htlcs, u64 *commit_num, u32 *feerate, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs);
+u8 *towire_hsmd_validate_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct simple_htlc **htlcs, u64 commit_num, u32 feerate, const struct bitcoin_signature *sig, const struct bitcoin_signature *htlc_sigs);
+bool fromwire_hsmd_validate_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct simple_htlc ***htlcs, u64 *commit_num, u32 *feerate, struct bitcoin_signature *sig, struct bitcoin_signature **htlc_sigs);
 
 /* WIRE: HSMD_VALIDATE_COMMITMENT_TX_REPLY */
 u8 *towire_hsmd_validate_commitment_tx_reply(const tal_t *ctx, const struct secret *old_commitment_secret, const struct pubkey *next_per_commitment_point);
@@ -267,8 +267,8 @@ bool fromwire_hsmd_sign_local_htlc_tx(const tal_t *ctx, const void *p, u64 *comm
 
 /* WIRE: HSMD_SIGN_REMOTE_COMMITMENT_TX */
 /*  Openingd/channeld asks HSM to sign the other sides' commitment tx. */
-u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct pubkey *remote_per_commit, bool option_static_remotekey, u64 commit_num, const struct existing_htlc **htlcs, u32 feerate);
-bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct pubkey *remote_per_commit, bool *option_static_remotekey, u64 *commit_num, struct existing_htlc ***htlcs, u32 *feerate);
+u8 *towire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const struct bitcoin_tx *tx, const struct pubkey *remote_funding_key, const struct pubkey *remote_per_commit, bool option_static_remotekey, u64 commit_num, const struct simple_htlc **htlcs, u32 feerate);
+bool fromwire_hsmd_sign_remote_commitment_tx(const tal_t *ctx, const void *p, struct bitcoin_tx **tx, struct pubkey *remote_funding_key, struct pubkey *remote_per_commit, bool *option_static_remotekey, u64 *commit_num, struct simple_htlc ***htlcs, u32 *feerate);
 
 /* WIRE: HSMD_SIGN_REMOTE_HTLC_TX */
 /*  channeld asks HSM to sign remote HTLC tx. */
@@ -350,4 +350,4 @@ bool fromwire_hsmd_sign_option_will_fund_offer_reply(const void *p, secp256k1_ec
 
 
 #endif /* LIGHTNING_HSMD_HSMD_WIREGEN_H */
-// SHA256STAMP:a43116f8d4e4411eae1d92bac890a41f8fed518515c707d0bd36dcbf2347880f
+// SHA256STAMP:a2fb25179a6abf35bcd28efec3713be7d04152e130e1c5d4efb18e55dc18d3a4
