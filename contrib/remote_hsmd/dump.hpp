@@ -39,8 +39,8 @@ std::string dump_wally_tx(const struct wally_tx *wtx);
 std::string dump_wally_psbt(const struct wally_psbt *psbt);
 std::string dump_tx(const struct bitcoin_tx *tx);
 std::string dump_rhashes(const struct sha256 *rhashes, size_t num_rhashes);
-std::string dump_htlc(const struct existing_htlc *htlc);
-std::string dump_htlcs(const struct existing_htlc **htlc, size_t num_htlc);
+std::string dump_htlc(const struct simple_htlc *htlc);
+std::string dump_htlcs(const struct simple_htlc **htlc, size_t num_htlc);
 
 // needed for formatting txid
 void reverse_bytes(u8 *arr, size_t len);
