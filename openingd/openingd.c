@@ -505,7 +505,7 @@ static void validate_initial_commitment_signature(struct bitcoin_tx *tx,
 	const u8 * msg =
 		towire_hsmd_validate_commitment_tx(NULL,
 						   tx,
-						   (const struct existing_htlc **) htlcs,
+						   (const struct simple_htlc **) htlcs,
 						   commit_num,
 						   feerate,
 						   sig,
@@ -626,7 +626,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 	 * witness script.  It also needs the amount of the funding output,
 	 * as segwit signatures commit to that as well, even though it doesn't
 	 * explicitly appear in the transaction itself. */
-	struct existing_htlc **htlcs = tal_arr(tmpctx, struct existing_htlc *, 0);
+	struct simple_htlc **htlcs = tal_arr(tmpctx, struct simple_htlc *, 0);
 	u32 feerate = 0; // unused since there are no htlcs
 	u64 commit_num = 0;
 	msg = towire_hsmd_sign_remote_commitment_tx(NULL,
@@ -635,7 +635,7 @@ static bool funder_finalize_channel_setup(struct state *state,
 						   &state->first_per_commitment_point[REMOTE],
 						    state->channel->option_static_remotekey,
 						    commit_num,
-						    (const struct existing_htlc **) htlcs,
+						    (const struct simple_htlc **) htlcs,
 						    feerate);
 
 	wire_sync_write(HSM_FD, take(msg));
@@ -1192,7 +1192,7 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 	}
 
 	/* Make HSM sign it */
-	struct existing_htlc **htlcs = tal_arr(tmpctx, struct existing_htlc *, 0);
+	struct simple_htlc **htlcs = tal_arr(tmpctx, struct simple_htlc *, 0);
 	u32 feerate = 0; // unused since there are no htlcs
 	u64 commit_num = 0;
 	msg = towire_hsmd_sign_remote_commitment_tx(NULL,
@@ -1201,7 +1201,7 @@ static u8 *fundee_channel(struct state *state, const u8 *open_channel_msg)
 						   &state->first_per_commitment_point[REMOTE],
 						   state->channel->option_static_remotekey,
 						   commit_num,
-						   (const struct existing_htlc **) htlcs,
+						   (const struct simple_htlc **) htlcs,
 						   feerate);
 
 	wire_sync_write(HSM_FD, take(msg));

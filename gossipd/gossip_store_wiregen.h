@@ -63,4 +63,4 @@ bool fromwire_gossipd_local_add_channel_obs(const tal_t *ctx, const void *p, str
 
 
 #endif /* LIGHTNING_GOSSIPD_GOSSIP_STORE_WIREGEN_H */
-// SHA256STAMP:9bf21787d4ea17d2ae119c2120fd14d025824ab239b12855720addae5a919b2b
+// SHA256STAMP:507fba6f49ed65a9b20ff4882cc73be06f70a1b8cc994f7b13a676b156714d69

@@ -777,4 +777,4 @@ bool fromwire_gossipd_new_lease_rates(const void *p, struct lease_rates *rates)
  	fromwire_lease_rates(&cursor, &plen, rates);
 	return cursor != NULL;
 }
-// SHA256STAMP:6252e4a2529ea03470fbb950ebe3d616c6a8ffedf199ff3091608f2d9f18efcf
+// SHA256STAMP:3752caa9c2d44938c0fb3329990cece90c025f75129dbb08666058da94fd4f64
