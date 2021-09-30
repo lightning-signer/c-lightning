@@ -752,7 +752,7 @@ static struct io_plan *handle_sign_commitment_tx(struct io_conn *conn,
 	struct node_id peer_id;
 	u64 dbid;
 	struct bitcoin_tx *tx;
-	struct existing_htlc **htlc;
+	struct simple_htlc **htlc;
 	u64 commit_num;
 	u32 feerate;
 	struct bitcoin_signature sig;
@@ -816,7 +816,7 @@ static struct io_plan *handle_validate_commitment_tx(struct io_conn *conn,
 						     const u8 *msg_in)
 {
 	struct bitcoin_tx *tx;
-	struct existing_htlc **htlc;
+	struct simple_htlc **htlc;
 	u64 commit_num;
 	u32 feerate;
 	struct bitcoin_signature commit_sig;
@@ -896,7 +896,7 @@ static struct io_plan *handle_sign_remote_commitment_tx(struct io_conn *conn,
 	struct pubkey remote_per_commit;
 	bool option_static_remotekey;
 	u64 commit_num;
-	struct existing_htlc **htlc;
+	struct simple_htlc **htlc;
 	u32 feerate;
 
 	if (!fromwire_hsmd_sign_remote_commitment_tx(tmpctx, msg_in,

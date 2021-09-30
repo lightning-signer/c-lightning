@@ -244,7 +244,7 @@ void marshal_rhashes(const struct sha256 *rhashes,
 	}
 }
 
-void marshal_htlc(const struct existing_htlc *htlc, HTLCInfo *o_htlc)
+void marshal_htlc(const struct simple_htlc *htlc, HTLCInfo *o_htlc)
 {
 	o_htlc->set_value_sat(htlc->amount.millisatoshis / 1000);
 	o_htlc->set_payment_hash(&htlc->payment_hash, sizeof(htlc->payment_hash));
@@ -768,7 +768,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 	struct node_id *peer_id,
 	u64 dbid,
 	const struct pubkey *remote_per_commit,
-	struct existing_htlc **htlcs,
+	struct simple_htlc **htlcs,
 	u64 commit_num, u32 feerate,
 	struct bitcoin_signature *o_sig)
 {
@@ -787,7 +787,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_pubkey(remote_per_commit).c_str(),
 		dump_tx(tx).c_str(),
-		dump_htlcs((const struct existing_htlc **) htlcs, tal_count(htlcs)).c_str(),
+		dump_htlcs((const struct simple_htlc **) htlcs, tal_count(htlcs)).c_str(),
 		commit_num, feerate
 		);
 
@@ -799,7 +799,7 @@ proxy_stat proxy_handle_sign_remote_commitment_tx(
 		       req.mutable_remote_per_commit_point());
 	marshal_single_input_tx(tx, NULL, req.mutable_tx());
 	for (size_t ii = 0; ii < tal_count(htlcs); ++ii) {
-		if (htlc_state_owner(htlcs[ii]->state) == REMOTE) {
+		if (htlcs[ii]->side == REMOTE) {
 			marshal_htlc(htlcs[ii], req.add_offered_htlcs());
 		} else {
 			marshal_htlc(htlcs[ii], req.add_received_htlcs());
@@ -1105,7 +1105,7 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct existing_htlc **htlcs,
+	struct simple_htlc **htlcs,
 	u64 commit_num, u32 feerate,
 	struct bitcoin_signature *o_sig)
 {
@@ -1122,7 +1122,7 @@ proxy_stat proxy_handle_sign_commitment_tx(
 		dbid,
 		dump_pubkey(counterparty_funding_pubkey).c_str(),
 		dump_tx(tx).c_str(),
-		dump_htlcs((const struct existing_htlc **) htlcs, tal_count(htlcs)).c_str(),
+		dump_htlcs((const struct simple_htlc **) htlcs, tal_count(htlcs)).c_str(),
 		commit_num, feerate
 		);
 
@@ -1132,7 +1132,7 @@ proxy_stat proxy_handle_sign_commitment_tx(
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_single_input_tx(tx, NULL, req.mutable_tx());
 	for (size_t ii = 0; ii < tal_count(htlcs); ++ii) {
-		if (htlc_state_owner(htlcs[ii]->state) == LOCAL) {
+		if (htlcs[ii]->side == LOCAL) {
 			marshal_htlc(htlcs[ii], req.add_offered_htlcs());
 		} else {
 			marshal_htlc(htlcs[ii], req.add_received_htlcs());
@@ -1166,7 +1166,7 @@ proxy_stat proxy_handle_validate_commitment_tx(
 	struct bitcoin_tx *tx,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct existing_htlc **htlcs,
+	struct simple_htlc **htlcs,
 	u64 commit_num, u32 feerate,
 	struct bitcoin_signature *commit_sig,
 	struct bitcoin_signature *htlc_sigs,
@@ -1186,7 +1186,7 @@ proxy_stat proxy_handle_validate_commitment_tx(
 		dump_node_id(peer_id).c_str(),
 		dbid,
 		dump_tx(tx).c_str(),
-		dump_htlcs((const struct existing_htlc **) htlcs, tal_count(htlcs)).c_str(),
+		dump_htlcs((const struct simple_htlc **) htlcs, tal_count(htlcs)).c_str(),
 		commit_num, feerate,
 		dump_bitcoin_signature(commit_sig).c_str(),
 		dump_htlc_signatures(htlc_sigs).c_str()
@@ -1198,7 +1198,7 @@ proxy_stat proxy_handle_validate_commitment_tx(
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
 	marshal_single_input_tx(tx, NULL, req.mutable_tx());
 	for (size_t ii = 0; ii < tal_count(htlcs); ++ii) {
-		if (htlc_state_owner(htlcs[ii]->state) == LOCAL) {
+		if (htlcs[ii]->side == LOCAL) {
 			marshal_htlc(htlcs[ii], req.add_offered_htlcs());
 		} else {
 			marshal_htlc(htlcs[ii], req.add_received_htlcs());
