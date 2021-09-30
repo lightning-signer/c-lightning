@@ -498,12 +498,11 @@ string dump_rhashes(const struct sha256 *rhashes, size_t num_rhashes)
 	return ostrm.str();
 }
 
-string dump_htlc(const struct existing_htlc *htlc)
+string dump_htlc(const struct simple_htlc *htlc)
 {
 	ostringstream ostrm;
 	ostrm << "{ "
-	      << "\"id\":" << htlc->id
-	      << ", \"state\":" << htlc_state_name(htlc->state)
+	      << ", \"side\":" << htlc->side
 	      << ", \"amount_msat\":" << htlc->amount.millisatoshis
 	      << ", \"payment_hash\":" << dump_hex(&htlc->payment_hash, sizeof(htlc->payment_hash))
 	      << ", \"cltv_expiry\":" << htlc->cltv_expiry
@@ -511,7 +510,7 @@ string dump_htlc(const struct existing_htlc *htlc)
 	return ostrm.str();
 }
 
-string dump_htlcs(const struct existing_htlc **htlc, size_t num_htlc)
+string dump_htlcs(const struct simple_htlc **htlc, size_t num_htlc)
 {
 	ostringstream ostrm;
 	ostrm << "[";
