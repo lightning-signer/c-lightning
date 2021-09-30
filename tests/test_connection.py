@@ -392,7 +392,7 @@ def test_disconnect_fundee(node_factory):
 @pytest.mark.developer
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('SUBDAEMON', 'xxx') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support dual-funding yet")
 def test_disconnect_fundee_v2(node_factory):
     # Now error on fundee side during channel open, with them funding
     disconnects = ['-WIRE_ACCEPT_CHANNEL2',
@@ -595,7 +595,7 @@ def test_reconnect_no_update(node_factory, executor, bitcoind):
     l1.daemon.wait_for_log(r"CLOSINGD_COMPLETE")
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't like hsm_secret shenanigans")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't like hsm_secret shenanigans")
 def test_connect_stresstest(node_factory, executor):
     # This test is unreliable, but it's better than nothing.
     l1, l2, l3 = node_factory.get_nodes(3, opts={'may_reconnect': True})
@@ -1044,7 +1044,7 @@ def test_funding_toolarge(node_factory, bitcoind):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support dual-funding yet")
 def test_v2_open(node_factory, bitcoind, chainparams):
     l1, l2 = node_factory.get_nodes(2)
 
@@ -1501,7 +1501,7 @@ def test_funding_v2_cancel_race(node_factory, bitcoind, executor):
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(TEST_NETWORK != 'regtest', "External wallet support doesn't work with elements yet.")
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd can't handle random external addresses (allowlist)")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd can't handle random external addresses (allowlist)")
 def test_funding_close_upfront(node_factory, bitcoind):
     opts = {'plugin': os.path.join(os.getcwd(), 'tests/plugins/openchannel_hook_accepter.py')}
 
@@ -1644,7 +1644,7 @@ def test_funding_external_wallet(node_factory, bitcoind):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v1')  # We manually turn on dual-funding for select nodes
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support dual-funding yet")
 def test_multifunding_v1_v2_mixed(node_factory, bitcoind):
     '''
     Simple test for multifundchannel, using v1 + v2
@@ -1686,7 +1686,7 @@ def test_multifunding_v1_v2_mixed(node_factory, bitcoind):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support dual-funding yet")
 def test_multifunding_v2_exclusive(node_factory, bitcoind):
     '''
     Simple test for multifundchannel, using v2
@@ -2634,7 +2634,7 @@ def test_fundee_forget_funding_tx_unconfirmed(node_factory, bitcoind):
 
 
 @pytest.mark.developer("needs dev_fail")
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "policy: can't withdraw to non-wallet address")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address")
 def test_no_fee_estimate(node_factory, bitcoind, executor):
     l1 = node_factory.get_node(start=False, options={'dev-no-fake-fees': True})
 
@@ -3093,7 +3093,7 @@ def test_fail_unconfirmed(node_factory, bitcoind, executor):
 @pytest.mark.developer("need dev-disconnect")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support dual-funding yet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support dual-funding yet")
 def test_fail_unconfirmed_openchannel2(node_factory, bitcoind, executor):
     """Test that if we crash with an unconfirmed connection to a known
     peer, we don't have a dangling peer in db"""
@@ -3382,7 +3382,7 @@ def test_channel_features(node_factory, bitcoind):
 
 
 @pytest.mark.developer("need dev-force-features")
-@unittest.skipIf(os.getenv('SUBDAEMON') == 'hsmd:remote_hsmd', "remote_hsmd doesn't support non-option_static_remotekey")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support non-option_static_remotekey")
 def test_nonstatic_channel(node_factory, bitcoind):
     """Smoke test for a channel without option_static_remotekey"""
     l1, l2 = node_factory.line_graph(2,
