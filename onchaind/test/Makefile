@@ -12,6 +12,8 @@ ALL_TEST_PROGRAMS += $(ONCHAIND_TEST_PROGRAMS)
 ONCHAIND_TEST_COMMON_OBJS :=			\
 	common/amount.o				\
 	common/features.o			\
+	common/psbt_internal.o			\
+	common/psbt_open.o			\
 	common/pseudorand.o			\
 	common/setup.o				\
 	common/type_to_string.o			\
