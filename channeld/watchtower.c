@@ -12,10 +12,41 @@
 
 static const u8 ONE = 0x1;
 
+static void add_keypath_item_to_last_output(struct bitcoin_tx *tx,
+					    u32 index,
+					    const struct ext_key *ext) {
+	// Skip if there is no wallet keypath for this output.
+	if (index == UINT32_MAX)
+		return;
+
+	size_t outndx = tx->psbt->num_outputs - 1;
+	struct wally_map *map_in = &tx->psbt->outputs[outndx].keypaths;
+
+	u8 fingerprint[BIP32_KEY_FINGERPRINT_LEN];
+	if (bip32_key_get_fingerprint(
+		    (struct ext_key *) ext, fingerprint, sizeof(fingerprint)) != WALLY_OK) {
+		abort();
+	}
+
+	u32 path[1];
+	path[0] = index;
+
+	tal_wally_start();
+	if (wally_map_add_keypath_item(map_in,
+				       ext->pub_key, sizeof(ext->pub_key),
+				       fingerprint, sizeof(fingerprint),
+				       path, 1) != WALLY_OK) {
+		abort();
+	}
+	tal_wally_end(tx->psbt);
+}
+
 const struct bitcoin_tx *
 penalty_tx_create(const tal_t *ctx,
 		  const struct channel *channel,
 		  u32 penalty_feerate,
+		  u32 final_index,
+		  struct ext_key *final_ext_key,
 		  u8 *final_scriptpubkey,
 		  const struct secret *revocation_preimage,
 		  const struct bitcoin_txid *commitment_txid,
@@ -75,6 +106,7 @@ penalty_tx_create(const tal_t *ctx,
 			     NULL, to_them_sats, NULL, wscript);
 
 	bitcoin_tx_add_output(tx, final_scriptpubkey, NULL, to_them_sats);
+	add_keypath_item_to_last_output(tx, final_index, final_ext_key);
 
 	/* Worst-case sig is 73 bytes */
 	weight = bitcoin_tx_weight(tx) + 1 + 3 + 73 + 0 + tal_count(wscript);
