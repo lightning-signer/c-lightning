@@ -153,6 +153,8 @@ struct peer {
 	u32 fee_per_satoshi;
 
 	/* The scriptpubkey to use for shutting down. */
+	u32 final_index;
+	struct ext_key final_ext_key;
 	u8 *final_scriptpubkey;
 
 	/* If master told us to shut down */
@@ -1856,6 +1858,7 @@ static u8 *got_revoke_msg(struct peer *peer, u64 revoke_num,
 	if (pbase) {
 		ptx = penalty_tx_create(
 		    NULL, peer->channel, peer->feerate_penalty,
+		    peer->final_index, &peer->final_ext_key,
 		    peer->final_scriptpubkey, per_commitment_secret,
 		    &pbase->txid, pbase->outnum, pbase->amount,
 		    HSM_FD);
@@ -3537,7 +3540,10 @@ static void handle_shutdown_cmd(struct peer *peer, const u8 *inmsg)
 {
 	u8 *local_shutdown_script;
 
-	if (!fromwire_channeld_send_shutdown(peer, inmsg, &local_shutdown_script,
+	if (!fromwire_channeld_send_shutdown(peer, inmsg,
+					     &peer->final_index,
+					     &peer->final_ext_key,
+					     &local_shutdown_script,
 					     &peer->shutdown_wrong_funding))
 		master_badmsg(WIRE_CHANNELD_SEND_SHUTDOWN, inmsg);
 
@@ -3787,6 +3793,8 @@ static void init_channel(struct peer *peer)
 				   &reconnected,
 				   &peer->send_shutdown,
 				   &peer->shutdown_sent[REMOTE],
+				   &peer->final_index,
+				   &peer->final_ext_key,
 				   &peer->final_scriptpubkey,
 				   &peer->channel_flags,
 				   &fwd_msg,
