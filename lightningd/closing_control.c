@@ -775,11 +775,24 @@ static struct command_result *json_close(struct command *cmd,
 					msg = towire_dualopend_send_shutdown(
 						NULL,
 						channel->shutdown_scriptpubkey[LOCAL]);
-				} else
+				} else {
+					struct ext_key final_ext_key;
+					if (bip32_key_from_parent(
+						    channel->peer->ld->wallet->bip32_base,
+						    channel->final_key_idx,
+						    BIP32_FLAG_KEY_PUBLIC,
+						    &final_ext_key) != WALLY_OK) {
+						return command_fail(
+							cmd, LIGHTNINGD,
+							"Could not derive onchain ext key");
+					}
 					msg = towire_channeld_send_shutdown(
 						NULL,
+						channel->final_key_idx,
+						&final_ext_key,
 						channel->shutdown_scriptpubkey[LOCAL],
 						channel->shutdown_wrong_funding);
+				}
 				subd_send_msg(channel->owner, take(msg));
 			}
 

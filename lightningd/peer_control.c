@@ -177,15 +177,9 @@ u8 *p2wpkh_for_keyidx(const tal_t *ctx, struct lightningd *ld, u64 keyidx)
 
 static struct simple_htlc **collect_htlcs(struct channel *channel, u32 local_feerate) {
 	// Collect the htlcs for call to hsmd.
-	//
-	// We use the existing_htlc to_wire routines, it's unfortunate that
-	// we have to send a dummy onion_routing_packet ...
-	//
 	struct htlc_in_map *htlcs_in = &channel->peer->ld->htlcs_in;
 	struct htlc_out_map *htlcs_out = &channel->peer->ld->htlcs_out;
 	struct simple_htlc **htlcs = tal_arr(tmpctx, struct simple_htlc *, 0);
-	u8 dummy_onion_routing_packet[TOTAL_PACKET_SIZE(ROUTING_INFO_SIZE)];
-	memset(dummy_onion_routing_packet, 0, sizeof(dummy_onion_routing_packet));
 
 	const struct htlc_in *hin;
 	struct htlc_in_map_iter ini;
