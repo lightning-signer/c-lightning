@@ -66,6 +66,8 @@ static struct amount_sat dust_limit;
 static u32 to_self_delay[NUM_SIDES];
 
 /* Where we send money to (our wallet) */
+static u32 our_wallet_index;
+static struct ext_key our_wallet_ext_key;
 static struct pubkey our_wallet_pubkey;
 
 /* Their revocation secret (only if they cheated). */
@@ -660,6 +662,35 @@ static u8 *penalty_to_us(const tal_t *ctx,
 					     tx, wscript);
 }
 
+static void add_keypath_item_to_last_output(struct bitcoin_tx *tx,
+					    u32 index,
+					    const struct ext_key *ext) {
+	// Skip if there is no wallet keypath for this output.
+	if (index == UINT32_MAX)
+		return;
+
+	size_t outndx = tx->psbt->num_outputs - 1;
+	struct wally_map *map_in = &tx->psbt->outputs[outndx].keypaths;
+
+	u8 fingerprint[BIP32_KEY_FINGERPRINT_LEN];
+	if (bip32_key_get_fingerprint(
+		    (struct ext_key *) ext, fingerprint, sizeof(fingerprint)) != WALLY_OK) {
+		abort();
+	}
+
+	u32 path[1];
+	path[0] = index;
+
+	tal_wally_start();
+	if (wally_map_add_keypath_item(map_in,
+				       ext->pub_key, sizeof(ext->pub_key),
+				       fingerprint, sizeof(fingerprint),
+				       path, 1) != WALLY_OK) {
+		abort();
+	}
+	tal_wally_end(tx->psbt);
+}
+
 /*
  * This covers:
  * 1. to-us output spend (`<local_delayedsig> 0`)
@@ -695,6 +726,7 @@ static struct bitcoin_tx *tx_to_us(const tal_t *ctx,
 
 	bitcoin_tx_add_output(
 	    tx, scriptpubkey_p2wpkh(tx, &our_wallet_pubkey), NULL, out->sat);
+	add_keypath_item_to_last_output(tx, our_wallet_index, &our_wallet_ext_key);
 
 	/* Worst-case sig is 73 bytes */
 	weight = bitcoin_tx_weight(tx) + 1 + 3 + 73 + 0 + tal_count(wscript);
@@ -816,12 +848,14 @@ replace_penalty_tx_to_us(const tal_t *ctx,
 			     BITCOIN_TX_RBF_SEQUENCE,
 			     NULL, input_amount, NULL, input_wscript);
 	/* Reconstruct the output with a smaller amount.  */
-	if (amount_sat_greater(output_amount, dust_limit))
+	if (amount_sat_greater(output_amount, dust_limit)) {
 		bitcoin_tx_add_output(tx,
 				      scriptpubkey_p2wpkh(tx,
 							  &our_wallet_pubkey),
 				      NULL,
 				      output_amount);
+		add_keypath_item_to_last_output(tx, our_wallet_index, &our_wallet_ext_key);
+	}
 	else
 		bitcoin_tx_add_output(tx,
 				      scriptpubkey_opreturn_padded(tx),
@@ -4006,6 +4040,8 @@ int main(int argc, char *argv[])
 				   &our_broadcast_txid,
 				   &scriptpubkey[LOCAL],
 				   &scriptpubkey[REMOTE],
+				   &our_wallet_index,
+				   &our_wallet_ext_key,
 				   &our_wallet_pubkey,
 				   &opener,
 				   &basepoints[LOCAL],
