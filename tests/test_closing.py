@@ -1410,6 +1410,7 @@ def test_penalty_htlc_tx_timeout(node_factory, bitcoind, chainparams):
 
 
 @pytest.mark.developer("uses dev_sign_last_tx")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "exceeds max fee policy")
 def test_penalty_rbf_normal(node_factory, bitcoind, executor, chainparams):
     '''
     Test that penalty transactions are RBFed.
@@ -1515,6 +1516,7 @@ def test_penalty_rbf_normal(node_factory, bitcoind, executor, chainparams):
 
 
 @pytest.mark.developer("uses dev_sign_last_tx")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "exceeds max fee policy")
 def test_penalty_rbf_burn(node_factory, bitcoind, executor, chainparams):
     '''
     Test that penalty transactions are RBFed and we are willing to burn
