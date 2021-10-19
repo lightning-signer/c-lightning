@@ -707,7 +707,7 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	tal_wally_end(tal_steal(psbt, tx));
 
 
-	SignFundingTxRequest req;
+	SignOnchainTxRequest req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 
 	// Serialize the tx we modified above which includes witscripts.
@@ -742,8 +742,8 @@ proxy_stat proxy_handle_sign_withdrawal_tx(
 	}
 
 	ClientContext context;
-	SignFundingTxReply rsp;
-	Status status = stub->SignFundingTx(&context, req, &rsp);
+	SignOnchainTxReply rsp;
+	Status status = stub->SignOnchainTx(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_witnesses(rsp.witnesses(), o_wits);
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"witnesses\":%s }",
