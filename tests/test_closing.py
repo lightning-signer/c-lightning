@@ -709,6 +709,7 @@ def test_penalty_outhtlc(node_factory, bitcoind, executor, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.slow_test
 @pytest.mark.developer("requres 'dev-queryrates'")
@@ -750,6 +751,7 @@ def test_channel_lease_falls_behind(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.developer("requres 'dev-queryrates'")
 @pytest.mark.slow_test
@@ -828,6 +830,7 @@ def test_channel_lease_post_expiry(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.slow_test
 @pytest.mark.developer("requres 'dev-queryrates'")
@@ -934,6 +937,7 @@ def test_channel_lease_unilat_closes(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
 @pytest.mark.developer("requres 'dev-queryrates'")
@@ -1007,6 +1011,7 @@ def test_channel_lease_lessor_cheat(node_factory, bitcoind, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
 @pytest.mark.developer("requres 'dev-queryrates'")
