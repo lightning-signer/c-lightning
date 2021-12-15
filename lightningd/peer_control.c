@@ -181,6 +181,7 @@ static struct simple_htlc **collect_htlcs(struct channel *channel, u32 local_fee
 	struct htlc_in_map *htlcs_in = &channel->peer->ld->htlcs_in;
 	struct htlc_out_map *htlcs_out = &channel->peer->ld->htlcs_out;
 	struct simple_htlc **htlcs = tal_arr(tmpctx, struct simple_htlc *, 0);
+	const int committed_flag = HTLC_FLAG(REMOTE, HTLC_F_COMMITTED);
 
 	const struct htlc_in *hin;
 	struct htlc_in_map_iter ini;
@@ -189,8 +190,8 @@ static struct simple_htlc **collect_htlcs(struct channel *channel, u32 local_fee
 	     hin = htlc_in_map_next(htlcs_in, &ini)) {
 		if (hin->key.channel != channel)
 			continue;
-		// FIXME - Do we need a hin->hstate filter here?  The
-		// integration tests pass without having one ...
+		if (!(htlc_state_flags(hin->hstate) & committed_flag))
+			continue;
 		if (htlc_is_trimmed(REMOTE, hin->msat, local_feerate,
 				    channel->our_config.dust_limit, LOCAL,
 				    channel_has(channel, OPT_ANCHOR_OUTPUTS)))
@@ -204,6 +205,7 @@ static struct simple_htlc **collect_htlcs(struct channel *channel, u32 local_fee
 				    );
 		tal_arr_expand(&htlcs, tal_steal(htlcs, simple));
 	}
+
 	const struct htlc_out *hout;
 	struct htlc_out_map_iter outi;
 	for (hout = htlc_out_map_first(htlcs_out, &outi);
@@ -211,7 +213,7 @@ static struct simple_htlc **collect_htlcs(struct channel *channel, u32 local_fee
 	     hout = htlc_out_map_next(htlcs_out, &outi)) {
 		if (hout->key.channel != channel)
 			continue;
-		if (hout->hstate < RCVD_ADD_REVOCATION || hout->hstate > RCVD_REMOVE_COMMIT)
+		if (!(htlc_state_flags(hout->hstate) & committed_flag))
 			continue;
 		if (htlc_is_trimmed(REMOTE, hout->msat, local_feerate,
 				    channel->our_config.dust_limit, LOCAL,
