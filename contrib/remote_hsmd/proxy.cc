@@ -1131,25 +1131,17 @@ proxy_stat proxy_handle_sign_commitment_tx(
 		);
 
 	last_message = "";
-	SignHolderCommitmentTxRequest req;
+	SignHolderCommitmentTxPhase2Request req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
-	marshal_single_input_tx(tx, NULL, req.mutable_tx());
-	for (size_t ii = 0; ii < tal_count(htlcs); ++ii) {
-		if (htlcs[ii]->side == LOCAL) {
-			marshal_htlc(htlcs[ii], req.add_offered_htlcs());
-		} else {
-			marshal_htlc(htlcs[ii], req.add_received_htlcs());
-		}
-	}
 	req.set_commit_num(commit_num);
-	req.set_feerate_sat_per_kw(feerate);
 
 	ClientContext context;
-	SignatureReply rsp;
-	Status status = stub->SignHolderCommitmentTx(&context, req, &rsp);
+	CommitmentTxSignatureReply rsp;
+	Status status = stub->SignHolderCommitmentTxPhase2(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
+		// NOTE - ignoring rsp.htlc_signatures
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),
