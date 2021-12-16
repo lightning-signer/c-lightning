@@ -134,9 +134,6 @@ msgdata,hsmd_sign_commitment_tx,channel_dbid,u64,
 msgdata,hsmd_sign_commitment_tx,tx,bitcoin_tx,
 msgdata,hsmd_sign_commitment_tx,remote_funding_key,pubkey,
 msgdata,hsmd_sign_commitment_tx,commit_num,u64,
-msgdata,hsmd_sign_commitment_tx,num_htlcs,u16,
-msgdata,hsmd_sign_commitment_tx,htlcs,simple_htlc,num_htlcs
-msgdata,hsmd_sign_commitment_tx,feerate,u32,
 
 msgtype,hsmd_sign_commitment_tx_reply,105
 msgdata,hsmd_sign_commitment_tx_reply,sig,bitcoin_signature,

@@ -1105,29 +1105,20 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 }
 
 proxy_stat proxy_handle_sign_commitment_tx(
-	struct bitcoin_tx *tx,
-	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct simple_htlc **htlcs,
-	u64 commit_num, u32 feerate,
+	u64 commit_num,
 	struct bitcoin_signature *o_sig)
 {
 	STATUS_DEBUG(
 		"%s:%d %s { "
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
-		"\"counterparty_funding_pubkey\":%s, \"tx\":%s, "
-		"\"htlcs\":%s, "
-		"\"commit_num\":%" PRIu64 ", "
-		"\"feerate\":%d }",
+		"\"commit_num\":%" PRIu64 " }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		dump_pubkey(counterparty_funding_pubkey).c_str(),
-		dump_tx(tx).c_str(),
-		dump_htlcs((const struct simple_htlc **) htlcs, tal_count(htlcs)).c_str(),
-		commit_num, feerate
+		commit_num
 		);
 
 	last_message = "";

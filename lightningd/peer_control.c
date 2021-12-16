@@ -176,61 +176,6 @@ u8 *p2wpkh_for_keyidx(const tal_t *ctx, struct lightningd *ld, u64 keyidx)
 	return scriptpubkey_p2wpkh(ctx, &shutdownkey);
 }
 
-static struct simple_htlc **collect_htlcs(struct channel *channel, u32 local_feerate) {
-	// Collect the htlcs for call to hsmd.
-	struct htlc_in_map *htlcs_in = &channel->peer->ld->htlcs_in;
-	struct htlc_out_map *htlcs_out = &channel->peer->ld->htlcs_out;
-	struct simple_htlc **htlcs = tal_arr(tmpctx, struct simple_htlc *, 0);
-	const int committed_flag = HTLC_FLAG(REMOTE, HTLC_F_COMMITTED);
-
-	const struct htlc_in *hin;
-	struct htlc_in_map_iter ini;
-	for (hin = htlc_in_map_first(htlcs_in, &ini);
-	     hin;
-	     hin = htlc_in_map_next(htlcs_in, &ini)) {
-		if (hin->key.channel != channel)
-			continue;
-		if (!(htlc_state_flags(hin->hstate) & committed_flag))
-			continue;
-		if (htlc_is_trimmed(REMOTE, hin->msat, local_feerate,
-				    channel->our_config.dust_limit, LOCAL,
-				    channel_has(channel, OPT_ANCHOR_OUTPUTS)))
-			continue;
-		struct simple_htlc *simple =
-		    new_simple_htlc(NULL,
-				    htlc_state_owner(hin->hstate),
-				    hin->msat,
-				    &hin->payment_hash,
-				    hin->cltv_expiry
-				    );
-		tal_arr_expand(&htlcs, tal_steal(htlcs, simple));
-	}
-
-	const struct htlc_out *hout;
-	struct htlc_out_map_iter outi;
-	for (hout = htlc_out_map_first(htlcs_out, &outi);
-	     hout;
-	     hout = htlc_out_map_next(htlcs_out, &outi)) {
-		if (hout->key.channel != channel)
-			continue;
-		if (!(htlc_state_flags(hout->hstate) & committed_flag))
-			continue;
-		if (htlc_is_trimmed(REMOTE, hout->msat, local_feerate,
-				    channel->our_config.dust_limit, LOCAL,
-				    channel_has(channel, OPT_ANCHOR_OUTPUTS)))
-			continue;
-		struct simple_htlc *simple =
-		    new_simple_htlc(NULL,
-				    htlc_state_owner(hout->hstate),
-				    hout->msat,
-				    &hout->payment_hash,
-				    hout->cltv_expiry
-				    );
-		tal_arr_expand(&htlcs, tal_steal(htlcs, simple));
-	}
-	return htlcs;
-}
-
 static void sign_last_tx(struct channel *channel,
 			 struct bitcoin_tx *last_tx,
 			 struct bitcoin_signature *last_sig)
@@ -240,8 +185,6 @@ static void sign_last_tx(struct channel *channel,
 	u8 *msg, **witness;
 
 	u64 commit_index = channel->next_index[LOCAL] - 1;
-	u32 local_feerate = get_feerate(channel->fee_states, channel->opener, LOCAL);
-	struct simple_htlc **htlcs = collect_htlcs(channel, local_feerate);
 
 	assert(!last_tx->wtx->inputs[0].witness);
 	msg = towire_hsmd_sign_commitment_tx(tmpctx,
@@ -250,9 +193,7 @@ static void sign_last_tx(struct channel *channel,
 					     last_tx,
 					     &channel->channel_info
 					     .remote_fundingkey,
-					     commit_index,
-					     (const struct simple_htlc **) htlcs,
-					     local_feerate);
+					     commit_index);
 
 	if (!wire_sync_write(ld->hsm_fd, take(msg)))
 		fatal("Could not write to HSM: %s", strerror(errno));

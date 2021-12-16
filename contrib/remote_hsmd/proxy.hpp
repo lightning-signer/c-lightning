@@ -135,13 +135,9 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 	struct bitcoin_signature *o_sig);
 
 proxy_stat proxy_handle_sign_commitment_tx(
-	struct bitcoin_tx *tx,
-	const struct pubkey *remote_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct simple_htlc **htlc,
 	u64 commit_num,
-	u32 feerate,
 	struct bitcoin_signature *o_sig);
 
 proxy_stat proxy_handle_validate_commitment_tx(
