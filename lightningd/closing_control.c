@@ -785,7 +785,7 @@ static struct command_result *json_close(struct command *cmd,
 						    &final_ext_key) != WALLY_OK) {
 						return command_fail(
 							cmd, LIGHTNINGD,
-							"Could not derive onchain ext key");
+							"Could not derive final_ext_key");
 					}
 					msg = towire_channeld_send_shutdown(
 						NULL,
