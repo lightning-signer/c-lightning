@@ -175,10 +175,11 @@ msgdata,channeld_got_revoke,penalty_tx,?bitcoin_tx,
 # (eg. if we sent another commitment_signed, that would implicitly ack).
 msgtype,channeld_got_revoke_reply,1122
 
+#include <wally_bip32.h>
 # Tell peer to shut down channel.
 msgtype,channeld_send_shutdown,1023
-msgdata,channeld_send_shutdown,final_index,u32,
-msgdata,channeld_send_shutdown,final_ext_key,ext_key,
+msgdata,channeld_send_shutdown,final_index,?u32,
+msgdata,channeld_send_shutdown,final_ext_key,?ext_key,
 msgdata,channeld_send_shutdown,shutdown_len,u16,
 msgdata,channeld_send_shutdown,shutdown_scriptpubkey,u8,shutdown_len
 msgdata,channeld_send_shutdown,wrong_funding,?bitcoin_outpoint,

@@ -54,7 +54,7 @@ static struct bitcoin_tx *close_tx(const tal_t *ctx,
 				   const struct chainparams *chainparams,
 				   struct per_peer_state *pps,
 				   const struct channel_id *channel_id,
-				   u32 local_wallet_index,
+				   u32 *local_wallet_index,
 				   const struct ext_key *local_wallet_ext_key,
 				   u8 *scriptpubkey[NUM_SIDES],
 				   const struct bitcoin_outpoint *funding,
@@ -150,7 +150,7 @@ static void send_offer(struct per_peer_state *pps,
 		       const struct channel_id *channel_id,
 		       const struct pubkey funding_pubkey[NUM_SIDES],
 		       const u8 *funding_wscript,
-		       u32 local_wallet_index,
+		       u32 *local_wallet_index,
 		       const struct ext_key *local_wallet_ext_key,
 		       u8 *scriptpubkey[NUM_SIDES],
 		       const struct bitcoin_outpoint *funding,
@@ -249,7 +249,7 @@ receive_offer(struct per_peer_state *pps,
 	      const struct channel_id *channel_id,
 	      const struct pubkey funding_pubkey[NUM_SIDES],
 	      const u8 *funding_wscript,
-	      u32 local_wallet_index,
+	      u32 *local_wallet_index,
 	      const struct ext_key *local_wallet_ext_key,
 	      u8 *scriptpubkey[NUM_SIDES],
 	      const struct bitcoin_outpoint *funding,
@@ -590,7 +590,7 @@ static size_t closing_tx_weight_estimate(u8 *scriptpubkey[NUM_SIDES],
 					 const struct amount_sat *out,
 					 struct amount_sat funding_sats,
 					 struct amount_sat dust_limit,
-					 u32 local_wallet_index,
+					 u32 *local_wallet_index,
 					 const struct ext_key *local_wallet_ext_key)
 {
 	/* We create a dummy close */
@@ -717,7 +717,7 @@ static void do_quickclose(struct amount_sat offer[NUM_SIDES],
 			  const struct channel_id *channel_id,
 			  const struct pubkey funding_pubkey[NUM_SIDES],
 			  const u8 *funding_wscript,
-			  u32 local_wallet_index,
+			  u32 *local_wallet_index,
 			  const struct ext_key *local_wallet_ext_key,
 			  u8 *scriptpubkey[NUM_SIDES],
 			  const struct bitcoin_outpoint *funding,
@@ -902,8 +902,8 @@ int main(int argc, char *argv[])
 	u32 min_feerate, initial_feerate, *max_feerate;
 	struct feerange feerange;
 	enum side opener;
-	u32 local_wallet_index;
-	struct ext_key local_wallet_ext_key;
+	u32 *local_wallet_index;
+	struct ext_key *local_wallet_ext_key;
 	u8 *scriptpubkey[NUM_SIDES], *funding_wscript;
 	u64 fee_negotiation_step;
 	u8 fee_negotiation_step_unit;
@@ -957,7 +957,7 @@ int main(int argc, char *argv[])
 						   out, funding_sats,
 						   our_dust_limit,
 						   local_wallet_index,
-						   &local_wallet_ext_key),
+						   local_wallet_ext_key),
 			min_feerate, initial_feerate, max_feerate,
 			commitment_fee, funding_sats, opener,
 			&min_fee_to_accept, &offer[LOCAL], &max_fee_to_accept);
@@ -1015,7 +1015,7 @@ int main(int argc, char *argv[])
 		if (whose_turn == LOCAL) {
 			send_offer(pps, chainparams,
 				   &channel_id, funding_pubkey, funding_wscript,
-				   local_wallet_index, &local_wallet_ext_key,
+				   local_wallet_index, local_wallet_ext_key,
 				   scriptpubkey, &funding,
 				   funding_sats, out, opener,
 				   our_dust_limit,
@@ -1038,7 +1038,7 @@ int main(int argc, char *argv[])
 						&channel_id, funding_pubkey,
 						funding_wscript,
 						local_wallet_index,
-						&local_wallet_ext_key,
+						local_wallet_ext_key,
 						scriptpubkey, &funding,
 						funding_sats,
 						out, opener,
@@ -1052,7 +1052,7 @@ int main(int argc, char *argv[])
 				do_quickclose(offer,
 					      pps, &channel_id, funding_pubkey,
 					      funding_wscript,
-					      local_wallet_index, &local_wallet_ext_key,
+					      local_wallet_index, local_wallet_ext_key,
 					      scriptpubkey,
 					      &funding,
 					      funding_sats, out, opener,
@@ -1087,7 +1087,7 @@ int main(int argc, char *argv[])
 			send_offer(pps, chainparams, &channel_id,
 				   funding_pubkey, funding_wscript,
 				   local_wallet_index,
-				   &local_wallet_ext_key,
+				   local_wallet_ext_key,
 				   scriptpubkey, &funding,
 				   funding_sats, out, opener,
 				   our_dust_limit,
@@ -1105,7 +1105,7 @@ int main(int argc, char *argv[])
 						funding_pubkey,
 						funding_wscript,
 						local_wallet_index,
-						&local_wallet_ext_key,
+						local_wallet_ext_key,
 						scriptpubkey, &funding,
 						funding_sats,
 						out, opener,

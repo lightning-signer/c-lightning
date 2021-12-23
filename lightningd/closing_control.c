@@ -454,30 +454,26 @@ void peer_start_closingd(struct channel *channel,
 		return;
 	}
 
-	// Determine the wallet index for our output, UINT32_MAX if not found.
-	u32 local_wallet_index;
-	struct ext_key local_wallet_ext_key;
+	// Determine the wallet index for our output or NULL if not found.
+	u32 *local_wallet_index = NULL;
+	struct ext_key *local_wallet_ext_key = NULL;
+	u32 tmp_index;
+	struct ext_key tmp_ext_key;
 	bool is_p2sh;
 	if (wallet_can_spend(
 		    ld->wallet,
 		    channel->shutdown_scriptpubkey[LOCAL],
-		    &local_wallet_index,
+		    &tmp_index,
 		    &is_p2sh)) {
 		if (bip32_key_from_parent(
 			    ld->wallet->bip32_base,
-			    local_wallet_index,
+			    tmp_index,
 			    BIP32_FLAG_KEY_PUBLIC,
-			    &local_wallet_ext_key) != WALLY_OK) {
+			    &tmp_ext_key) != WALLY_OK) {
 			abort();
 		}
-	} else {
-		local_wallet_index = UINT32_MAX;
-		char *dummy_bip32 =
-			"tpubDAY5hwtonH4NE8zY46ZMFf6B6F3fqMis7cwfNihXXpAg6XzBZNo"
-			"HAdAzAZx2peoU8nTWFqvUncXwJ9qgE5VxcnUKxdut8F6mptVmKjfiwDQ";
-		if (bip32_key_from_base58(dummy_bip32, &local_wallet_ext_key) != WALLY_OK) {
-			abort();
-		}
+		local_wallet_index = &tmp_index;
+		local_wallet_ext_key = &tmp_ext_key;
 	}
 
 	initmsg = towire_closingd_init(tmpctx,
@@ -495,7 +491,7 @@ void peer_start_closingd(struct channel *channel,
 				       min_feerate, feerate, max_feerate,
 				       feelimit,
 				       local_wallet_index,
-				       &local_wallet_ext_key,
+				       local_wallet_ext_key,
 				       channel->shutdown_scriptpubkey[LOCAL],
 				       channel->shutdown_scriptpubkey[REMOTE],
 				       channel->closing_fee_negotiation_step,
@@ -568,6 +564,8 @@ static struct command_result *json_close(struct command *cmd,
 	struct channel *channel;
 	unsigned int *timeout;
 	const u8 *close_to_script = NULL;
+	u32 *final_index;
+	u32 index_val;
 	bool close_script_set, wrong_funding_changed, *force_lease_close;
 	const char *fee_negotiation_step_str;
 	struct bitcoin_outpoint *wrong_funding;
@@ -625,6 +623,10 @@ static struct command_result *json_close(struct command *cmd,
 				    channel->lease_expiry,
 				    get_block_height(cmd->ld->topology));
 
+	assert(channel->final_key_idx <= UINT32_MAX);
+	index_val = (u32) channel->final_key_idx;
+	final_index = &index_val;
+
 	/* If we've set a local shutdown script for this peer, and it's not the
 	 * default upfront script, try to close to a different channel.
 	 * Error is an operator error */
@@ -654,6 +656,17 @@ static struct command_result *json_close(struct command *cmd,
 		channel->shutdown_scriptpubkey[LOCAL]
 			= tal_steal(channel, cast_const(u8 *, close_to_script));
 		close_script_set = true;
+		/* Is the close script in our wallet? */
+		bool is_p2sh;
+		if (wallet_can_spend(
+			    cmd->ld->wallet,
+			    channel->shutdown_scriptpubkey[LOCAL],
+			    &index_val,
+			    &is_p2sh)) {
+			final_index = &index_val;
+		} else {
+			final_index = NULL;
+		}
 	} else if (!channel->shutdown_scriptpubkey[LOCAL]) {
 		channel->shutdown_scriptpubkey[LOCAL]
 			= p2wpkh_for_keyidx(channel, cmd->ld, channel->final_key_idx);
@@ -777,20 +790,24 @@ static struct command_result *json_close(struct command *cmd,
 						NULL,
 						channel->shutdown_scriptpubkey[LOCAL]);
 				} else {
-					struct ext_key final_ext_key;
-					if (bip32_key_from_parent(
-						    channel->peer->ld->wallet->bip32_base,
-						    channel->final_key_idx,
-						    BIP32_FLAG_KEY_PUBLIC,
-						    &final_ext_key) != WALLY_OK) {
-						return command_fail(
-							cmd, LIGHTNINGD,
-							"Could not derive final_ext_key");
+					struct ext_key ext_key_val;
+					struct ext_key *final_ext_key = NULL;
+					if (final_index) {
+						if (bip32_key_from_parent(
+							    channel->peer->ld->wallet->bip32_base,
+							    *final_index,
+							    BIP32_FLAG_KEY_PUBLIC,
+							    &ext_key_val) != WALLY_OK) {
+							return command_fail(
+								cmd, LIGHTNINGD,
+								"Could not derive final_ext_key");
+						}
+						final_ext_key = &ext_key_val;
 					}
 					msg = towire_channeld_send_shutdown(
 						NULL,
-						channel->final_key_idx,
-						&final_ext_key,
+						final_index,
+						final_ext_key,
 						channel->shutdown_scriptpubkey[LOCAL],
 						channel->shutdown_wrong_funding);
 				}
