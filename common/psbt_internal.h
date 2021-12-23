@@ -37,6 +37,10 @@ psbt_to_witness_stacks(const tal_t *ctx,
 
 /* psbt_add_keypath_to_last_output - augment the last output with the
  * given wallet keypath
+ *
+ * @tx - transaction to modify
+ * @index - child index of the wallet key
+ * @ext - extended public key of the immediate parent of the wallet key
  */
 void psbt_add_keypath_to_last_output(struct bitcoin_tx *tx,
 				     u32 index,
