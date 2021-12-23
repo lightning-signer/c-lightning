@@ -457,23 +457,24 @@ void peer_start_closingd(struct channel *channel,
 	// Determine the wallet index for our output or NULL if not found.
 	u32 *local_wallet_index = NULL;
 	struct ext_key *local_wallet_ext_key = NULL;
-	u32 tmp_index;
-	struct ext_key tmp_ext_key;
+	u32 index_val;
+	struct ext_key ext_key_val;
 	bool is_p2sh;
 	if (wallet_can_spend(
 		    ld->wallet,
 		    channel->shutdown_scriptpubkey[LOCAL],
-		    &tmp_index,
+		    &index_val,
 		    &is_p2sh)) {
 		if (bip32_key_from_parent(
 			    ld->wallet->bip32_base,
-			    tmp_index,
+			    index_val,
 			    BIP32_FLAG_KEY_PUBLIC,
-			    &tmp_ext_key) != WALLY_OK) {
-			abort();
+			    &ext_key_val) != WALLY_OK) {
+			channel_internal_error(channel, "Could not derive ext public key");
+			return;
 		}
-		local_wallet_index = &tmp_index;
-		local_wallet_ext_key = &tmp_ext_key;
+		local_wallet_index = &index_val;
+		local_wallet_ext_key = &ext_key_val;
 	}
 
 	initmsg = towire_closingd_init(tmpctx,
