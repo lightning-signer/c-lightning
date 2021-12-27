@@ -655,8 +655,8 @@ static struct command_result *match_psbt_inputs_to_utxos(struct command *cmd,
 	return NULL;
 }
 
-static struct command_result *match_psbt_outputs_to_wallet(struct wally_psbt *psbt,
-							   struct wallet *w)
+static void match_psbt_outputs_to_wallet(struct wally_psbt *psbt,
+				  struct wallet *w)
 {
 	assert(psbt->tx->num_outputs == psbt->num_outputs);
 	tal_wally_start();
@@ -676,7 +676,6 @@ static struct command_result *match_psbt_outputs_to_wallet(struct wally_psbt *ps
 		wallet_set_keypath(w, index, &psbt->outputs[outndx].keypaths);
 	}
 	tal_wally_end(psbt);
-	return NULL;
 }
 
 static struct command_result *param_input_numbers(struct command *cmd,
@@ -743,9 +742,7 @@ static struct command_result *json_signpsbt(struct command *cmd,
 				    "No wallet inputs to sign");
 
 	// Update the keypaths on any outputs that are in our wallet (change addresses).
-	res = match_psbt_outputs_to_wallet(psbt, cmd->ld->wallet);
-	if (res)
-		return res;
+	match_psbt_outputs_to_wallet(psbt, cmd->ld->wallet);
 
 	/* FIXME: hsm will sign almost anything, but it should really
 	 * fail cleanly (not abort!) and let us report the error here. */
