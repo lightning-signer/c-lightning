@@ -285,7 +285,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 	 *    `dust_limit_satoshis`, add a [`to_remote`
 	 *    output](#to_remote-output).
 	 */
-	const u8 *redeem = NULL;
+	u8 *redeem = NULL;
 	if (amount_msat_greater_eq_sat(other_pay, dust_limit)) {
 		struct amount_sat amount = amount_msat_to_sat_round_down(other_pay);
 		u8 *scriptpubkey;
@@ -325,7 +325,7 @@ struct bitcoin_tx *commit_tx(const tal_t *ctx,
 			scriptpubkey = scriptpubkey_p2wpkh(tmpctx,
 							   &keyset->other_payment_key);
 		}
-		pos = bitcoin_tx_add_output(tx, scriptpubkey, (u8 *) redeem, amount);
+		pos = bitcoin_tx_add_output(tx, scriptpubkey, redeem, amount);
 		assert(pos == n);
 		(*htlcmap)[n] = direct_outputs ? dummy_to_remote : NULL;
 		/* We don't assign cltvs[n]: if we use it, order doesn't matter.
