@@ -3,7 +3,7 @@
 #include <bitcoin/script.h>
 #include <common/close_tx.h>
 #include <common/permute_tx.h>
-#include <common/psbt_internal.h>
+#include <common/psbt_keypath.h>
 #include <common/utils.h>
 
 struct bitcoin_tx *create_close_tx(const tal_t *ctx,
