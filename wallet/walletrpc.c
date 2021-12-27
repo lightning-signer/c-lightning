@@ -10,6 +10,7 @@
 #include <common/json_tok.h>
 #include <common/key_derive.h>
 #include <common/param.h>
+#include <common/psbt_keypath.h>
 #include <common/type_to_string.h>
 #include <errno.h>
 #include <hsmd/hsmd_wiregen.h>
@@ -664,6 +665,7 @@ static void match_psbt_outputs_to_wallet(struct wally_psbt *psbt,
 		u32 index;
 		bool is_p2sh;
 		const u8 *script;
+		struct ext_key ext;
 
 		script = wally_tx_output_get_script(tmpctx,
 						    &psbt->tx->outputs[outndx]);
@@ -673,7 +675,12 @@ static void match_psbt_outputs_to_wallet(struct wally_psbt *psbt,
 		if (!wallet_can_spend(w, script, &index, &is_p2sh))
 			continue;
 
-		wallet_set_keypath(w, index, &psbt->outputs[outndx].keypaths);
+		if (bip32_key_from_parent(
+			    w->bip32_base, index, BIP32_FLAG_KEY_PUBLIC, &ext) != WALLY_OK) {
+			abort();
+		}
+
+		psbt_set_keypath(index, &ext, &psbt->outputs[outndx].keypaths);
 	}
 	tal_wally_end(psbt);
 }
