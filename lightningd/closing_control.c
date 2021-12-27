@@ -624,6 +624,10 @@ static struct command_result *json_close(struct command *cmd,
 				    channel->lease_expiry,
 				    get_block_height(cmd->ld->topology));
 
+	/* Set the wallet index to the default value; it is updated
+	 * below if the close_to_script is found to be in the
+	 * wallet. If the close_to_script is not in the wallet
+	 * final_index will be set to NULL instead.*/
 	assert(channel->final_key_idx <= UINT32_MAX);
 	index_val = (u32) channel->final_key_idx;
 	final_index = &index_val;
@@ -664,7 +668,7 @@ static struct command_result *json_close(struct command *cmd,
 			    channel->shutdown_scriptpubkey[LOCAL],
 			    &index_val,
 			    &is_p2sh)) {
-			final_index = &index_val;
+			/* index_val has been set to the discovered wallet index */
 		} else {
 			final_index = NULL;
 		}
