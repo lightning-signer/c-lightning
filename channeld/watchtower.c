@@ -78,7 +78,8 @@ penalty_tx_create(const tal_t *ctx,
 			     NULL, to_them_sats, NULL, wscript);
 
 	bitcoin_tx_add_output(tx, final_scriptpubkey, NULL, to_them_sats);
-	if (final_index && final_ext_key)
+	assert((final_index == NULL) == (final_ext_key == NULL));
+	if (final_index)
 		psbt_add_keypath_to_last_output(tx, *final_index, final_ext_key);
 
 	/* Worst-case sig is 73 bytes */

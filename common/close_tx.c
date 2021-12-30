@@ -49,7 +49,8 @@ struct bitcoin_tx *create_close_tx(const tal_t *ctx,
 		script = tal_dup_talarr(tx, u8, our_script);
 		/* One output is to us. */
 		bitcoin_tx_add_output(tx, script, NULL, to_us);
-		if (local_wallet_index && local_wallet_ext_key)
+		assert((local_wallet_index == NULL) == (local_wallet_ext_key == NULL));
+		if (local_wallet_index)
 			psbt_add_keypath_to_last_output(
 				tx, *local_wallet_index, local_wallet_ext_key);
 		num_outputs++;
