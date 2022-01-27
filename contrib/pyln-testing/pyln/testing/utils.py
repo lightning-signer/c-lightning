@@ -521,6 +521,7 @@ class RemoteSignerD(TailableProc):
         self.opts = [
             '--log-level-console=DEBUG',
             '--log-level-disk=DEBUG',
+            '--network={}'.format(TEST_NETWORK),
             '--datadir={}'.format(rsignerd_dir),
             '--port={}'.format(rsignerd_port),
             '--initial-allowlist-file={}'.format(env('REMOTE_SIGNER_ALLOWLIST',
