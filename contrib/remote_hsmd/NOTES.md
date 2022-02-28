@@ -3,20 +3,29 @@ c-lightning
 
 Setup
 
+    # Add an "upstream" reference and fetch all tags (needed for pyln-{proto,client,testing})
+    git remote add upstream git@github.com:ElementsProject/lightning.git
+    git fetch --all --recurse-submodules
+    git fetch --tags
+
     (cd contrib/remote_hsmd && \
     ln -s ../../../validating-lightning-signer/lightning-signer-server/src/server/remotesigner.proto)
 
- Building
+Additional Dependencies (needed after applying steps in `doc/INSTALL`):
+
+On Ubuntu:
+
+    sudo apt-get install -y libgrpc-dev libgrpc++-dev protobuf-compiler-grpc
+
+On Fedora:
+
+    sudo dnf install -y grpc-devel grpc-plugins
+
+Building
 
     make distclean
     ./configure --enable-developer
     make
-
-Dependencies
-
-- libgrpc-dev
-- libgrpc++-dev
-- grpc-plugins
 
 Build libsecp256k1 with `./configure --enable-module-recovery`, see
 https://github.com/golemfactory/golem/issues/2168 for background.
