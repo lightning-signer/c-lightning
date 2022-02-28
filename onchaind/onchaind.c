@@ -11,7 +11,7 @@
 #include <common/memleak.h>
 #include <common/overflows.h>
 #include <common/peer_billboard.h>
-#include <common/psbt_internal.h>
+#include <common/psbt_keypath.h>
 #include <common/status.h>
 #include <common/subdaemon.h>
 #include <common/type_to_string.h>

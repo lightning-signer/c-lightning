@@ -101,33 +101,3 @@ psbt_to_witness_stacks(const tal_t *ctx,
 	tal_resize(&stacks, stack_index);
 	return stacks;
 }
-
-void psbt_add_keypath_to_last_output(struct bitcoin_tx *tx,
-				     u32 index,
-				     const struct ext_key *ext) {
-	// Skip if there is no wallet keypath for this output.
-	if (index == UINT32_MAX)
-		return;
-
-	size_t outndx = tx->psbt->num_outputs - 1;
-	struct wally_map *map_in = &tx->psbt->outputs[outndx].keypaths;
-
-	u8 fingerprint[BIP32_KEY_FINGERPRINT_LEN];
-	if (bip32_key_get_fingerprint(
-		    (struct ext_key *) ext, fingerprint, sizeof(fingerprint)) != WALLY_OK) {
-		return; /* FIXME: throw an error ? */
-	}
-
-	u32 path[1];
-	path[0] = index;
-
-	tal_wally_start();
-	if (wally_map_add_keypath_item(map_in,
-				       ext->pub_key, sizeof(ext->pub_key),
-				       fingerprint, sizeof(fingerprint),
-				       path, 1) != WALLY_OK) {
-		return; /* FIXME: throw an error ? */
-	}
-	tal_wally_end(tx->psbt);
-}
-

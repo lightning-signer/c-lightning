@@ -653,7 +653,7 @@ void peer_start_channeld(struct channel *channel,
 		    BIP32_FLAG_KEY_PUBLIC,
 		    &final_ext_key) != WALLY_OK) {
 		channel_internal_error(channel,
-				       "Could not derive onchain ext key %"PRIu64,
+				       "Could not derive final_ext_key %"PRIu64,
 				       channel->final_key_idx);
 		return;
 	}

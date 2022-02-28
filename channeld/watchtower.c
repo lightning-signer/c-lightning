@@ -5,7 +5,7 @@
 #include <common/features.h>
 #include <common/htlc_tx.h>
 #include <common/keyset.h>
-#include <common/psbt_internal.h>
+#include <common/psbt_keypath.h>
 #include <common/status.h>
 #include <common/type_to_string.h>
 #include <hsmd/hsmd_wiregen.h>
@@ -17,7 +17,7 @@ const struct bitcoin_tx *
 penalty_tx_create(const tal_t *ctx,
 		  const struct channel *channel,
 		  u32 penalty_feerate,
-		  u32 final_index,
+		  u32 *final_index,
 		  struct ext_key *final_ext_key,
 		  u8 *final_scriptpubkey,
 		  const struct secret *revocation_preimage,
@@ -78,7 +78,9 @@ penalty_tx_create(const tal_t *ctx,
 			     NULL, to_them_sats, NULL, wscript);
 
 	bitcoin_tx_add_output(tx, final_scriptpubkey, NULL, to_them_sats);
-	psbt_add_keypath_to_last_output(tx, final_index, final_ext_key);
+	assert((final_index == NULL) == (final_ext_key == NULL));
+	if (final_index)
+		psbt_add_keypath_to_last_output(tx, *final_index, final_ext_key);
 
 	/* Worst-case sig is 73 bytes */
 	weight = bitcoin_tx_weight(tx) + 1 + 3 + 73 + 0 + tal_count(wscript);

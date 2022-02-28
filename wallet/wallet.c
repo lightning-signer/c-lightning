@@ -7,6 +7,7 @@
 #include <common/blockheight_states.h>
 #include <common/fee_states.h>
 #include <common/onionreply.h>
+#include <common/psbt_internal.h>
 #include <common/type_to_string.h>
 #include <lightningd/chaintopology.h>
 #include <lightningd/channel.h>
@@ -19,7 +20,6 @@
 #include <wallet/txfilter.h>
 #include <wallet/wallet.h>
 #include <wally_bip32.h>
-#include <wally_psbt.h>
 
 #define SQLITE_MAX_UINT 0x7FFFFFFFFFFFFFFF
 #define DIRECTION_INCOMING 0
@@ -657,30 +657,6 @@ bool wallet_can_spend(struct wallet *w, const u8 *script,
 		tal_free(s);
 	}
 	return false;
-}
-
-void wallet_set_keypath(struct wallet *w, u32 index, struct wally_map *map_in)
-{
-	log_debug(w->log, "wallet_set_keypath index=%d", index);
-
-	struct ext_key ext;
-	if (bip32_key_from_parent(w->bip32_base, index, BIP32_FLAG_KEY_PUBLIC, &ext) != WALLY_OK) {
-		abort();
-	}
-
-	u8 fingerprint[BIP32_KEY_FINGERPRINT_LEN];
-	if (bip32_key_get_fingerprint(&ext, fingerprint, sizeof(fingerprint)) != WALLY_OK) {
-		abort();
-	}
-
-	u32 path[1];
-	path[0] = index;
-	if (wally_map_add_keypath_item(map_in,
-				       ext.pub_key, sizeof(ext.pub_key),
-				       fingerprint, sizeof(fingerprint),
-				       path, 1) != WALLY_OK) {
-		abort();
-	}
 }
 
 s64 wallet_get_newindex(struct lightningd *ld)

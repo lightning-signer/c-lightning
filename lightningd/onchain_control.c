@@ -649,7 +649,7 @@ enum watch_result onchaind_funding_spent(struct channel *channel,
 		    channel->final_key_idx,
 		    BIP32_FLAG_KEY_PUBLIC,
 		    &final_wallet_ext_key) != WALLY_OK) {
-		log_broken(channel->log, "Could not derive onchain ext key %"PRIu64,
+		log_broken(channel->log, "Could not derive final_wallet_ext_key %"PRIu64,
 			   channel->final_key_idx);
 		return KEEP_WATCHING;
 	}

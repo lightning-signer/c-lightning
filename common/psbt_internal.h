@@ -8,6 +8,7 @@
 
 struct bitcoin_tx;
 struct ext_key;
+struct wally_map;
 struct wally_psbt;
 struct wally_psbt_input;
 struct witness_element;
@@ -34,12 +35,5 @@ const struct witness_stack **
 psbt_to_witness_stacks(const tal_t *ctx,
 		       const struct wally_psbt *psbt,
 		       enum tx_role side_to_stack);
-
-/* psbt_add_keypath_to_last_output - augment the last output with the
- * given wallet keypath
- */
-void psbt_add_keypath_to_last_output(struct bitcoin_tx *tx,
-				     u32 index,
-				     const struct ext_key *ext);
 
 #endif /* LIGHTNING_COMMON_PSBT_INTERNAL_H */

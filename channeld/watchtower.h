@@ -9,7 +9,7 @@ const struct bitcoin_tx *
 penalty_tx_create(const tal_t *ctx,
 		  const struct channel *channel,
 		  u32 penalty_feerate,
-		  u32 final_index,
+		  u32 *final_index,
 		  struct ext_key *final_ext_key,
 		  u8 *final_scriptpubkey,
 		  const struct secret *revocation_preimage,

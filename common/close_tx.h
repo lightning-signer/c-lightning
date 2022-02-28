@@ -9,7 +9,7 @@ struct ext_key;
  * input scriptsig. */
 struct bitcoin_tx *create_close_tx(const tal_t *ctx,
 				   const struct chainparams *chainparams,
-				   u32 local_wallet_index,
+				   u32 *local_wallet_index,
 				   const struct ext_key *local_wallet_ext_key,
 				   const u8 *our_script,
 				   const u8 *their_script,

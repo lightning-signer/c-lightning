@@ -40,6 +40,14 @@ Run a single test:
 Re-run failures from prior run:
 
     ./contrib/remote_hsmd/scripts/rerun-failed-tests < log |& tee log2
+    
+To run tests using anchors, rebuild w/ experimental features:
+
+    make distclean
+    ./configure --enable-developer --enable-experimental-features
+    make
+
+    ./contrib/remote_hsmd/scripts/run-all-tests |& tee log
 
 Some popular tests:
 
