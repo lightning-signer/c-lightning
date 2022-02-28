@@ -1860,6 +1860,8 @@ static u8 *accepter_commits(struct state *state,
 		return NULL;
 	}
 
+	validate_initial_commitment_signature(local_commit, &remote_sig);
+
 	/* BOLT #2:
 	 *
 	 * The recipient:
@@ -2584,6 +2586,8 @@ static u8 *opener_commits(struct state *state,
 		revert_channel_state(state);
 		return NULL;
 	}
+
+	validate_initial_commitment_signature(local_commit, &remote_sig);
 
 	/* BOLT #2:
 	 *
