@@ -1,7 +1,7 @@
 #!/usr/bin/sh
 
 SUBDAEMON='hsmd:remote_hsmd' \
-REMOTE_SIGNER_CMD=$(pwd)/../rust-lightning-signer/target/debug/server \
+REMOTE_SIGNER_CMD=$(pwd)/../validating-lightning-signer/target/debug/server \
 REMOTE_SIGNER_ALLOWLIST=$(pwd)/contrib/remote_hsmd/TESTING_ALLOWLIST \
 make \
 -j16 PYTEST_PAR=32 \

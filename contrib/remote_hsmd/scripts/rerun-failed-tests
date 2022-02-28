@@ -12,7 +12,7 @@ TEST_DEBUG=1 \
 DEVELOPER=1 \
 VALGRIND=0 \
 SUBDAEMON='hsmd:remote_hsmd' \
-REMOTE_SIGNER_CMD=$(pwd)/../rust-lightning-signer/target/debug/server \
+REMOTE_SIGNER_CMD=$(pwd)/../validating-lightning-signer/target/debug/server \
 REMOTE_SIGNER_ALLOWLIST=$(pwd)/contrib/remote_hsmd/TESTING_ALLOWLIST \
 pytest \
 $TESTS \

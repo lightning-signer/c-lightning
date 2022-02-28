@@ -47,7 +47,7 @@ pip3 install --user \
 git clone https://github.com/lightningnetwork/lightning-rfc.git ../lightning-rfc
 git submodule update --init --recursive
 
-wget -q --directory-prefix=contrib/remote_hsmd https://gitlab.com/lightning-signer/rust-lightning-signer/-/raw/master/src/server/remotesigner.proto
+wget -q --directory-prefix=contrib/remote_hsmd https://gitlab.com/lightning-signer/validating-lightning-signer/-/raw/master/src/server/remotesigner.proto
 
 ./configure CC="$CC"
 cat config.vars
