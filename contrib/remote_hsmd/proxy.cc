@@ -1105,51 +1105,34 @@ proxy_stat proxy_handle_sign_mutual_close_tx(
 }
 
 proxy_stat proxy_handle_sign_commitment_tx(
-	struct bitcoin_tx *tx,
-	const struct pubkey *counterparty_funding_pubkey,
 	struct node_id *peer_id,
 	u64 dbid,
-	struct simple_htlc **htlcs,
-	u64 commit_num, u32 feerate,
+	u64 commit_num,
 	struct bitcoin_signature *o_sig)
 {
 	STATUS_DEBUG(
 		"%s:%d %s { "
 		"\"self_id\":%s, \"peer_id\":%s, \"dbid\":%" PRIu64 ", "
-		"\"counterparty_funding_pubkey\":%s, \"tx\":%s, "
-		"\"htlcs\":%s, "
-		"\"commit_num\":%" PRIu64 ", "
-		"\"feerate\":%d }",
+		"\"commit_num\":%" PRIu64 " }",
 		__FILE__, __LINE__, __FUNCTION__,
 		dump_node_id(&self_id).c_str(),
 		dump_node_id(peer_id).c_str(),
 		dbid,
-		dump_pubkey(counterparty_funding_pubkey).c_str(),
-		dump_tx(tx).c_str(),
-		dump_htlcs((const struct simple_htlc **) htlcs, tal_count(htlcs)).c_str(),
-		commit_num, feerate
+		commit_num
 		);
 
 	last_message = "";
-	SignHolderCommitmentTxRequest req;
+	SignHolderCommitmentTxPhase2Request req;
 	marshal_node_id(&self_id, req.mutable_node_id());
 	marshal_channel_nonce(peer_id, dbid, req.mutable_channel_nonce());
-	marshal_single_input_tx(tx, NULL, req.mutable_tx());
-	for (size_t ii = 0; ii < tal_count(htlcs); ++ii) {
-		if (htlcs[ii]->side == LOCAL) {
-			marshal_htlc(htlcs[ii], req.add_offered_htlcs());
-		} else {
-			marshal_htlc(htlcs[ii], req.add_received_htlcs());
-		}
-	}
 	req.set_commit_num(commit_num);
-	req.set_feerate_sat_per_kw(feerate);
 
 	ClientContext context;
-	SignatureReply rsp;
-	Status status = stub->SignHolderCommitmentTx(&context, req, &rsp);
+	CommitmentTxSignatureReply rsp;
+	Status status = stub->SignHolderCommitmentTxPhase2(&context, req, &rsp);
 	if (status.ok()) {
 		unmarshal_bitcoin_signature(rsp.signature(), o_sig);
+		// NOTE - ignoring rsp.htlc_signatures
 		STATUS_DEBUG("%s:%d %s { \"self_id\":%s, \"sig\":%s }",
 			     __FILE__, __LINE__, __FUNCTION__,
 			     dump_node_id(&self_id).c_str(),

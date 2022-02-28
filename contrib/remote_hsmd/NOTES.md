@@ -4,9 +4,9 @@ c-lightning
 Setup
 
     (cd contrib/remote_hsmd && \
-    ln -s ../../../rust-lightning-signer/lightning-signer-server/src/server/remotesigner.proto)
+    ln -s ../../../validating-lightning-signer/lightning-signer-server/src/server/remotesigner.proto)
 
-Building
+ Building
 
     make distclean
     ./configure --enable-developer
@@ -91,7 +91,7 @@ Some popular tests:
     export THETEST=tests/test_connection.py::test_fee_limits
     export THETEST=tests/test_closing.py::test_option_upfront_shutdown_script
 
-rust-lightning-signer
+validating-lightning-signer
 ----------------------------------------------------------------
 
     cargo run --bin server -- --no-persist --test-mode |& tee log3
