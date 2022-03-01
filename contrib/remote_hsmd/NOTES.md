@@ -5,8 +5,7 @@ Setup
 
     # Add an "upstream" reference and fetch all tags (needed for pyln-{proto,client,testing})
     git remote add upstream git@github.com:ElementsProject/lightning.git
-    git fetch --all --recurse-submodules
-    git fetch --tags
+    git fetch upstream --tags
 
     (cd contrib/remote_hsmd && \
     ln -s ../../../validating-lightning-signer/lightning-signer-server/src/server/remotesigner.proto)
