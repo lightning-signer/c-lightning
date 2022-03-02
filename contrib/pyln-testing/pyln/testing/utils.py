@@ -638,7 +638,7 @@ class LightningD(TailableProc):
                 self.vlsd.start(stdin, stdout, stderr, wait_for_initialized)
 
                 # We can't do this in the constructor because we need a new port on each restart.
-                self.env['REMOTE_HSMD_ENDPOINT'] = 'localhost:{}'.format(vlsd_port)
+                self.env['REMOTE_HSMD_ENDPOINT'] = '127.0.0.1:{}'.format(vlsd_port)
 
             self.opts['bitcoin-rpcport'] = self.rpcproxy.rpcport
             TailableProc.start(self, stdin, stdout, stderr)
