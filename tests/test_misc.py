@@ -1189,7 +1189,6 @@ def test_cli_no_argument():
     assert "Usage: cli/lightning-cli <command> [<params>...]" in out.stdout.decode()
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't have repeatable random seeding")
 def test_blockchaintrack(node_factory, bitcoind):
     """Check that we track the blockchain correctly across reorgs
     """
