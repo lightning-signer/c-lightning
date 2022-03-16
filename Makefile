@@ -421,6 +421,10 @@ else
 PYTEST_OPTS += -x
 endif
 
+ifneq ($(PYTEST_MOREOPTS),)
+PYTEST_OPTS += $(PYTEST_MOREOPTS)
+endif
+
 check-units:
 
 check: check-units installcheck check-protos pytest
