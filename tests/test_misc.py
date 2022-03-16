@@ -461,6 +461,7 @@ def test_bech32_funding(node_factory, chainparams):
     assert only_one(fundingtx['vin'])['txid'] == res['wallettxid']
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address")
 def test_withdraw_misc(node_factory, bitcoind, chainparams):
     def dont_spend_outputs(n, txid):
         """Reserve both outputs (we assume there are two!) in case any our ours, so we don't spend change: wrecks accounting checks"""
@@ -1158,6 +1159,7 @@ def test_cli_commando(node_factory):
     assert only_one(j['invoices'])['label'] == 'l"[]{}'
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd integration test job control fails here")
 def test_daemon_option(node_factory):
     """
     Make sure --daemon at least vaguely works!
@@ -1194,6 +1196,7 @@ def test_daemon_option(node_factory):
 
 
 @pytest.mark.developer("needs DEVELOPER=1")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't have repeatable random seeding")
 def test_blockchaintrack(node_factory, bitcoind):
     """Check that we track the blockchain correctly across reorgs
     """
@@ -1668,6 +1671,7 @@ def test_logging(node_factory):
 
 @unittest.skipIf(VALGRIND,
                  "Valgrind sometimes fails assert on injected SEGV")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "temporary, until fedora-34 gets crashlog libs fixed")
 def test_crashlog(node_factory):
     l1 = node_factory.get_node(may_fail=True, allow_broken_log=True)
 
@@ -1900,6 +1904,7 @@ def test_bitcoind_fail_first(node_factory, bitcoind):
 
 @pytest.mark.developer("needs --dev-force-bip32-seed")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Addresses are network specific")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support forced secrets")
 def test_dev_force_bip32_seed(node_factory):
     l1 = node_factory.get_node(options={'dev-force-bip32-seed': '0000000000000000000000000000000000000000000000000000000000000001'})
     # First is m/0/0/1 ..
@@ -2243,6 +2248,7 @@ def test_regtest_upgrade(node_factory):
 
 @unittest.skipIf(VALGRIND, "valgrind files can't be written since we rmdir")
 @unittest.skipIf(TEST_NETWORK != "regtest", "needs bitcoin mainnet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't create hsm_secret file")
 def test_new_node_is_mainnet(node_factory):
     """Test that an empty directory causes us to be on mainnet"""
     l1 = node_factory.get_node(start=False, may_fail=True)
