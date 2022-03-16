@@ -2145,6 +2145,7 @@ def test_coin_movement_notices(node_factory, bitcoind, chainparams):
     check_coin_moves(l2, chanid_3, l2_l3_mvts, chainparams)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "trouble managing remotesigner when node killed this way")
 def test_important_plugin(node_factory):
     # Cache it here.
     pluginsdir = os.path.join(os.path.dirname(__file__), "plugins")
