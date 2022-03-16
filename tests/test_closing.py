@@ -753,6 +753,7 @@ def test_penalty_outhtlc(node_factory, bitcoind, executor, chainparams, anchors)
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.slow_test
 @pytest.mark.developer("requres 'dev-queryrates'")
@@ -795,6 +796,7 @@ def test_channel_lease_falls_behind(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.developer("requres 'dev-queryrates'")
 @pytest.mark.slow_test
@@ -897,6 +899,7 @@ def test_channel_lease_post_expiry(node_factory, bitcoind, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.slow_test
 @pytest.mark.developer("requres 'dev-queryrates'")
@@ -1010,6 +1013,7 @@ def test_channel_lease_unilat_closes(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
 @pytest.mark.developer("requres 'dev-queryrates'")
@@ -1087,6 +1091,7 @@ def test_channel_lease_lessor_cheat(node_factory, bitcoind, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
 @pytest.mark.developer("requres 'dev-queryrates', dev-no-reconnect")
@@ -1165,6 +1170,7 @@ def test_channel_lease_lessee_cheat(node_factory, bitcoind, chainparams):
 
 @pytest.mark.developer("needs DEVELOPER=1")
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't sign revoked commitment number")
 @pytest.mark.slow_test
 @pytest.mark.parametrize("anchors", [False, True])
 def test_penalty_htlc_tx_fulfill(node_factory, bitcoind, chainparams, anchors):
@@ -1350,6 +1356,7 @@ def test_penalty_htlc_tx_fulfill(node_factory, bitcoind, chainparams, anchors):
 
 @pytest.mark.developer("needs DEVELOPER=1")
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't sign revoked commitment number")
 @pytest.mark.slow_test
 @pytest.mark.parametrize("anchors", [False, True])
 def test_penalty_htlc_tx_timeout(node_factory, bitcoind, chainparams, anchors):
@@ -1579,6 +1586,7 @@ def test_penalty_htlc_tx_timeout(node_factory, bitcoind, chainparams, anchors):
 
 
 @pytest.mark.developer("uses dev_sign_last_tx")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "exceeds max fee policy")
 @pytest.mark.parametrize("anchors", [False, True])
 def test_penalty_rbf_normal(node_factory, bitcoind, executor, chainparams, anchors):
     '''
@@ -3094,6 +3102,7 @@ def test_permfail_htlc_out(node_factory, bitcoind, executor):
 
 
 @pytest.mark.developer("needs DEVELOPER=1")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address")
 def test_permfail(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2)
 
@@ -3195,6 +3204,7 @@ def test_shutdown(node_factory):
 
 
 @pytest.mark.developer("needs to set upfront_shutdown_script")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy failure: validate_mutual_close_tx: holder_script doesn't match upfront holder_shutdown_script")
 def test_option_upfront_shutdown_script(node_factory, bitcoind, executor, chainparams):
     l1 = node_factory.get_node(start=False, allow_warning=True)
     # Insist on upfront script we're not going to match.
