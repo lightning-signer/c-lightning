@@ -147,7 +147,7 @@ extern const tal_t *wally_tal_ctx;
 
 /* Like mkstemp but resolves template relative to $TMPDIR (or /tmp if unset).
  * Returns created temporary path name at *created if successful. */
-int tmpdir_mkstemp(const tal_t *ctx, const char *template TAKES, char **created);
+int tmpdir_mkstemp(const tal_t *ctx, const char *tmplt TAKES, char **created);
 
 /**
  * tal_strlowering - return the same string by in lower case.
