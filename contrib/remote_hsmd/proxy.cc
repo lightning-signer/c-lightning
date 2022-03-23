@@ -76,6 +76,7 @@ proxy_stat map_status(Status const & status)
 	case StatusCode::UNAVAILABLE:		return PROXY_UNAVAILABLE;
 	case StatusCode::INVALID_ARGUMENT:	return PROXY_INVALID_ARGUMENT;
 	case StatusCode::INTERNAL:		return PROXY_INTERNAL_ERROR;
+	case StatusCode::FAILED_PRECONDITION:	return PROXY_FAILED_PRECONDITION;
 	default:
 		cerr << "UNHANDLED grpc::StatusCode " << int(code)
 		     << ": " << status.error_message()

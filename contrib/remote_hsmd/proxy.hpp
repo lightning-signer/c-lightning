@@ -35,6 +35,7 @@ enum proxy_status {
 
 	/* PERMANENT */
 	PROXY_INVALID_ARGUMENT = 100,
+	PROXY_FAILED_PRECONDITION = 101,
 	PROXY_INTERNAL_ERROR = 200,
 };
 typedef enum proxy_status proxy_stat;
