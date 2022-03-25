@@ -3616,6 +3616,7 @@ def test_close_twice(node_factory, executor):
     assert fut2.result(TIMEOUT)['type'] == 'mutual'
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "VLS doesn't gind signatures, frequently is a byte larger")
 def test_close_weight_estimate(node_factory, bitcoind):
     """closingd uses the expected closing tx weight to constrain fees; make sure that lightningd agrees
     once it has the actual agreed tx"""
