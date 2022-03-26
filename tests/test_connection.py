@@ -3821,8 +3821,12 @@ def test_websocket(node_factory):
         if int.from_bytes(msg[0:2], 'big') == 19:
             break
 
-    # Check node_announcement has websocket
-    assert (only_one(l2.rpc.listnodes(l1.info['id'])['nodes'])['addresses']
+    # First, remove ipv6 address, since it is dependent on CI host configuration
+    addresses = only_one(l2.rpc.listnodes(l1.info['id'])['nodes'])['addresses']
+    addresses = [a for a in addresses if a['type'] != 'ipv6']
+
+    # Check node_announcement has websocket and ipv4 localhost
+    assert (addresses
             == [{'type': 'ipv4', 'address': '127.0.0.1', 'port': port2}, {'type': 'websocket', 'port': ws_port}])
 
 
