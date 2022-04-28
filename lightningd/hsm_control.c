@@ -123,6 +123,12 @@ struct ext_key *hsm_init(struct lightningd *ld)
 		errx(HSM_GENERIC_ERROR, "HSM did not give init reply");
 	}
 
+	printf("HSMD_INIT_REPLY node_id=%s bip32_base=%s bolt12=%s onion_reply_secret=%s\n",
+	       type_to_string(tmpctx, struct node_id, &ld->id),
+	       tal_hexstr(tmpctx, bip32_base, sizeof(*bip32_base)),
+	       type_to_string(tmpctx, struct point32, &ld->bolt12_base),
+	       type_to_string(tmpctx, struct secret, &ld->onion_reply_secret));
+
 	return bip32_base;
 }
 

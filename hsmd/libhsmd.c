@@ -1,3 +1,5 @@
+#include <stdio.h>
+
 #include "config.h"
 #include <bitcoin/script.h>
 #include <ccan/crypto/hkdf_sha256/hkdf_sha256.h>
@@ -1645,6 +1647,9 @@ u8 *hsmd_init(struct secret hsm_secret,
 	assert(bip32_key_version.bip32_privkey_version == BIP32_VER_MAIN_PRIVATE
 			|| bip32_key_version.bip32_privkey_version == BIP32_VER_TEST_PRIVATE);
 
+	printf("HSMD_INIT_REPLY hsm_secret=%s\n",
+	       type_to_string(tmpctx, struct secret, &hsm_secret));
+
 	/* Fill in the BIP32 tree for bitcoin addresses. */
 	/* In libwally-core, the version BIP32_VER_TEST_PRIVATE is for testnet/regtest,
 	 * and BIP32_VER_MAIN_PRIVATE is for mainnet. For litecoin, we also set it like
@@ -1660,9 +1665,13 @@ u8 *hsmd_init(struct secret hsm_secret,
 				     bip32_key_version.bip32_privkey_version,
 				     0, &master_extkey) != WALLY_OK);
 
+	printf("HSMD_INIT_REPLY bip32_seed=%s\n",
+	       tal_hexstr(tmpctx, bip32_seed, sizeof(bip32_seed)));
+
 #if DEVELOPER
 	/* In DEVELOPER mode, we can override with --dev-force-bip32-seed */
 	if (dev_force_bip32_seed) {
+		assert(false); // dont't want to see this
 		if (bip32_key_from_seed(dev_force_bip32_seed->data,
 					sizeof(dev_force_bip32_seed->data),
 					bip32_key_version.bip32_privkey_version,
@@ -1724,12 +1733,23 @@ u8 *hsmd_init(struct secret hsm_secret,
 	 * as purpose.
 	 */
 	/* Clearly, we should use 9735, the unicode point for lightning! */
+
+	char * master_extkey_str;
+	tal_wally_start();
+	bip32_key_to_base58(&master_extkey, BIP32_FLAG_KEY_PRIVATE, &master_extkey_str);
+	tal_wally_end(NULL);
+	printf("HSMD_INIT_REPLY master_extkey=%s\n", master_extkey_str);
+	wally_free_string(master_extkey_str);
+
 	if (bip32_key_from_parent(&master_extkey,
 				  BIP32_INITIAL_HARDENED_CHILD|9735,
 				  BIP32_FLAG_KEY_PRIVATE,
 				  &child_extkey) != WALLY_OK)
 		hsmd_status_failed(STATUS_FAIL_INTERNAL_ERROR,
 				   "Can't derive bolt12 bip32 key");
+
+	printf("HSMD_INIT_REPLY child_extkey.priv_key=%s\n",
+	       tal_hexstr(tmpctx, child_extkey.priv_key+1, sizeof(child_extkey.priv_key)-1));
 
 	/* libwally says: The private key with prefix byte 0; remove it
 	 * for libsecp256k1. */
@@ -1745,6 +1765,9 @@ u8 *hsmd_init(struct secret hsm_secret,
 	/*~ We tell lightning our node id and (public) bip32 seed. */
 	node_key(NULL, &key);
 	node_id_from_pubkey(&node_id, &key);
+
+	printf("HSMD_INIT_REPLY bolt12=%s\n",
+	       tal_hexstr(tmpctx, &secretstuff.bolt12, sizeof(secretstuff.bolt12)));
 
 	/* We also give it the base key for bolt12 payerids */
 	if (secp256k1_keypair_xonly_pub(secp256k1_ctx, &bolt12.pubkey, NULL,
