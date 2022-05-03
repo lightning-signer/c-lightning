@@ -405,7 +405,7 @@ PKGLIBEXEC_PROGRAMS = \
 .PRECIOUS: $(ALL_GEN_HEADERS) $(ALL_GEN_SOURCES)
 
 # Every single object file.
-ALL_OBJS := $(ALL_C_SOURCES:.c=.o)
+ALL_OBJS := $($(ALL_C_SOURCES:.c=.o):.cc=.o)
 
 # We always regen wiregen and printgen files, since SHA256STAMP protects against
 # spurious rebuilds.
