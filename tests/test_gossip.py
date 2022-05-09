@@ -175,6 +175,7 @@ def test_announce_address(node_factory, bitcoind):
 
 @unittest.skipIf(not EXPERIMENTAL_FEATURES, "BOLT7 DNS RFC #911")
 @pytest.mark.developer("gossip without DEVELOPER=1 is slow")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "trouble with IPv6 in VLS CI runner")
 def test_announce_and_connect_via_dns(node_factory, bitcoind):
     """ Test that DNS annoucements propagate and can be used when connecting.
 
