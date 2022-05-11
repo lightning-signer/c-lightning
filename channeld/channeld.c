@@ -1708,6 +1708,9 @@ static void handle_peer_commit_sig(struct peer *peer, const u8 *msg)
 			      "Reading validate_commitment_tx reply: %s",
 			      tal_hex(tmpctx, msg2));
 
+	// FIXME - this is antagonistic test code!!
+	sleep(3);
+
 	send_revocation(peer, &commit_sig, htlc_sigs, changed_htlcs, txs[0],
 			old_secret, &next_point);
 
