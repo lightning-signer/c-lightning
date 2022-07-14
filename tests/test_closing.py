@@ -482,7 +482,7 @@ def test_closing_negotiation_step_700sat(node_factory, bitcoind, chainparams):
     closing_negotiation_step(node_factory, bitcoind, chainparams, opts)
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
 @pytest.mark.developer("needs dev-disable-commit-after")
 @pytest.mark.parametrize("anchors", [False, True])
 def test_penalty_inhtlc(node_factory, bitcoind, executor, chainparams, anchors):
@@ -616,7 +616,7 @@ def test_penalty_inhtlc(node_factory, bitcoind, executor, chainparams, anchors):
     check_utxos_channel(l2, [channel_id], expected_2, tags)
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
 @pytest.mark.developer("needs dev-disable-commit-after")
 @pytest.mark.parametrize("anchors", [False, True])
 def test_penalty_outhtlc(node_factory, bitcoind, executor, chainparams, anchors):
@@ -1579,8 +1579,8 @@ def test_penalty_htlc_tx_timeout(node_factory, bitcoind, chainparams, anchors):
                 assert acc['resolved_at_block'] > 0
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "exceeds max fee policy")
 @pytest.mark.developer("uses dev_sign_last_tx")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "exceeds max fee policy")
 @pytest.mark.parametrize("anchors", [False, True])
 def test_penalty_rbf_normal(node_factory, bitcoind, executor, chainparams, anchors):
     '''

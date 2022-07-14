@@ -4123,7 +4123,7 @@ def test_mpp_interference_2(node_factory, bitcoind, executor):
 
 
 @pytest.mark.slow_test
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't allow push of greater than 20k sat")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "remote_hsmd doesn't allow push of greater than 20k sat")
 def test_mpp_overload_payee(node_factory, bitcoind):
     """
     We had a bug where if the payer is unusually well-connected compared
