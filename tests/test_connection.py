@@ -3576,7 +3576,8 @@ def test_channel_features(node_factory, bitcoind, anchors):
     assert only_one(l2.rpc.listpeerchannels()['channels'])['features'] == chan['features']
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support non-option_static_remotekey")
+@pytest.mark.developer("need dev-force-features")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support non-option_static_remotekey") # FIXME - should work with VLS_PERMISSIVE
 def test_nonstatic_channel(node_factory, bitcoind):
     """Smoke test for a channel without option_static_remotekey"""
     l1, l2 = node_factory.line_graph(2,
