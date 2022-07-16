@@ -477,7 +477,7 @@ def test_closing_negotiation_step_700sat(node_factory, bitcoind, chainparams):
     closing_negotiation_step(node_factory, bitcoind, chainparams, opts)
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
 @pytest.mark.developer("needs dev-disable-commit-after")
 def test_penalty_inhtlc(node_factory, bitcoind, executor, chainparams):
     """Test penalty transaction with an incoming HTLC"""
@@ -600,7 +600,7 @@ def test_penalty_inhtlc(node_factory, bitcoind, executor, chainparams):
     check_utxos_channel(l2, [channel_id], expected_2, tags)
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
 @pytest.mark.developer("needs dev-disable-commit-after")
 def test_penalty_outhtlc(node_factory, bitcoind, executor, chainparams):
     """Test penalty transaction with an outgoing HTLC"""
@@ -1136,7 +1136,7 @@ def test_channel_lease_lessee_cheat(node_factory, bitcoind, chainparams):
 
 @pytest.mark.developer("needs DEVELOPER=1")
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't sign revoked commitment number")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't sign revoked commitment number") # FIXME - should work w/ VLS_PERMISSIVE
 @pytest.mark.slow_test
 def test_penalty_htlc_tx_fulfill(node_factory, bitcoind, chainparams):
     """ Test that the penalizing node claims any published
@@ -1304,7 +1304,7 @@ def test_penalty_htlc_tx_fulfill(node_factory, bitcoind, chainparams):
 
 @pytest.mark.developer("needs DEVELOPER=1")
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't sign revoked commitment number")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't sign revoked commitment number") # FIXME - should work with VLS_PERMISSIVE
 @pytest.mark.slow_test
 def test_penalty_htlc_tx_timeout(node_factory, bitcoind, chainparams):
     """ Test that the penalizing node claims any published
@@ -1513,7 +1513,7 @@ def test_penalty_htlc_tx_timeout(node_factory, bitcoind, chainparams):
 
 
 @pytest.mark.developer("uses dev_sign_last_tx")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "exceeds max fee policy")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "exceeds max fee policy")
 def test_penalty_rbf_normal(node_factory, bitcoind, executor, chainparams):
     '''
     Test that penalty transactions are RBFed.
@@ -1638,7 +1638,7 @@ def test_penalty_rbf_normal(node_factory, bitcoind, executor, chainparams):
 
 
 @pytest.mark.developer("uses dev_sign_last_tx")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "exceeds max fee policy")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "exceeds max fee policy")
 def test_penalty_rbf_burn(node_factory, bitcoind, executor, chainparams):
     '''
     Test that penalty transactions are RBFed and we are willing to burn
@@ -3096,7 +3096,7 @@ def test_permfail_htlc_out(node_factory, bitcoind, executor):
 
 
 @pytest.mark.developer("needs DEVELOPER=1")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address") # FIXME - should work with VLS_PERMISSIVE
 def test_permfail(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2)
 
@@ -3200,7 +3200,7 @@ def test_shutdown(node_factory):
 
 
 @pytest.mark.developer("needs to set upfront_shutdown_script")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy failure: validate_mutual_close_tx: holder_script doesn't match upfront holder_shutdown_script")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy failure: validate_mutual_close_tx: holder_script doesn't match upfront holder_shutdown_script") # FIXME - should work with VLS_PERMISSIVE
 def test_option_upfront_shutdown_script(node_factory, bitcoind, executor):
     l1 = node_factory.get_node(start=False, allow_warning=True)
     # Insist on upfront script we're not going to match.

@@ -2655,7 +2655,6 @@ def test_htlc_too_dusty_outgoing(node_factory, bitcoind, chainparams):
         l1.rpc.sendpay(route, inv['payment_hash'], payment_secret=inv['payment_secret'])
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "fee above maximum: 81720 > 80000")
 @pytest.mark.developer("needs DEVELOPER=1 for dev_ignore_htlcs")
 def test_htlc_too_dusty_incoming(node_factory, bitcoind):
     """ Try to hit the 'too much dust' limit, should fail the HTLC """
@@ -4250,7 +4249,7 @@ def test_large_mpp_presplit(node_factory):
 
 @pytest.mark.developer("builds large network, which is slow if not DEVELOPER")
 @pytest.mark.slow_test
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't allow push of greater than 20k sat")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "remote_hsmd doesn't allow push of greater than 20k sat")
 def test_mpp_overload_payee(node_factory, bitcoind):
     """
     We had a bug where if the payer is unusually well-connected compared

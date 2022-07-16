@@ -25,7 +25,7 @@ HSM_BAD_PASSWORD = 22
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Test relies on a number of example addresses valid only in regtest")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "policy: can't withdraw to non-wallet address")
 def test_withdraw(node_factory, bitcoind):
     amount = 1000000
     # Don't get any funds from previous runs.
@@ -696,7 +696,7 @@ def test_utxopsbt(node_factory, bitcoind, chainparams):
                     reservedok=True)
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address") # FIXME - should work with VLS_PERMISSIVE
 def test_sign_and_send_psbt(node_factory, bitcoind, chainparams):
     """
     Tests for the sign + send psbt RPCs
@@ -891,7 +891,6 @@ def test_sign_and_send_psbt(node_factory, bitcoind, chainparams):
     check_coin_moves(l1, 'wallet', wallet_coin_mvts, chainparams)
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address")
 def test_txsend(node_factory, bitcoind, chainparams):
     amount = 1000000
     l1 = node_factory.get_node(random_hsm=True)
@@ -1327,7 +1326,6 @@ def test_withdraw_nlocktime_fuzz(node_factory, bitcoind):
         raise Exception("No transaction with fuzzed nLockTime !")
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address")
 def test_multiwithdraw_simple(node_factory, bitcoind, chainparams):
     """
     Test simple multiwithdraw usage.
@@ -1429,7 +1427,6 @@ def test_repro_4258(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK == 'liquid-regtest', "Uses regtest addresses")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address")
 def test_withdraw_bech32m(node_factory, bitcoind):
     l1 = node_factory.get_node()
     l1.fundwallet(10000000)
