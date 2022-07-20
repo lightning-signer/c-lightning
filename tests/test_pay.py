@@ -2740,6 +2740,7 @@ def test_htlc_too_dusty_outgoing(node_factory, bitcoind, chainparams):
         l1.rpc.sendpay(route, inv['payment_hash'], payment_secret=inv['payment_secret'])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "feerate above maximum: 101762 > 100000")
 def test_htlc_too_dusty_incoming(node_factory, bitcoind):
     """ Try to hit the 'too much dust' limit, should fail the HTLC """
     feerate = 30000
