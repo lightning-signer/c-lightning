@@ -4414,6 +4414,7 @@ def test_offer(node_factory, bitcoind):
     assert 'recurrence: every 600 seconds paywindow -10 to +600 (pay proportional)\n' in output
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "Invalid bech32: invalid checksum")
 def test_offer_deprecated_api(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, opts={'experimental-offers': None,
                                               'allow-deprecated-apis': True})
@@ -4439,6 +4440,7 @@ def test_fetchinvoice_3hop(node_factory, bitcoind):
     l1.rpc.call('fetchinvoice', {'offer': offer1['bolt12']})
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "invoice from offer: Invalid bech32: invalid checksum")
 def test_fetchinvoice(node_factory, bitcoind):
     # We remove the conversion plugin on l3, causing it to get upset.
     l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True,
@@ -4564,6 +4566,7 @@ def test_fetchinvoice(node_factory, bitcoind):
         l1.rpc.call('fetchinvoice', {'offer': offer1['bolt12'], 'timeout': 10})
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "Invalid bech32: invalid checksum")
 def test_fetchinvoice_recurrence(node_factory, bitcoind):
     """Test for our recurrence extension"""
     l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True,
@@ -4658,6 +4661,7 @@ def test_fetchinvoice_recurrence(node_factory, bitcoind):
                                      'recurrence_label': 'test paywindow'})
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "invoice from offer: Invalid bech32: invalid checksum")
 def test_fetchinvoice_autoconnect(node_factory, bitcoind):
     """We should autoconnect if we need to, to route."""
 
@@ -4734,6 +4738,7 @@ def test_dev_rawrequest(node_factory):
     assert 'invoice' in ret
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "sendinvoice: bolt12: Invalid bech32: invalid checksum")
 def test_sendinvoice(node_factory, bitcoind):
     l2opts = {'experimental-offers': None}
     l1, l2 = node_factory.line_graph(2, wait_for_announce=True,
