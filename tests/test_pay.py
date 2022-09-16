@@ -2803,6 +2803,7 @@ def test_error_returns_blockheight(node_factory, bitcoind):
             == '400f{:016x}{:08x}'.format(100, bitcoind.rpc.getblockcount()))
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "inv_nosecret: The invoice is missing the mandatory payment secret")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Invoice is network specific")
 def test_pay_no_secret(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, wait_for_announce=True)
