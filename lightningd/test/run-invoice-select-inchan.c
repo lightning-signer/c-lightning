@@ -256,7 +256,7 @@ bool fromwire_dualopend_dev_memleak_reply(const void *p UNNEEDED, bool *leak UNN
 bool fromwire_hsmd_sign_bolt12_reply(const void *p UNNEEDED, struct bip340sig *sig UNNEEDED)
 { fprintf(stderr, "fromwire_hsmd_sign_bolt12_reply called!\n"); abort(); }
 /* Generated stub for fromwire_hsmd_preapprove_invoice_reply */
-bool fromwire_hsmd_preapprove_invoice_reply(const void *p UNNEEDED)
+bool fromwire_hsmd_preapprove_invoice_reply(const void *p UNNEEDED, bool *approved UNNEEDED)
 { fprintf(stderr, "fromwire_hsmd_preapprove_invoice_reply called!\n"); abort(); }
 /* Generated stub for fromwire_hsmd_sign_commitment_tx_reply */
 bool fromwire_hsmd_sign_commitment_tx_reply(const void *p UNNEEDED, struct bitcoin_signature *sig UNNEEDED)
