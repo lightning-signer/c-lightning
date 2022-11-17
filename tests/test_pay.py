@@ -4885,6 +4885,7 @@ def test_dev_rawrequest(node_factory):
     assert 'invoice' in ret
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "sendinvoice: bolt12: Invalid bech32: invalid checksum")
 def test_sendinvoice(node_factory, bitcoind):
     l2opts = {'experimental-offers': None}
     l1, l2 = node_factory.line_graph(2, wait_for_announce=True,
