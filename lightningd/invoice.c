@@ -1890,7 +1890,7 @@ static struct command_result *json_preapproveinvoice(struct command *cmd,
 				    "HSM gave bad preapprove_invoice_reply %s", tal_hex(msg, msg));
 
 	if (!approved)
-		return command_fail(cmd, INVOICE_PREAPPROVAL_DECLINED, "invoice was declined");
+		return command_fail(cmd, PAY_INVOICE_PREAPPROVAL_DECLINED, "invoice was declined");
 
 	response = json_stream_success(cmd);
 	return command_success(cmd, response);
