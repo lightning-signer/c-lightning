@@ -250,8 +250,7 @@ LIBRARY_PATH := /usr/local/lib
 endif
 
 CPPFLAGS += -DBINTOPKGLIBEXECDIR="\"$(shell sh tools/rel.sh $(bindir) $(pkglibexecdir))\""
-CMNFLAGS = $(CDEBUGFLAGS) $(COPTFLAGS) -I $(CCANDIR) $(EXTERNAL_INCLUDE_FLAGS) -I . -I$(CPATH) $(SQLITE3_CFLAGS) $(POSTGRES_INCLUDE) $(FEATURES) $(COVFLAGS) $(DEV_CFLAGS) -DSHACHAIN_BITS=48 -DJSMN_PARENT_LINKS $(PIE_CFLAGS) $(COMPAT_CFLAGS) $(CSANFLAGS) -DBUILD_ELEMENTS=1
-CFLAGS = $(CPPFLAGS) $(CWARNFLAGS) $(CMNFLAGS)
+CFLAGS = $(CPPFLAGS) $(CWARNFLAGS) $(CDEBUGFLAGS) $(COPTFLAGS) -I $(CCANDIR) $(EXTERNAL_INCLUDE_FLAGS) -I . -I$(CPATH) $(SQLITE3_CFLAGS) $(POSTGRES_INCLUDE) $(FEATURES) $(COVFLAGS) $(DEV_CFLAGS) -DSHACHAIN_BITS=48 -DJSMN_PARENT_LINKS $(PIE_CFLAGS) $(COMPAT_CFLAGS) $(CSANFLAGS) -DBUILD_ELEMENTS=1
 
 # If CFLAGS is already set in the environment of make (to whatever value, it
 # does not matter) then it would export it to subprocesses with the above value
@@ -360,7 +359,6 @@ include devtools/Makefile
 include tools/Makefile
 include plugins/Makefile
 include tests/plugins/Makefile
-include contrib/remote_hsmd/Makefile
 
 ifneq ($(FUZZING),0)
 	include tests/fuzz/Makefile
@@ -416,8 +414,7 @@ PKGLIBEXEC_PROGRAMS = \
 	       lightningd/lightning_hsmd \
 	       lightningd/lightning_onchaind \
 	       lightningd/lightning_openingd \
-	       lightningd/lightning_websocketd \
-	       lightningd/remote_hsmd
+	       lightningd/lightning_websocketd
 
 mkdocs.yml: $(MANPAGES:=.md)
 	@$(call VERBOSE, "genidx $@", \
@@ -451,10 +448,6 @@ ifneq ($(PYTEST_PAR),)
 PYTEST_OPTS += -n=$(PYTEST_PAR)
 else
 PYTEST_OPTS += -x
-endif
-
-ifneq ($(PYTEST_MOREOPTS),)
-PYTEST_OPTS += $(PYTEST_MOREOPTS)
 endif
 
 check-units:
