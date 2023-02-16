@@ -63,6 +63,7 @@ def test_queryrates(node_factory, bitcoind):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v1')  # Mixed v1 + v2, v2 manually turned on
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "commit c0cc285a causes: channel stub can only return point for commitment number zero")
 def test_multifunding_v2_best_effort(node_factory, bitcoind):
     '''
     Check that best_effort flag works.
