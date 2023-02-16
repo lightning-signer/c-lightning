@@ -3395,6 +3395,7 @@ def test_block_added_notifications(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "commit c0cc285a causes: channel stub can only return point for commitment number zero")
 def test_sql(node_factory, bitcoind):
     opts = {'experimental-offers': None,
             'experimental-dual-fund': None,
