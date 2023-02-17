@@ -95,6 +95,8 @@ then
     make -s -j32 CC="$TARGET_HOST-gcc"
 else
     eatmydata make -j32
+    GREENLIGHT_VERSION=$(./lightningd/lightningd --version)
+    export GREENLIGHT_VERSION
     # shellcheck disable=SC2086
     eatmydata $TEST_CMD
 fi
