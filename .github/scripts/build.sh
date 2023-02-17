@@ -94,9 +94,15 @@ then
 
     make -s -j32 CC="$TARGET_HOST-gcc"
 else
+    git diff
     eatmydata make -j32
     GREENLIGHT_VERSION=$(./lightningd/lightningd --version)
     export GREENLIGHT_VERSION
+    git diff
+    # sometimes we get -modded added to the version
+    eatmydata make -j32
+    GREENLIGHT_VERSION=$(./lightningd/lightningd --version)
     # shellcheck disable=SC2086
+    git diff
     eatmydata $TEST_CMD
 fi
