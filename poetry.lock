@@ -179,7 +179,7 @@ dotenv = ["python-dotenv"]
 
 [[package]]
 name = "grpcio"
-version = "1.47.0"
+version = "1.53.0"
 description = "HTTP/2-based RPC framework"
 category = "main"
 optional = false
@@ -189,18 +189,18 @@ python-versions = ">=3.6"
 six = ">=1.5.2"
 
 [package.extras]
-protobuf = ["grpcio-tools (>=1.47.0)"]
+protobuf = ["grpcio-tools (>=1.53.0)"]
 
 [[package]]
 name = "grpcio-tools"
-version = "1.47.0"
+version = "1.53.0"
 description = "Protobuf code generator for gRPC"
 category = "main"
 optional = false
 python-versions = ">=3.6"
 
 [package.dependencies]
-grpcio = ">=1.47.0"
+grpcio = ">=1.53.0"
 protobuf = ">=3.12.0,<4.0dev"
 
 [[package]]
