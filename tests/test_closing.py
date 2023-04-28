@@ -3055,9 +3055,8 @@ def test_permfail_htlc_out(node_factory, bitcoind, executor):
     bitcoind.generate_block(2)
     wait_for(lambda: l2.rpc.listpeers()['peers'] == [])
 
-
 @pytest.mark.developer("needs DEVELOPER=1")
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address") # FIXME - should work with VLS_PERMISSIVE
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address") # FIXME - should work with auto-approve
 def test_permfail(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2)
 
