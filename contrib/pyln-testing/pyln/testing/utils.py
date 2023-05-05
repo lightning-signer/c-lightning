@@ -82,6 +82,7 @@ DEPRECATED_APIS = env("DEPRECATED_APIS", "0") == "1"
 TIMEOUT = int(env("TIMEOUT", 180 if SLOW_MACHINE else 60))
 SUBDAEMON = env("SUBDAEMON", "")
 EXPERIMENTAL_DUAL_FUND = env("EXPERIMENTAL_DUAL_FUND", "0") == "1"
+FUNDING_CONFIRMS = int(env("FUNDING_CONFIRMS", "1"))
 
 
 def wait_for(success, timeout=TIMEOUT):
@@ -703,6 +704,9 @@ class LightningD(TailableProc):
         if grpc_port is not None:
             opts['grpc-port'] = grpc_port
 
+        if FUNDING_CONFIRMS > 1:
+            opts['funding-confirms'] = FUNDING_CONFIRMS
+
         if SUBDAEMON:
             assert node_id > 0
             subdaemons = SUBDAEMON.split(',')
@@ -1197,6 +1201,9 @@ class LightningNode(object):
 
         scid = "{}x{}x{}".format(self.bitcoin.rpc.getblockcount(),
                                  txnum, res['outnum'])
+
+        if FUNDING_CONFIRMS > 1:
+            self.bitcoin.generate_block(FUNDING_CONFIRMS - 1)
 
         if wait_for_active:
             self.wait_channel_active(scid)
@@ -1723,7 +1730,7 @@ class NodeFactory(object):
             txids.append(src.rpc.fundchannel(dst.info['id'], fundamount, announce=announce_channels)['txid'])
 
         # Confirm all channels and wait for them to become usable
-        bitcoind.generate_block(1, wait_for_mempool=txids)
+        bitcoind.generate_block(FUNDING_CONFIRMS, wait_for_mempool=txids)
         scids = []
         for src, dst in connections:
             wait_for(lambda: src.channel_state(dst) == 'CHANNELD_NORMAL')

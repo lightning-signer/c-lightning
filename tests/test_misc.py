@@ -6,7 +6,7 @@ from pyln.client import RpcError, Millisatoshi
 from threading import Event
 from pyln.testing.utils import (
     DEVELOPER, TIMEOUT, VALGRIND, DEPRECATED_APIS, sync_blockheight, only_one,
-    wait_for, TailableProc, env, mine_funding_to_announce
+    wait_for, TailableProc, env, mine_funding_to_announce, FUNDING_CONFIRMS
 )
 from utils import (
     account_balance, scriptpubkey_addr, check_coin_moves
@@ -653,7 +653,7 @@ def test_io_logging(node_factory, executor):
     l1.rpc.fundchannel(l2.info['id'], 10**6)['tx']
 
     l1.daemon.wait_for_log('sendrawtx exit 0')
-    l1.bitcoin.generate_block(1)
+    l1.bitcoin.generate_block(FUNDING_CONFIRMS)
     l1.daemon.wait_for_log(' to CHANNELD_NORMAL')
     l2.daemon.wait_for_log(' to CHANNELD_NORMAL')
 

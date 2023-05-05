@@ -8,7 +8,7 @@ from utils import (
     scriptpubkey_addr, calc_lease_fee, EXPERIMENTAL_FEATURES,
     check_utxos_channel, anchor_expected, check_coin_moves,
     check_balance_snaps, mine_funding_to_announce, check_inspect_channel,
-    first_scid
+    first_scid, FUNDING_CONFIRMS
 )
 
 import os
@@ -1726,7 +1726,7 @@ def test_onchain_first_commit(node_factory, bitcoind):
     l1.rpc.fundchannel(l2.info['id'], 10**6)
     l1.daemon.wait_for_log('sendrawtx exit 0')
 
-    bitcoind.generate_block(1)
+    bitcoind.generate_block(FUNDING_CONFIRMS)
 
     # l1 will drop to chain.
     l1.daemon.wait_for_log('permfail')
@@ -3483,7 +3483,7 @@ def test_segwit_anyshutdown(node_factory, bitcoind, executor):
         # If we don't actually make a payment, two of the above cases fail
         # because the resulting tx is too small!  Balance channel so close
         # has two outputs.
-        bitcoind.generate_block(1, wait_for_mempool=1)
+        bitcoind.generate_block(FUNDING_CONFIRMS, wait_for_mempool=1)
         wait_for(lambda: any([c['state'] == 'CHANNELD_NORMAL' for c in l1.rpc.listpeerchannels()['channels']]))
         l1.pay(l2, 10**9 // 2)
         l1.rpc.close(l2.info['id'], destination=addr)

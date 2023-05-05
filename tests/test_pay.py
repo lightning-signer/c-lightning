@@ -7,7 +7,7 @@ from pyln.proto.onion import TlvPayload
 from pyln.testing.utils import EXPERIMENTAL_DUAL_FUND, FUNDAMOUNT, scid_to_int
 from utils import (
     DEVELOPER, wait_for, only_one, sync_blockheight, TIMEOUT,
-    EXPERIMENTAL_FEATURES, VALGRIND, mine_funding_to_announce, first_scid
+    EXPERIMENTAL_FEATURES, VALGRIND, mine_funding_to_announce, first_scid, FUNDING_CONFIRMS
 )
 import copy
 import os
@@ -3020,7 +3020,7 @@ def test_sendonion_rpc(node_factory):
         l1.rpc.waitsendpay(payment_hash=payment_hash)
     except RpcError as e:
         assert(e.error['code'] == 204)
-        assert(e.error['data']['raw_message'] == "400f00000000000003e80000006c")
+        assert(e.error['data']['raw_message'] == "400f00000000000003e8000000{:x}".format(107 + FUNDING_CONFIRMS))
 
 
 @pytest.mark.developer("needs dev-disable-commit-after, dev-no-htlc-timeout")
