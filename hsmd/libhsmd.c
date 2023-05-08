@@ -667,14 +667,13 @@ static u8 *handle_sign_bolt12(struct hsmd_client *c, const u8 *msg_in)
 static u8 *handle_preapprove_invoice(struct hsmd_client *c, const u8 *msg_in)
 {
 	char *invstring;
-	bool approved;
+
 	if (!fromwire_hsmd_preapprove_invoice(tmpctx, msg_in, &invstring))
 		return hsmd_status_malformed_request(c, msg_in);
 
-	/* This stub always approves */
-	approved = true;
+	/* Success reply indicates approval */
 
-	return towire_hsmd_preapprove_invoice_reply(NULL, approved);
+	return towire_hsmd_preapprove_invoice_reply(NULL);
 }
 
 /*~ Lightning invoices, defined by BOLT 11, are signed.  This has been

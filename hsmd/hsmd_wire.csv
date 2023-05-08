@@ -117,9 +117,8 @@ msgdata,hsmd_sign_invoice_reply,sig,secp256k1_ecdsa_recoverable_signature,
 msgtype,hsmd_preapprove_invoice,38
 msgdata,hsmd_preapprove_invoice,invstring,wirestring,
 
-# Result is true if approved, declined if false 
+# No value returned, success is approval, error otherwise
 msgtype,hsmd_preapprove_invoice_reply,138
-msgdata,hsmd_preapprove_invoice_reply,approved,bool,
 
 # Give me ECDH(node-id-secret,point)
 msgtype,hsmd_ecdh_req,1

@@ -1866,7 +1866,6 @@ static struct command_result *json_preapproveinvoice(struct command *cmd,
 {
 	const char *invstring;
 	struct json_stream *response;
-	bool approved;
 
 	if (!param(cmd, buffer, params,
 		   /* FIXME: parameter should be invstring now */
@@ -1885,12 +1884,9 @@ static struct command_result *json_preapproveinvoice(struct command *cmd,
 		fatal("Could not write to HSM: %s", strerror(errno));
 
 	msg = wire_sync_read(tmpctx, cmd->ld->hsm_fd);
-        if (!fromwire_hsmd_preapprove_invoice_reply(msg, &approved))
+        if (!fromwire_hsmd_preapprove_invoice_reply(msg))
 		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
 				    "HSM gave bad preapprove_invoice_reply %s", tal_hex(msg, msg));
-
-	if (!approved)
-		return command_fail(cmd, INVOICE_PREAPPROVAL_DECLINED, "invoice was declined");
 
 	response = json_stream_success(cmd);
 	return command_success(cmd, response);
