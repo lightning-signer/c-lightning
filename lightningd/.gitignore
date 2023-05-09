@@ -10,3 +10,6 @@ lightning_openingd
 lightning_websocketd
 lightningd
 remote_hsmd
+remote_hsmd_inplace
+remote_hsmd_serial
+remote_hsmd_socket
