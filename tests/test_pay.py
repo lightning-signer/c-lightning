@@ -5168,6 +5168,7 @@ def test_payerkey(node_factory):
         assert n.rpc.decode(b12)['invreq_payer_id'] == k
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_pay_multichannel_use_zeroconf(bitcoind, node_factory):
     """Check that we use the zeroconf direct channel to pay when we need to"""
     # 0. Setup normal channel, 200k sats.

@@ -1475,6 +1475,7 @@ def test_zeroconf_mindepth(bitcoind, node_factory):
     wait_for(lambda: only_one(l2.rpc.listpeerchannels()['channels'])['state'] == "CHANNELD_NORMAL")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_open(bitcoind, node_factory):
     """Let's open a zeroconf channel
 
@@ -1643,6 +1644,7 @@ def test_zeroconf_public(bitcoind, node_factory, chainparams):
         wait_for(lambda: only_one([x for x in n.rpc.bkpr_listbalances()['accounts'] if x['account'] == channel_id])['account_resolved'])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_forward(node_factory, bitcoind):
     """Ensure that we can use zeroconf channels in forwards.
 
@@ -1891,6 +1893,7 @@ def test_scid_alias_private(node_factory, bitcoind):
     l1.rpc.waitsendpay(inv['payment_hash'])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_multichan_forward(node_factory):
     """The freedom to choose the forward channel bytes us when it is 0conf
 
