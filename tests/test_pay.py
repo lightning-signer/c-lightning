@@ -552,6 +552,7 @@ def test_pay_maxfee_shadow(node_factory):
         assert pay_status["amount_msat"] == Millisatoshi(amount)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "grossly overpaid invoice")
 def test_sendpay(node_factory):
     l1, l2 = node_factory.line_graph(2, fundamount=10**6)
 
@@ -2455,6 +2456,8 @@ def test_setchannel_startup_opts(node_factory, bitcoind):
     assert result[1]['htlc_maximum_msat'] == Millisatoshi(5)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
+@pytest.mark.developer("gossip without DEVELOPER=1 is slow")
 def test_channel_spendable(node_factory, bitcoind):
     """Test that spendable_msat is accurate"""
     sats = 10**6
@@ -2511,6 +2514,8 @@ def test_channel_spendable(node_factory, bitcoind):
     l2.rpc.waitsendpay(payment_hash, TIMEOUT)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
+@pytest.mark.developer("gossip without DEVELOPER=1 is slow")
 def test_channel_receivable(node_factory, bitcoind):
     """Test that receivable_msat is accurate"""
     sats = 10**6
@@ -2566,6 +2571,8 @@ def test_channel_receivable(node_factory, bitcoind):
     l2.rpc.waitsendpay(payment_hash, TIMEOUT)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
+@pytest.mark.developer("gossip without DEVELOPER=1 is slow")
 def test_channel_spendable_large(node_factory, bitcoind):
     """Test that spendable_msat is accurate for large channels"""
     # This is almost the max allowable spend.
