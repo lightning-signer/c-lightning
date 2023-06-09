@@ -559,7 +559,7 @@ def test_pay_maxfee_shadow(node_factory):
         assert pay_status["amount_msat"] == Millisatoshi(amount)
 
 
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "grossly overpaid invoice")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "fails multiple policy checks")
 def test_sendpay(node_factory):
     l1, l2 = node_factory.line_graph(2, fundamount=10**6)
 
