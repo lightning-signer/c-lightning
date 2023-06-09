@@ -151,6 +151,7 @@ def test_pay_limits(node_factory):
     assert status[0]['strategy'] == "Initial attempt"
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "skip until VLS #330 is fixed")
 @pytest.mark.developer("Gossip is too slow without developer")
 def test_pay_exclude_node(node_factory, bitcoind):
     """Test excluding the node if there's the NODE-level error in the failure_code
@@ -1669,6 +1670,7 @@ def test_forward_local_failed_stats(node_factory, bitcoind, executor):
     assert [s.get('out_channel') for s in stats['forwards']] == [c23, c24, c25, None, c24]
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "skip until VLS #330 is fixed")
 @pytest.mark.developer("too slow without --dev-fast-gossip")
 @pytest.mark.slow_test
 def test_htlcs_cltv_only_difference(node_factory, bitcoind):
@@ -1750,6 +1752,7 @@ def test_pay_variants(node_factory):
     l1.rpc.pay(b11)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "skip until VLS #330 is fixed")
 @pytest.mark.developer("gossip without DEVELOPER=1 is slow")
 @pytest.mark.slow_test
 def test_pay_retry(node_factory, bitcoind, executor, chainparams):
