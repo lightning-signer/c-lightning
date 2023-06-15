@@ -1824,6 +1824,7 @@ def test_onchaind_replay(node_factory, bitcoind):
         'delay': 101,
         'channel': first_scid(l1, l2)
     }
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay([routestep], rhash, payment_secret=inv['payment_secret'])
     l1.daemon.wait_for_log('sendrawtx exit 0')
     bitcoind.generate_block(1, wait_for_mempool=1)
@@ -1961,6 +1962,7 @@ def test_onchain_timeout(node_factory, bitcoind, executor):
         'channel': first_scid(l1, l2)
     }
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay([routestep], rhash, payment_secret=inv['payment_secret'], groupid=1)
     with pytest.raises(RpcError):
         l1.rpc.waitsendpay(rhash)
@@ -2086,6 +2088,7 @@ def test_onchain_middleman_simple(node_factory, bitcoind):
 
     q = queue.Queue()
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     def try_pay():
         try:
             l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
@@ -2214,6 +2217,7 @@ def test_onchain_middleman_their_unilateral_in(node_factory, bitcoind):
 
     q = queue.Queue()
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     def try_pay():
         try:
             l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
@@ -2318,6 +2322,8 @@ def test_onchain_their_unilateral_out(node_factory, bitcoind):
         try:
             # rhash is fake (so is payment_secret)
             rhash = 'B1' * 32
+            # let the signer know this payment is coming
+            l1.rpc.preapprovekeysend(l2.info['id'], rhash, 10**8)
             l1.rpc.sendpay(route, rhash, payment_secret=rhash)
             q.put(None)
         except Exception as err:
@@ -2457,6 +2463,7 @@ def test_onchain_feechange(node_factory, bitcoind, executor):
         'channel': first_scid(l1, l2)
     }
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     executor.submit(l1.rpc.sendpay, [routestep], rhash, payment_secret=inv['payment_secret'])
 
     # l2 will drop to chain.
@@ -2538,6 +2545,7 @@ def test_onchain_all_dust(node_factory, bitcoind, executor):
         'channel': first_scid(l1, l2)
     }
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     executor.submit(l1.rpc.sendpay, [routestep], rhash, payment_secret=inv['payment_secret'])
 
     # l2 will drop to chain.
