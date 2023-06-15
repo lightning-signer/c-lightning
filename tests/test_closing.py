@@ -487,6 +487,7 @@ def test_closing_negotiation_step_700sat(node_factory, bitcoind, chainparams):
     closing_negotiation_step(node_factory, bitcoind, chainparams, opts)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
 @pytest.mark.developer("needs dev-disable-commit-after")
 def test_penalty_inhtlc(node_factory, bitcoind, executor, chainparams):
     """Test penalty transaction with an incoming HTLC"""
@@ -609,6 +610,7 @@ def test_penalty_inhtlc(node_factory, bitcoind, executor, chainparams):
     check_utxos_channel(l2, [channel_id], expected_2, tags)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
 @pytest.mark.developer("needs dev-disable-commit-after")
 def test_penalty_outhtlc(node_factory, bitcoind, executor, chainparams):
     """Test penalty transaction with an outgoing HTLC"""
@@ -740,6 +742,7 @@ def test_penalty_outhtlc(node_factory, bitcoind, executor, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.slow_test
 @pytest.mark.developer("requres 'dev-queryrates', 'dev-force-features'")
@@ -784,6 +787,7 @@ def test_channel_lease_falls_behind(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.developer("requres 'dev-queryrates', 'dev-force-features'")
 @pytest.mark.slow_test
@@ -898,6 +902,7 @@ def test_channel_lease_post_expiry(node_factory, bitcoind, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.slow_test
 @pytest.mark.developer("requres 'dev-queryrates', 'dev-force-features'")
@@ -1009,6 +1014,7 @@ def test_channel_lease_unilat_closes(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
 @pytest.mark.developer("requres 'dev-queryrates', 'dev-force-features'")
@@ -1088,6 +1094,7 @@ def test_channel_lease_lessor_cheat(node_factory, bitcoind, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
 @pytest.mark.developer("requres 'dev-queryrates', dev-no-reconnect, dev-force-features")
@@ -1167,6 +1174,7 @@ def test_channel_lease_lessee_cheat(node_factory, bitcoind, chainparams):
 
 @pytest.mark.developer("needs DEVELOPER=1")
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't sign revoked commitment number") # FIXME - should work w/ VLS_PERMISSIVE
 @pytest.mark.slow_test
 def test_penalty_htlc_tx_fulfill(node_factory, bitcoind, chainparams):
     """ Test that the penalizing node claims any published
@@ -1346,6 +1354,7 @@ def test_penalty_htlc_tx_fulfill(node_factory, bitcoind, chainparams):
 
 @pytest.mark.developer("needs DEVELOPER=1")
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "Makes use of the sqlite3 db")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't sign revoked commitment number") # FIXME - should work with VLS_PERMISSIVE
 @pytest.mark.slow_test
 def test_penalty_htlc_tx_timeout(node_factory, bitcoind, chainparams):
     """ Test that the penalizing node claims any published
@@ -1568,6 +1577,7 @@ def test_penalty_htlc_tx_timeout(node_factory, bitcoind, chainparams):
 
 
 @pytest.mark.developer("uses dev_sign_last_tx")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "exceeds max fee policy")
 def test_penalty_rbf_normal(node_factory, bitcoind, executor, chainparams):
     '''
     Test that penalty transactions are RBFed.
@@ -1814,6 +1824,7 @@ def test_onchaind_replay(node_factory, bitcoind):
         'delay': 101,
         'channel': first_scid(l1, l2)
     }
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay([routestep], rhash, payment_secret=inv['payment_secret'])
     l1.daemon.wait_for_log('sendrawtx exit 0')
     bitcoind.generate_block(1, wait_for_mempool=1)
@@ -1951,6 +1962,7 @@ def test_onchain_timeout(node_factory, bitcoind, executor):
         'channel': first_scid(l1, l2)
     }
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay([routestep], rhash, payment_secret=inv['payment_secret'], groupid=1)
     with pytest.raises(RpcError):
         l1.rpc.waitsendpay(rhash)
@@ -2076,6 +2088,7 @@ def test_onchain_middleman_simple(node_factory, bitcoind):
 
     q = queue.Queue()
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     def try_pay():
         try:
             l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
@@ -2204,6 +2217,7 @@ def test_onchain_middleman_their_unilateral_in(node_factory, bitcoind):
 
     q = queue.Queue()
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     def try_pay():
         try:
             l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
@@ -2308,6 +2322,8 @@ def test_onchain_their_unilateral_out(node_factory, bitcoind):
         try:
             # rhash is fake (so is payment_secret)
             rhash = 'B1' * 32
+            # let the signer know this payment is coming
+            l1.rpc.preapprovekeysend(l2.info['id'], rhash, 10**8)
             l1.rpc.sendpay(route, rhash, payment_secret=rhash)
             q.put(None)
         except Exception as err:
@@ -2447,6 +2463,7 @@ def test_onchain_feechange(node_factory, bitcoind, executor):
         'channel': first_scid(l1, l2)
     }
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     executor.submit(l1.rpc.sendpay, [routestep], rhash, payment_secret=inv['payment_secret'])
 
     # l2 will drop to chain.
@@ -2528,6 +2545,7 @@ def test_onchain_all_dust(node_factory, bitcoind, executor):
         'channel': first_scid(l1, l2)
     }
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     executor.submit(l1.rpc.sendpay, [routestep], rhash, payment_secret=inv['payment_secret'])
 
     # l2 will drop to chain.
@@ -2823,6 +2841,7 @@ def setup_multihtlc_test(node_factory, bitcoind):
 
 @pytest.mark.developer("needs DEVELOPER=1 for dev_ignore_htlcs")
 @pytest.mark.slow_test
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "frequently flakes")
 def test_onchain_multihtlc_our_unilateral(node_factory, bitcoind):
     """Node pushes a channel onchain with multiple HTLCs with same payment_hash """
     h, l1, l2, l3, l4, l5, l6, l7 = setup_multihtlc_test(node_factory, bitcoind)
@@ -2879,6 +2898,7 @@ def test_onchain_multihtlc_our_unilateral(node_factory, bitcoind):
 
 @pytest.mark.developer("needs DEVELOPER=1 for dev_ignore_htlcs")
 @pytest.mark.slow_test
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "frequently flakes")
 def test_onchain_multihtlc_their_unilateral(node_factory, bitcoind):
     """Node pushes a channel onchain with multiple HTLCs with same payment_hash """
     h, l1, l2, l3, l4, l5, l6, l7 = setup_multihtlc_test(node_factory, bitcoind)
@@ -3043,8 +3063,8 @@ def test_permfail_htlc_out(node_factory, bitcoind, executor):
     bitcoind.generate_block(2)
     wait_for(lambda: l2.rpc.listpeers()['peers'] == [])
 
-
 @pytest.mark.developer("needs DEVELOPER=1")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address") # FIXME - should work with auto-approve
 def test_permfail(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2)
 
@@ -3146,6 +3166,7 @@ def test_shutdown(node_factory):
 
 
 @pytest.mark.developer("needs to set upfront_shutdown_script")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy failure: validate_mutual_close_tx: holder_script doesn't match upfront holder_shutdown_script") # FIXME - should work with VLS_PERMISSIVE
 def test_option_upfront_shutdown_script(node_factory, bitcoind, executor):
     l1 = node_factory.get_node(start=False, allow_warning=True)
     # Insist on upfront script we're not going to match.

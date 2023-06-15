@@ -7,6 +7,7 @@ from utils import (
 
 from pathlib import Path
 from pprint import pprint
+import os
 import pytest
 import re
 import unittest
@@ -18,6 +19,7 @@ def find_next_feerate(node, peer):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.developer("requres 'dev-queryrates' + 'dev-force-features'")
 def test_queryrates(node_factory, bitcoind):
@@ -61,6 +63,7 @@ def test_queryrates(node_factory, bitcoind):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v1')  # Mixed v1 + v2, v2 manually turned on
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "commit c0cc285a causes: channel stub can only return point for commitment number zero")
 def test_multifunding_v2_best_effort(node_factory, bitcoind):
     '''
     Check that best_effort flag works.
@@ -377,6 +380,7 @@ def test_v2_rbf_single(node_factory, bitcoind, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.developer("requres 'dev-force-features'")
 def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
@@ -1200,6 +1204,7 @@ def test_funder_options(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "dual-funding not supported yet") # FIXME - should work with VLS_PERMISSIVE
 def test_funder_contribution_limits(node_factory, bitcoind):
     opts = {'experimental-dual-fund': None,
             'feerates': (5000, 5000, 5000, 5000)}
@@ -1342,6 +1347,7 @@ def test_zeroconf_mindepth(bitcoind, node_factory):
     wait_for(lambda: only_one(l2.rpc.listpeerchannels()['channels'])['state'] == "CHANNELD_NORMAL")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_open(bitcoind, node_factory):
     """Let's open a zeroconf channel
 
@@ -1406,6 +1412,7 @@ def test_zeroconf_open(bitcoind, node_factory):
     l2.rpc.pay(inv)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd inplace and socket don't generate WIRE_HSMD_CUPDATE_SIG_REQ log messages")
 def test_zeroconf_public(bitcoind, node_factory, chainparams):
     """Test that we transition correctly from zeroconf to public
 
@@ -1509,6 +1516,7 @@ def test_zeroconf_public(bitcoind, node_factory, chainparams):
         wait_for(lambda: only_one([x for x in n.rpc.bkpr_listbalances()['accounts'] if x['account'] == channel_id])['account_resolved'])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_forward(node_factory, bitcoind):
     """Ensure that we can use zeroconf channels in forwards.
 
@@ -1763,6 +1771,7 @@ def test_scid_alias_private(node_factory, bitcoind):
     l1.rpc.waitsendpay(inv['payment_hash'])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_multichan_forward(node_factory):
     """The freedom to choose the forward channel bytes us when it is 0conf
 

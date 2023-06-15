@@ -1167,6 +1167,7 @@ def test_cli_commando(node_factory):
     assert only_one(j['invoices'])['label'] == 'l"[]{}'
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd integration test job control fails here")
 def test_daemon_option(node_factory):
     """
     Make sure --daemon at least vaguely works!
@@ -2069,6 +2070,7 @@ def test_bitcoind_feerate_floor(node_factory, bitcoind):
 
 @pytest.mark.developer("needs --dev-force-bip32-seed")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Addresses are network specific")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support forced secrets")
 def test_dev_force_bip32_seed(node_factory):
     l1 = node_factory.get_node(options={'dev-force-bip32-seed': '0000000000000000000000000000000000000000000000000000000000000001'})
     # First is m/0/0/1 ..
@@ -2417,6 +2419,7 @@ def test_regtest_upgrade(node_factory):
 
 @unittest.skipIf(VALGRIND, "valgrind files can't be written since we rmdir")
 @unittest.skipIf(TEST_NETWORK != "regtest", "needs bitcoin mainnet")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't create hsm_secret file")
 def test_new_node_is_mainnet(node_factory):
     """Test that an empty directory causes us to be on mainnet"""
     l1 = node_factory.get_node(start=False, may_fail=True)
@@ -2455,13 +2458,13 @@ def test_unicode_rpc(node_factory, executor, bitcoind):
 
 
 @unittest.skipIf(VALGRIND, "Testing pyln doesn't exercise anything interesting in the c code.")
-def test_unix_socket_path_length(node_factory, bitcoind, directory, executor, db_provider, test_base_dir):
+def test_unix_socket_path_length(node_factory, bitcoind, lssd, directory, executor, db_provider, test_base_dir):
     lightning_dir = os.path.join(directory, "anode" + "far" * 30 + "away")
     os.makedirs(lightning_dir)
     db = db_provider.get_db(lightning_dir, "test_unix_socket_path_length", 1)
     db.provider = db_provider
 
-    l1 = LightningNode(1, lightning_dir, bitcoind, executor, VALGRIND, db=db, port=reserve())
+    l1 = LightningNode(1, lightning_dir, bitcoind, lssd, executor, VALGRIND, db=db, port=reserve())
 
     # `LightningNode.start()` internally calls `LightningRpc.getinfo()` which
     # exercises the socket logic, and raises an issue if it fails.
@@ -2590,6 +2593,7 @@ def test_sendcustommsg(node_factory):
     ])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support dev-force-privkey")
 @pytest.mark.developer("needs --dev-force-privkey")
 def test_makesecret(node_factory):
     """
@@ -2628,6 +2632,7 @@ def test_staticbackup(node_factory):
             and l1.rpc.staticbackup()["scb"][0][16: 16 + 64] == _["channel_id"])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd says no such channel")
 def test_recoverchannel(node_factory):
     """
     Test recoverchannel
