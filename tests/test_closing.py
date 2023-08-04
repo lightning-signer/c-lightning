@@ -3773,6 +3773,7 @@ def test_closing_anchorspend_htlc_tx_rbf(node_factory, bitcoind):
         'delay': 12,
         'channel': first_scid(l1, l2)
     }
+    l1.rpc.preapprovekeysend(routestep['id'], rhash, routestep['amount_msat'])
     l1.rpc.sendpay([routestep], rhash, payment_secret=inv['payment_secret'])
     l2.daemon.wait_for_log('dev_disconnect')
     l2.stop()
@@ -3841,6 +3842,7 @@ def test_htlc_no_force_close(node_factory, bitcoind, anchors):
               'id': l3.info['id'],
               'delay': 10,
               'channel': first_scid(l2, l3)}]
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, inv['payment_hash'],
                    payment_secret=inv['payment_secret'])
     l3.daemon.wait_for_log('dev_disconnect')
