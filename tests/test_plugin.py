@@ -1768,6 +1768,7 @@ def test_bitcoin_backend(node_factory, bitcoind):
                                " bitcoind")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "channel too big, then feerate above maximum")
 def test_bitcoin_bad_estimatefee(node_factory, bitcoind):
     """
     This tests that we don't crash if bitcoind backend gives bad estimatefees.
