@@ -6,6 +6,7 @@ import random
 import time
 import json
 import subprocess
+import unittest
 
 
 def test_simple(node_factory):
@@ -181,6 +182,7 @@ def test_amounts(node_factory):
     assert invoice['amount_received_msat'] >= Millisatoshi(123456)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 @pytest.mark.developer("needs to deactivate shadow routing")
 def test_limits(node_factory):
     '''
@@ -279,7 +281,7 @@ def start_channels(connections):
         for n2 in nodes:
             wait_for(lambda: 'alias' in only_one(n.rpc.listnodes(n2.info['id'])['nodes']))
 
-
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 def test_hardmpp(node_factory):
     '''
     Topology:
