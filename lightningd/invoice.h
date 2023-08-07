@@ -1,13 +1,47 @@
 #ifndef LIGHTNING_LIGHTNINGD_INVOICE_H
 #define LIGHTNING_LIGHTNINGD_INVOICE_H
 #include "config.h"
+#include <wallet/wallet.h>
 #include <wire/onion_wire.h>
 
 struct amount_msat;
 struct htlc_set;
+struct json_escape;
 struct lightningd;
 struct sha256;
 
+/* The information about an invoice */
+struct invoice_details {
+	/* Current invoice state */
+	enum invoice_status state;
+	/* Preimage for this invoice */
+	struct preimage r;
+	/* Hash of preimage r */
+	struct sha256 rhash;
+	/* Label assigned by user */
+	const struct json_escape *label;
+	/* NULL if they specified "any" */
+	struct amount_msat *msat;
+	/* Absolute UNIX epoch time this will expire */
+	u64 expiry_time;
+	/* Set if state == PAID; order to be returned by waitanyinvoice */
+	u64 pay_index;
+	/* Set if state == PAID; amount received */
+	struct amount_msat received;
+	/* Set if state == PAID; time paid */
+	u64 paid_timestamp;
+	/* BOLT11 or BOLT12 encoding for this invoice */
+	const char *invstring;
+
+	/* The description of the payment. */
+	char *description;
+	/* The features, if any (tal_arr) */
+	u8 *features;
+	/* The offer this refers to, if any. */
+	struct sha256 *local_offer_id;
+	/* Index values */
+	u64 created_index, updated_index;
+};
 
 /**
  * invoice_check_payment - check if this payment would be valid
@@ -16,6 +50,7 @@ struct sha256;
  * @payment_hash: hash of preimage they want.
  * @msat: amount they offer to pay.
  * @payment_secret: they payment secret they sent, if any.
+ * @err: error string if it returns NULL.
  *
  * Returns NULL if there's a problem, otherwise returns the invoice details.
  */
@@ -24,7 +59,8 @@ invoice_check_payment(const tal_t *ctx,
 		      struct lightningd *ld,
 		      const struct sha256 *payment_hash,
 		      const struct amount_msat msat,
-		      const struct secret *payment_secret);
+		      const struct secret *payment_secret,
+		      const char **err);
 
 /**
  * invoice_try_pay - process payment for these incoming payments.
@@ -37,5 +73,8 @@ invoice_check_payment(const tal_t *ctx,
 void invoice_try_pay(struct lightningd *ld,
 		     struct htlc_set *set,
 		     const struct invoice_details *details);
+
+/* Simple enum -> string converter for JSON fields */
+const char *invoice_status_str(enum invoice_status state);
 
 #endif /* LIGHTNING_LIGHTNINGD_INVOICE_H */

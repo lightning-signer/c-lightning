@@ -1,11 +1,11 @@
 #include "config.h"
 #include <ccan/err/err.h>
 #include <ccan/io/io.h>
-#include <ccan/opt/opt.h>
 #include <ccan/read_write_all/read_write_all.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/link/link.h>
 #include <ccan/tal/str/str.h>
+#include <common/configvar.h>
 #include <common/json_command.h>
 #include <common/json_param.h>
 #include <common/memleak.h>
@@ -20,13 +20,19 @@
 #define DEFAULT_LOGLEVEL LOG_INFORM
 
 /* Once we're up and running, this is set up. */
-struct log *crashlog;
+struct logger *crashlog;
 
 struct print_filter {
+	/* In list log_book->print_filters / log_file->print_filters */
 	struct list_node list;
 
 	const char *prefix;
 	enum log_level level;
+};
+
+struct log_file {
+	struct list_head print_filters;
+	FILE *f;
 };
 
 struct log_book {
@@ -39,8 +45,11 @@ struct log_book {
 	enum log_level *default_print_level;
 	struct timeabs init_time;
 
+	/* Our loggers */
+	struct list_head loggers;
+
 	/* Array of log files: one per ld->logfiles[] */
-	FILE **outfiles;
+	struct log_file **log_files;
 	bool print_timestamps;
 
 	struct log_entry *log;
@@ -56,13 +65,18 @@ struct log_book {
 	struct node_id_map *cache;
 };
 
-struct log {
-	struct log_book *lr;
+struct logger {
+	/* Inside log_book->loggers. */
+	struct list_node list;
+	struct log_book *log_book;
 	const struct node_id *default_node_id;
 	struct log_prefix *prefix;
 
-	/* Non-NULL once it's been initialized */
-	enum log_level *print_level;
+	/* Print log message at >= this level */
+	enum log_level print_level;
+	/* For non-trivial setups, we might need to test filters again
+	 * when actually producing output. */
+	bool need_refiltering;
 };
 
 static struct log_prefix *log_prefix_new(const tal_t *ctx,
@@ -126,19 +140,72 @@ static const char *level_prefix(enum log_level level)
 	abort();
 }
 
+/* What do these filters say about level to log this entry at? */
+static bool filter_level(const struct list_head *print_filters,
+			 const char *prefix,
+			 const char *node_id_str,
+			 enum log_level *level)
+{
+	struct print_filter *i;
+
+	list_for_each(print_filters, i, list) {
+		if (strstr(prefix, i->prefix) || strstr(node_id_str, i->prefix)) {
+			*level = i->level;
+			return true;
+		}
+	}
+	return false;
+}
+
+/* What's the lowest filtering which could possibly apply? */
+static void lowest_filter(const struct list_head *print_filters,
+			  const char *prefix,
+			  const struct node_id *node_id,
+			  enum log_level *level)
+{
+	struct print_filter *i;
+	const char *node_id_str;
+
+	if (node_id)
+		node_id_str = node_id_to_hexstr(tmpctx, node_id);
+	else
+		node_id_str = NULL;
+
+	list_for_each(print_filters, i, list) {
+		bool match;
+
+		if (strstr(prefix, i->prefix))
+			match = true;
+		else if (node_id_str) {
+			match = (strstr(node_id_str, i->prefix) != NULL);
+		} else {
+			/* Could this possibly match a node_id? */
+			match = strstarts(i->prefix, "02") || strstarts(i->prefix, "03");
+		}
+
+		if (match && i->level < *level) {
+			*level = i->level;
+		}
+	}
+}
+
 static void log_to_files(const char *log_prefix,
 			 const char *entry_prefix,
 			 enum log_level level,
+			 /* The node_id to log under. */
 			 const struct node_id *node_id,
+			 /* Filters to apply, if non-NULL */
+			 const struct list_head *print_filters,
 			 const struct timeabs *time,
 			 const char *str,
 			 const u8 *io,
 			 size_t io_len,
 			 bool print_timestamps,
-			 FILE **outfiles)
+			 const enum log_level *default_print_level,
+			 struct log_file **log_files)
 {
 	char tstamp[sizeof("YYYY-mm-ddTHH:MM:SS.nnnZ ")];
-	char *entry;
+	char *entry, *nodestr;
 
 	if (print_timestamps) {
 		char iso8601_msec_fmt[sizeof("YYYY-mm-ddTHH:MM:SS.%03dZ ")];
@@ -147,6 +214,10 @@ static void log_to_files(const char *log_prefix,
 	} else
 		tstamp[0] = '\0';
 
+	if (node_id)
+		nodestr = node_id_to_hexstr(tmpctx, node_id);
+	else
+		nodestr = "";
 	if (level == LOG_IO_IN || level == LOG_IO_OUT) {
 		const char *dir = level == LOG_IO_IN ? "[IN]" : "[OUT]";
 		char *hex = tal_hexstr(NULL, io, io_len);
@@ -156,7 +227,7 @@ static void log_to_files(const char *log_prefix,
 		else
 			entry = tal_fmt(tmpctx, "%s%s%s-%s: %s%s %s\n",
 					log_prefix, tstamp,
-					node_id_to_hexstr(tmpctx, node_id),
+					nodestr,
 					entry_prefix, str, dir, hex);
 		tal_free(hex);
 	} else {
@@ -166,18 +237,42 @@ static void log_to_files(const char *log_prefix,
 		else
 			entry = tal_fmt(tmpctx, "%s%s%s %s-%s: %s\n",
 					log_prefix, tstamp, level_prefix(level),
-					node_id_to_hexstr(tmpctx, node_id),
+					nodestr,
 					entry_prefix, str);
 	}
 
+	/* In complex configurations, we tell loggers to overshare: then we
+	 * need to filter here to see if we really want it. */
+	if (print_filters) {
+		enum log_level filter;
+		if (filter_level(print_filters,
+				 entry_prefix, nodestr, &filter)) {
+			if (level < filter)
+				return;
+		}
+	}
+
 	/* Default if nothing set is stdout */
-	if (!outfiles) {
+	if (!log_files) {
 		fwrite(entry, strlen(entry), 1, stdout);
 		fflush(stdout);
 	}
-	for (size_t i = 0; i < tal_count(outfiles); i++) {
-		fwrite(entry, strlen(entry), 1, outfiles[i]);
-		fflush(outfiles[i]);
+
+	/* We may have to apply per-file filters. */
+	for (size_t i = 0; i < tal_count(log_files); i++) {
+		enum log_level filter;
+		if (!filter_level(&log_files[i]->print_filters,
+				  entry_prefix, nodestr, &filter)) {
+			/* If we haven't set default yet, only log UNUSUAL */
+			if (default_print_level)
+				filter = *default_print_level;
+			else
+				filter = LOG_UNUSUAL;
+		}
+		if (level < filter)
+			continue;
+		fwrite(entry, strlen(entry), 1, log_files[i]->f);
+		fflush(log_files[i]->f);
 	}
 }
 
@@ -266,115 +361,139 @@ static void destroy_log_book(struct log_book *log)
 
 struct log_book *new_log_book(struct lightningd *ld, size_t max_mem)
 {
-	struct log_book *lr = tal_linkable(tal(NULL, struct log_book));
+	struct log_book *log_book = tal_linkable(tal(NULL, struct log_book));
 
 	/* Give a reasonable size for memory limit! */
-	assert(max_mem > sizeof(struct log) * 2);
-	lr->mem_used = 0;
-	lr->num_entries = 0;
-	lr->max_mem = max_mem;
-	lr->outfiles = NULL;
-	lr->default_print_level = NULL;
+	assert(max_mem > sizeof(struct logger) * 2);
+	log_book->mem_used = 0;
+	log_book->num_entries = 0;
+	log_book->max_mem = max_mem;
+	log_book->log_files = NULL;
+	log_book->default_print_level = NULL;
 	/* We have to allocate this, since we tal_free it on resetting */
-	lr->prefix = tal_strdup(lr, "");
-	list_head_init(&lr->print_filters);
-	lr->init_time = time_now();
-	lr->ld = ld;
-	lr->cache = tal(lr, struct node_id_map);
-	node_id_map_init(lr->cache);
-	lr->log = tal_arr(lr, struct log_entry, 128);
-	lr->print_timestamps = true;
-	tal_add_destructor(lr, destroy_log_book);
+	log_book->prefix = tal_strdup(log_book, "");
+	list_head_init(&log_book->print_filters);
+	list_head_init(&log_book->loggers);
+	log_book->init_time = time_now();
+	log_book->ld = ld;
+	log_book->cache = tal(log_book, struct node_id_map);
+	node_id_map_init(log_book->cache);
+	log_book->log = tal_arr(log_book, struct log_entry, 128);
+	log_book->print_timestamps = true;
+	tal_add_destructor(log_book, destroy_log_book);
 
-	return lr;
+	return log_book;
 }
 
-static enum log_level filter_level(struct log_book *lr,
-				   const struct log_prefix *lp,
-				   const struct node_id *node_id)
+/* What's the minimum level to print this prefix and node_id for this
+ * log book?  Saves us marshalling long print lines in most cases. */
+static enum log_level print_level(struct log_book *log_book,
+				  const struct log_prefix *lp,
+				  const struct node_id *node_id,
+				  bool *need_refiltering)
 {
-	struct print_filter *i;
-	const char *node_id_str = node_id ? node_id_to_hexstr(tmpctx, node_id) : "";
+	enum log_level level = *log_book->default_print_level;
+	bool have_filters = false;
 
-	assert(lr->default_print_level != NULL);
-	list_for_each(&lr->print_filters, i, list) {
-		if (strstr(lp->prefix, i->prefix) || strstr(node_id_str, i->prefix))
-			return i->level;
+	lowest_filter(&log_book->print_filters, lp->prefix, node_id, &level);
+	if (!list_empty(&log_book->print_filters))
+		have_filters = true;
+
+	/* We need to look into per-file filters as well: might give a
+	 * lower filter! */
+	for (size_t i = 0; i < tal_count(log_book->log_files); i++) {
+		lowest_filter(&log_book->log_files[i]->print_filters,
+			      lp->prefix, node_id, &level);
+		if (!list_empty(&log_book->log_files[i]->print_filters))
+			have_filters = true;
 	}
-	return *lr->default_print_level;
+
+	/* Almost any complex array of filters can mean we want to re-check
+	 * when logging. */
+	if (need_refiltering)
+		*need_refiltering = have_filters;
+
+	return level;
+}
+
+static void destroy_logger(struct logger *log)
+{
+	list_del_from(&log->log_book->loggers, &log->list);
 }
 
 /* With different entry points */
-struct log *
-new_log(const tal_t *ctx, struct log_book *record,
-	const struct node_id *default_node_id,
-	const char *fmt, ...)
+struct logger *
+new_logger(const tal_t *ctx, struct log_book *log_book,
+	   const struct node_id *default_node_id,
+	   const char *fmt, ...)
 {
-	struct log *log = tal(ctx, struct log);
+	struct logger *log = tal(ctx, struct logger);
 	va_list ap;
 
-	log->lr = tal_link(log, record);
+	log->log_book = tal_link(log, log_book);
 	va_start(ap, fmt);
 	/* Owned by the log book itself, since it can be referenced
 	 * by log entries, too */
-	log->prefix = log_prefix_new(log->lr, take(tal_vfmt(NULL, fmt, ap)));
+	log->prefix = log_prefix_new(log->log_book, take(tal_vfmt(NULL, fmt, ap)));
 	va_end(ap);
 	log->default_node_id = tal_dup_or_null(log, struct node_id,
 					       default_node_id);
 
-	/* Initialized on first use */
-	log->print_level = NULL;
+	/* Still initializing?  Print UNUSUAL / BROKEN messages only  */
+	if (!log->log_book->default_print_level) {
+		log->print_level = LOG_UNUSUAL;
+		log->need_refiltering = false;
+	} else {
+		log->print_level = print_level(log->log_book,
+					       log->prefix,
+					       default_node_id,
+					       &log->need_refiltering);
+	}
+	list_add(&log->log_book->loggers, &log->list);
+	tal_add_destructor(log, destroy_logger);
 	return log;
 }
 
-const char *log_prefix(const struct log *log)
+const char *log_prefix(const struct logger *log)
 {
 	return log->prefix->prefix;
 }
 
-enum log_level log_print_level(struct log *log, const struct node_id *node_id)
+bool log_has_io_logging(const struct logger *log)
 {
-	if (!log->print_level) {
-		/* Not set globally yet?  Print UNUSUAL / BROKEN messages only */
-		if (!log->lr->default_print_level)
-			return LOG_UNUSUAL;
-		log->print_level = tal(log, enum log_level);
-		*log->print_level = filter_level(log->lr, log->prefix, node_id);
-	}
-	return *log->print_level;
+	return print_level(log->log_book, log->prefix, log->default_node_id, NULL) < LOG_DBG;
 }
-
 
 /* This may move entry! */
-static void add_entry(struct log *log, struct log_entry **l)
+static void add_entry(struct logger *log, struct log_entry **l)
 {
-	log->lr->mem_used += mem_used(*l);
-	log->lr->num_entries++;
+	log->log_book->mem_used += mem_used(*l);
+	log->log_book->num_entries++;
 
-	if (log->lr->mem_used > log->lr->max_mem) {
-		size_t old_mem = log->lr->mem_used, deleted;
-		deleted = prune_log(log->lr);
+	if (log->log_book->mem_used > log->log_book->max_mem) {
+		size_t old_mem = log->log_book->mem_used, deleted;
+		deleted = prune_log(log->log_book);
 		/* Will have moved, but will be last entry. */
-		*l = &log->lr->log[log->lr->num_entries-1];
+		*l = &log->log_book->log[log->log_book->num_entries-1];
 		log_debug(log, "Log pruned %zu entries (mem %zu -> %zu)",
-			  deleted, old_mem, log->lr->mem_used);
+			  deleted, old_mem, log->log_book->mem_used);
 	}
 }
 
-static void destroy_node_id_cache(struct node_id_cache *nc, struct log_book *lr)
+static void destroy_node_id_cache(struct node_id_cache *nc, struct log_book *log_book)
 {
-	node_id_map_del(lr->cache, nc);
+	node_id_map_del(log_book->cache, nc);
 }
 
-static struct log_entry *new_log_entry(struct log *log, enum log_level level,
+static struct log_entry *new_log_entry(struct logger *log, enum log_level level,
 				       const struct node_id *node_id)
 {
 	struct log_entry *l;
 
-	if (log->lr->num_entries == tal_count(log->lr->log))
-		tal_resize(&log->lr->log, tal_count(log->lr->log) * 2);
+	if (log->log_book->num_entries == tal_count(log->log_book->log))
+		tal_resize(&log->log_book->log, tal_count(log->log_book->log) * 2);
 
-	l = &log->lr->log[log->lr->num_entries];
+	l = &log->log_book->log[log->log_book->num_entries];
 	l->time = time_now();
 	l->level = level;
 	l->skipped = 0;
@@ -383,14 +502,14 @@ static struct log_entry *new_log_entry(struct log *log, enum log_level level,
 	if (!node_id)
 		node_id = log->default_node_id;
 	if (node_id) {
-		l->nc = node_id_map_get(log->lr->cache, node_id);
+		l->nc = node_id_map_get(log->log_book->cache, node_id);
 		if (!l->nc) {
-			l->nc = tal(log->lr->cache, struct node_id_cache);
+			l->nc = tal(log->log_book->cache, struct node_id_cache);
 			l->nc->count = 0;
 			l->nc->node_id = *node_id;
-			node_id_map_add(log->lr->cache, l->nc);
+			node_id_map_add(log->log_book->cache, l->nc);
 			tal_add_destructor2(l->nc, destroy_node_id_cache,
-					    log->lr);
+					    log->log_book);
 		}
 		l->nc->count++;
 	} else
@@ -399,18 +518,20 @@ static struct log_entry *new_log_entry(struct log *log, enum log_level level,
 	return l;
 }
 
-static void maybe_print(struct log *log, const struct log_entry *l)
+static void maybe_print(struct logger *log, const struct log_entry *l)
 {
-	if (l->level >= log_print_level(log, l->nc ? &l->nc->node_id : NULL))
-		log_to_files(log->lr->prefix, log->prefix->prefix, l->level,
+	if (l->level >= log->print_level)
+		log_to_files(log->log_book->prefix, log->prefix->prefix, l->level,
 			     l->nc ? &l->nc->node_id : NULL,
+			     log->need_refiltering ? &log->log_book->print_filters : NULL,
 			     &l->time, l->log,
 			     l->io, tal_bytelen(l->io),
-			     log->lr->print_timestamps,
-			     log->lr->outfiles);
+			     log->log_book->print_timestamps,
+			     log->log_book->default_print_level,
+			     log->log_book->log_files);
 }
 
-void logv(struct log *log, enum log_level level,
+void logv(struct logger *log, enum log_level level,
 	  const struct node_id *node_id,
 	  bool call_notifier,
 	  const char *fmt, va_list ap)
@@ -435,12 +556,12 @@ void logv(struct log *log, enum log_level level,
 	add_entry(log, &l);
 
 	if (call_notifier)
-		notify_warning(log->lr->ld, l);
+		notify_warning(log->log_book->ld, l);
 
 	errno = save_errno;
 }
 
-void log_io(struct log *log, enum log_level dir,
+void log_io(struct logger *log, enum log_level dir,
 	    const struct node_id *node_id,
 	    const char *str TAKES,
 	    const void *data TAKES, size_t len)
@@ -451,13 +572,15 @@ void log_io(struct log *log, enum log_level dir,
 	assert(dir == LOG_IO_IN || dir == LOG_IO_OUT);
 
 	/* Print first, in case we need to truncate. */
-	if (l->level >= log_print_level(log, node_id))
-		log_to_files(log->lr->prefix, log->prefix->prefix, l->level,
+	if (l->level >= log->print_level)
+		log_to_files(log->log_book->prefix, log->prefix->prefix, l->level,
 			     l->nc ? &l->nc->node_id : NULL,
+			     log->need_refiltering ? &log->log_book->print_filters : NULL,
 			     &l->time, str,
 			     data, len,
-			     log->lr->print_timestamps,
-			     log->lr->outfiles);
+			     log->log_book->print_timestamps,
+			     log->log_book->default_print_level,
+			     log->log_book->log_files);
 
 	/* Save a tal header, by using raw malloc. */
 	l->log = strdup(str);
@@ -465,20 +588,20 @@ void log_io(struct log *log, enum log_level dir,
 		tal_free(str);
 
 	/* Don't immediately fill buffer with giant IOs */
-	if (len > log->lr->max_mem / 64) {
+	if (len > log->log_book->max_mem / 64) {
 		l->skipped++;
-		len = log->lr->max_mem / 64;
+		len = log->log_book->max_mem / 64;
 	}
 
 	/* FIXME: We could save 4 pointers by using a raw allow, but saving
 	 * the length. */
-	l->io = tal_dup_arr(log->lr, u8, data, len, 0);
+	l->io = tal_dup_arr(log->log_book, u8, data, len, 0);
 
 	add_entry(log, &l);
 	errno = save_errno;
 }
 
-void log_(struct log *log, enum log_level level,
+void log_(struct logger *log, enum log_level level,
 	  const struct node_id *node_id,
 	  bool call_notifier,
 	  const char *fmt, ...)
@@ -490,8 +613,8 @@ void log_(struct log *log, enum log_level level,
 	va_end(ap);
 }
 
-#define log_each_line(lr, func, arg)					\
-	log_each_line_((lr),						\
+#define log_each_line(log_book, func, arg)					\
+	log_each_line_((log_book),					\
 		       typesafe_cb_preargs(void, void *, (func), (arg),	\
 					   unsigned int,		\
 					   struct timerel,		\
@@ -501,7 +624,7 @@ void log_(struct log *log, enum log_level level,
 					   const char *,		\
 					   const u8 *), (arg))
 
-static void log_each_line_(const struct log_book *lr,
+static void log_each_line_(const struct log_book *log_book,
 			   void (*func)(unsigned int skipped,
 					struct timerel time,
 					enum log_level level,
@@ -512,10 +635,10 @@ static void log_each_line_(const struct log_book *lr,
 					void *arg),
 			   void *arg)
 {
-	for (size_t i = 0; i < lr->num_entries; i++) {
-		const struct log_entry *l = &lr->log[i];
+	for (size_t i = 0; i < log_book->num_entries; i++) {
+		const struct log_entry *l = &log_book->log[i];
 
-		func(l->skipped, time_between(l->time, lr->init_time),
+		func(l->skipped, time_between(l->time, log_book->init_time),
 		     l->level, l->nc ? &l->nc->node_id : NULL,
 		     l->prefix->prefix, l->log, l->io, arg);
 	}
@@ -574,48 +697,74 @@ static void log_one_line(unsigned int skipped,
 	data->prefix = "\n";
 }
 
-char *opt_log_level(const char *arg, struct log *log)
+static struct log_file *find_log_file(struct log_book *log_book,
+				      const char *fname)
+{
+	assert(tal_count(log_book->log_files)
+	       == tal_count(log_book->ld->logfiles));
+	for (size_t i = 0; i < tal_count(log_book->log_files); i++) {
+		if (streq(log_book->ld->logfiles[i], fname))
+			return log_book->log_files[i];
+	}
+	return NULL;
+}
+
+char *opt_log_level(const char *arg, struct log_book *log_book)
 {
 	enum log_level level;
 	int len;
 
 	len = strcspn(arg, ":");
 	if (!log_level_parse(arg, len, &level))
-		return tal_fmt(NULL, "unknown log level %.*s", len, arg);
+		return tal_fmt(tmpctx, "unknown log level %.*s", len, arg);
 
 	if (arg[len]) {
-		struct print_filter *f = tal(log->lr, struct print_filter);
+		struct print_filter *f = tal(log_book, struct print_filter);
 		f->prefix = arg + len + 1;
 		f->level = level;
-		list_add_tail(&log->lr->print_filters, &f->list);
+
+		/* :<filename> */
+		len = strcspn(f->prefix, ":");
+		if (f->prefix[len]) {
+			struct log_file *lf;
+			lf = find_log_file(log_book, f->prefix + len + 1);
+			if (!lf)
+				return tal_fmt(tmpctx,
+					       "unknown log file %s",
+					       f->prefix + len + 1);
+			f->prefix = tal_strndup(f, f->prefix, len);
+			list_add_tail(&lf->print_filters, &f->list);
+		} else {
+			list_add_tail(&log_book->print_filters, &f->list);
+		}
 	} else {
-		tal_free(log->lr->default_print_level);
-		log->lr->default_print_level = tal(log->lr, enum log_level);
-		*log->lr->default_print_level = level;
+		tal_free(log_book->default_print_level);
+		log_book->default_print_level = tal(log_book, enum log_level);
+		*log_book->default_print_level = level;
 	}
 	return NULL;
 }
 
-void json_add_opt_log_levels(struct json_stream *response, struct log *log)
+void json_add_opt_log_levels(struct json_stream *response, struct log_book *log_book)
 {
 	struct print_filter *i;
 
-	list_for_each(&log->lr->print_filters, i, list) {
+	list_for_each(&log_book->print_filters, i, list) {
 		json_add_str_fmt(response, "log-level", "%s:%s",
 				 log_level_name(i->level), i->prefix);
 	}
 }
 
-static void show_log_level(char buf[OPT_SHOW_LEN], const struct log *log)
+static bool show_log_level(char *buf, size_t len, const struct log_book *log_book)
 {
 	enum log_level l;
 
-	if (log->lr->default_print_level)
-		l = *log->lr->default_print_level;
+	if (log_book->default_print_level)
+		l = *log_book->default_print_level;
 	else
 		l = DEFAULT_LOGLEVEL;
-	strncpy(buf, log_level_name(l), OPT_SHOW_LEN - 1);
-	buf[OPT_SHOW_LEN - 1] = '\0';
+	strncpy(buf, log_level_name(l), len);
+	return true;
 }
 
 static char *arg_log_prefix(const char *arg, struct log_book *log_book)
@@ -625,10 +774,11 @@ static char *arg_log_prefix(const char *arg, struct log_book *log_book)
 	return NULL;
 }
 
-static void show_log_prefix(char buf[OPT_SHOW_LEN], const struct log_book *log_book)
+static bool show_log_prefix(char *buf, size_t len, const struct log_book *log_book)
 {
-	strncpy(buf, log_book->prefix, OPT_SHOW_LEN - 1);
-	buf[OPT_SHOW_LEN - 1] = '\0';
+	strncpy(buf, log_book->prefix, len);
+	/* Default is empty, so don't print that! */
+	return !streq(log_book->prefix, "");
 }
 
 static int signalfds[2];
@@ -647,12 +797,12 @@ static struct io_plan *setup_read(struct io_conn *conn, struct lightningd *ld);
 static struct io_plan *rotate_log(struct io_conn *conn, struct lightningd *ld)
 {
 	log_info(ld->log, "Ending log due to SIGHUP");
-	for (size_t i = 0; i < tal_count(ld->log->lr->outfiles); i++) {
+	for (size_t i = 0; i < tal_count(ld->log->log_book->log_files); i++) {
 		if (streq(ld->logfiles[i], "-"))
 			continue;
-		fclose(ld->log->lr->outfiles[i]);
-		ld->log->lr->outfiles[i] = fopen(ld->logfiles[i], "a");
-		if (!ld->log->lr->outfiles[i])
+		fclose(ld->log->log_book->log_files[i]->f);
+		ld->log->log_book->log_files[i]->f = fopen(ld->logfiles[i], "a");
+		if (!ld->log->log_book->log_files[i]->f)
 			err(1, "failed to reopen log file %s", ld->logfiles[i]);
 	}
 
@@ -703,29 +853,31 @@ static void setup_log_rotation(struct lightningd *ld)
 char *arg_log_to_file(const char *arg, struct lightningd *ld)
 {
 	int size;
-	FILE *outf;
+	struct log_file *logf;
 
 	if (!ld->logfiles) {
 		setup_log_rotation(ld);
 		ld->logfiles = tal_arr(ld, const char *, 0);
-		ld->log->lr->outfiles = tal_arr(ld->log->lr, FILE *, 0);
+		ld->log_book->log_files = tal_arr(ld->log_book, struct log_file *, 0);
 	}
 
+	logf = tal(ld->log_book->log_files, struct log_file);
+	list_head_init(&logf->print_filters);
 	if (streq(arg, "-"))
-		outf = stdout;
+		logf->f = stdout;
 	else {
-		outf = fopen(arg, "a");
-		if (!outf)
-			return tal_fmt(NULL, "Failed to open: %s", strerror(errno));
+		logf->f = fopen(arg, "a");
+		if (!logf->f)
+			return tal_fmt(tmpctx, "Failed to open: %s", strerror(errno));
 	}
 
 	tal_arr_expand(&ld->logfiles, tal_strdup(ld->logfiles, arg));
-	tal_arr_expand(&ld->log->lr->outfiles, outf);
+	tal_arr_expand(&ld->log_book->log_files, logf);
 
 	/* For convenience make a block of empty lines just like Bitcoin Core */
-	size = ftell(outf);
+	size = ftell(logf->f);
 	if (size > 0)
-		fprintf(outf, "\n\n\n\n");
+		fprintf(logf->f, "\n\n\n\n");
 
 	log_debug(ld->log, "Opened log file %s", arg);
 	return NULL;
@@ -734,37 +886,52 @@ char *arg_log_to_file(const char *arg, struct lightningd *ld)
 void opt_register_logging(struct lightningd *ld)
 {
 	opt_register_early_arg("--log-level",
-			       opt_log_level, show_log_level, ld->log,
+			       opt_log_level, show_log_level, ld->log_book,
 			       "log level (io, debug, info, unusual, broken) [:prefix]");
-	opt_register_early_arg("--log-timestamps",
-			       opt_set_bool_arg, opt_show_bool, &ld->log->lr->print_timestamps,
-			       "prefix log messages with timestamp");
+	clnopt_witharg("--log-timestamps", OPT_EARLY|OPT_SHOWBOOL,
+		       opt_set_bool_arg, opt_show_bool,
+		       &ld->log_book->print_timestamps,
+		       "prefix log messages with timestamp");
 	opt_register_early_arg("--log-prefix", arg_log_prefix, show_log_prefix,
 			       ld->log_book,
 			       "log prefix");
-	opt_register_early_arg("--log-file=<file>", arg_log_to_file, NULL, ld,
-			       "Also log to file (- for stdout)");
+	clnopt_witharg("--log-file=<file>",
+		       OPT_EARLY|OPT_MULTI,
+		       arg_log_to_file, NULL, ld,
+		       "Also log to file (- for stdout)");
 }
 
-void logging_options_parsed(struct log_book *lr)
+void logging_options_parsed(struct log_book *log_book)
 {
+	struct logger *log;
+
 	/* If they didn't set an explicit level, set to info */
-	if (!lr->default_print_level) {
-		lr->default_print_level = tal(lr, enum log_level);
-		*lr->default_print_level = DEFAULT_LOGLEVEL;
+	if (!log_book->default_print_level) {
+		log_book->default_print_level = tal(log_book, enum log_level);
+		*log_book->default_print_level = DEFAULT_LOGLEVEL;
+	}
+
+	/* Set print_levels for each log, depending on filters. */
+	list_for_each(&log_book->loggers, log, list) {
+		log->print_level = print_level(log_book,
+					       log->prefix,
+					       log->default_node_id,
+					       &log->need_refiltering);
 	}
 
 	/* Catch up, since before we were only printing BROKEN msgs */
-	for (size_t i = 0; i < lr->num_entries; i++) {
-		const struct log_entry *l = &lr->log[i];
+	for (size_t i = 0; i < log_book->num_entries; i++) {
+		const struct log_entry *l = &log_book->log[i];
 
-		if (l->level >= filter_level(lr, l->prefix, NULL))
-			log_to_files(lr->prefix, l->prefix->prefix, l->level,
+		if (l->level >= print_level(log_book, l->prefix, l->nc ? &l->nc->node_id : NULL, NULL))
+			log_to_files(log_book->prefix, l->prefix->prefix, l->level,
 				     l->nc ? &l->nc->node_id : NULL,
+				     &log_book->print_filters,
 				     &l->time, l->log,
 				     l->io, tal_bytelen(l->io),
-				     lr->print_timestamps,
-				     lr->outfiles);
+				     log_book->print_timestamps,
+				     log_book->default_print_level,
+				     log_book->log_files);
 	}
 }
 
@@ -780,26 +947,26 @@ void log_backtrace_print(const char *fmt, ...)
 	va_end(ap);
 }
 
-static void log_dump_to_file(int fd, const struct log_book *lr)
+static void log_dump_to_file(int fd, const struct log_book *log_book)
 {
 	char buf[100];
 	int len;
 	struct log_data data;
 	time_t start;
 
-	if (lr->num_entries == 0) {
+	if (log_book->num_entries == 0) {
 		write_all(fd, "0 bytes:\n\n", strlen("0 bytes:\n\n"));
 		return;
 	}
 
-	start = lr->init_time.ts.tv_sec;
-	len = snprintf(buf, sizeof(buf), "%zu bytes, %s", lr->mem_used, ctime(&start));
+	start = log_book->init_time.ts.tv_sec;
+	len = snprintf(buf, sizeof(buf), "%zu bytes, %s", log_book->mem_used, ctime(&start));
 	write_all(fd, buf, len);
 
 	/* ctime includes \n... WTF? */
 	data.prefix = "";
 	data.fd = fd;
-	log_each_line(lr, log_one_line, &data);
+	log_each_line(log_book, log_one_line, &data);
 	write_all(fd, "\n\n", strlen("\n\n"));
 }
 
@@ -827,7 +994,7 @@ void log_backtrace_exit(void)
 
 	/* Dump entire log. */
 	if (fd >= 0) {
-		log_dump_to_file(fd, crashlog->lr);
+		log_dump_to_file(fd, crashlog->log_book);
 		close(fd);
 		fprintf(stderr, "Log dumped in %s\n", logfile);
 	}
@@ -923,7 +1090,7 @@ static void log_to_json(unsigned int skipped,
 }
 
 void json_add_log(struct json_stream *response,
-		  const struct log_book *lr,
+		  const struct log_book *log_book,
 		  const struct node_id *node_id,
 		  enum log_level minlevel)
 {
@@ -935,7 +1102,7 @@ void json_add_log(struct json_stream *response,
 	info.node_id = node_id;
 
 	json_array_start(info.response, "log");
-	log_each_line(lr, log_to_json, &info);
+	log_each_line(log_book, log_to_json, &info);
 	add_skipped(&info);
 	json_array_end(info.response);
 }
@@ -962,7 +1129,7 @@ static struct command_result *json_getlog(struct command *cmd,
 {
 	struct json_stream *response;
 	enum log_level *minlevel;
-	struct log_book *lr = cmd->ld->log_book;
+	struct log_book *log_book = cmd->ld->log_book;
 
 	if (!param(cmd, buffer, params,
 		   p_opt_def("level", param_loglevel, &minlevel, LOG_INFORM),
@@ -972,10 +1139,10 @@ static struct command_result *json_getlog(struct command *cmd,
 	response = json_stream_success(cmd);
 	/* Suppress logging for this stream, to not bloat io logs */
 	json_stream_log_suppress_for_cmd(response, cmd);
-	json_add_time(response, "created_at", lr->init_time.ts);
-	json_add_num(response, "bytes_used", (unsigned int)lr->mem_used);
-	json_add_num(response, "bytes_max", (unsigned int)lr->max_mem);
-	json_add_log(response, lr, NULL, *minlevel);
+	json_add_time(response, "created_at", log_book->init_time.ts);
+	json_add_num(response, "bytes_used", (unsigned int)log_book->mem_used);
+	json_add_num(response, "bytes_max", (unsigned int)log_book->max_mem);
+	json_add_log(response, log_book, NULL, *minlevel);
 	return command_success(cmd, response);
 }
 

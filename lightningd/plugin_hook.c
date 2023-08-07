@@ -236,7 +236,7 @@ static void plugin_hook_call_next(struct plugin_hook_request *ph_req)
 		  ph_req->hook->name, ph_req->plugin->shortname);
 	req = jsonrpc_request_start(NULL, hook->name, ph_req->cmd_id,
 				    ph_req->plugin->non_numeric_ids,
-				    plugin_get_log(ph_req->plugin),
+				    plugin_get_logger(ph_req->plugin),
 				    NULL,
 				    plugin_hook_callback, ph_req);
 
@@ -262,10 +262,7 @@ bool plugin_hook_call_(struct lightningd *ld, const struct plugin_hook *hook,
 		ph_req->cb_arg = tal_steal(ph_req, cb_arg);
 		ph_req->db = ld->wallet->db;
 		ph_req->ld = ld;
-		if (cmd_id)
-			ph_req->cmd_id = tal_strdup(ph_req, cmd_id);
-		else
-			ph_req->cmd_id = NULL;
+		ph_req->cmd_id = tal_strdup_or_null(ph_req, cmd_id);
 
 		list_head_init(&ph_req->call_chain);
 		for (size_t i=0; i<tal_count(hook->hooks); i++) {

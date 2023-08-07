@@ -54,20 +54,6 @@ char *tal_hex(const tal_t *ctx, const tal_t *data);
 /* Allocate and fill a buffer with the data of this hex string. */
 u8 *tal_hexdata(const tal_t *ctx, const void *str, size_t len);
 
-/* Macro to set memberptr in tal object outer to point to tal object obj,
- * if it isn't NULL.
- * The 0*sizeof() checks that *memberptr = obj is valid */
-#define set_softref(outer, memberptr, obj)				\
-	set_softref_((outer), sizeof(*(outer)) + 0*sizeof(*(memberptr) = obj), \
-		     (void **)(memberptr), (obj))
-
-/* Macro to clear a (set) softref ptr to NULL  */
-#define clear_softref(outer, memberptr)					\
-	clear_softref_((outer), sizeof(*(outer)), (void **)(memberptr))
-
-void set_softref_(const tal_t *outer, size_t outersize, void **ptr, tal_t *obj);
-void clear_softref_(const tal_t *outer, size_t outersize, void **ptr);
-
 /* Note: p is never a complex expression, otherwise this multi-evaluates! */
 #define tal_arr_expand(p, s)						\
 	do {								\
@@ -102,6 +88,9 @@ bool utf8_check(const void *buf, size_t buflen);
 /* Check it's UTF-8, return copy (or same if TAKES), or NULL if not valid. */
 char *utf8_str(const tal_t *ctx, const u8 *buf TAKES, size_t buflen);
 
+/* Strdup, or pass through NULL */
+char *tal_strdup_or_null(const tal_t *ctx, const char *str);
+
 /* Use the POSIX C locale. */
 void setup_locale(void);
 
@@ -123,10 +112,10 @@ void tal_wally_end(const tal_t *parent);
 /* ... or this if you want to reparent onto something which is
  * allocated by libwally here.  Fixes up this from_wally obj to have a
  * proper tal_name, too! */
-#define tal_wally_end_onto(parent, from_wally, type)			\
-	tal_wally_end_onto_((parent),					\
-			    (from_wally) + 0*sizeof((from_wally) == (type *)0), \
-			    stringify(type))
+#define tal_wally_end_onto(parent, from_wally, type)                           \
+	tal_wally_end_onto_(                                                   \
+	    (parent), (from_wally),                                            \
+	    &stringify(type)[0 * sizeof((from_wally) == (type *)0)])
 void tal_wally_end_onto_(const tal_t *parent,
 			 tal_t *from_wally,
 			 const char *from_wally_name);
@@ -153,18 +142,20 @@ STRUCTEQ_DEF(ripemd160, 0, u);
 #define IFDEV(dev, nondev) (nondev)
 #endif
 
-#if EXPERIMENTAL_FEATURES
-/* Make sure that nondev is evaluated, and valid, but is a constant */
-#define IFEXPERIMENTAL(exp, nonexp) (0 ? (nonexp) : (exp))
-#else
-#define IFEXPERIMENTAL(exp, nonexp) (nonexp)
-#endif
-
 /* Context which all wally allocations use (see common/setup.c) */
 extern const tal_t *wally_tal_ctx;
 
 /* Like mkstemp but resolves template relative to $TMPDIR (or /tmp if unset).
  * Returns created temporary path name at *created if successful. */
-int tmpdir_mkstemp(const tal_t *ctx, const char *template TAKES, char **created);
+int tmpdir_mkstemp(const tal_t *ctx, const char *tmplt TAKES, char **created);
+
+/**
+ * tal_strlowering - return the same string by in lower case.
+ * @ctx: the context to tal from (often NULL)
+ * @string: the string that is going to be lowered (can be take())
+ *
+ * FIXME: move this in ccan
+ */
+char *str_lowering(const void *ctx, const char *string TAKES);
 
 #endif /* LIGHTNING_COMMON_UTILS_H */

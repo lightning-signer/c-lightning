@@ -6,6 +6,7 @@
 #include <lightningd/htlc_set.h>
 #include <lightningd/options.h>
 #include <lightningd/peer_control.h>
+#include <lightningd/wait.h>
 #include <signal.h>
 #include <sys/stat.h>
 #include <wallet/wallet.h>
@@ -106,6 +107,9 @@ struct lightningd {
 	/* The directory to find all the subdaemons. */
 	const char *daemon_dir;
 
+	/* Are deprecated APIs enabled? */
+	bool deprecated_apis;
+
 	/* If we told to run in the background, this is our parent fd, otherwise
 	 * -1. */
 	int daemon_parent_fd;
@@ -128,11 +132,13 @@ struct lightningd {
 	char *config_filename;
 	/* Configuration settings. */
 	struct config config;
+	/* Where each configuration setting came from */
+	struct configvar **configvars;
 
-	/* This log_book is owned by all the struct logs */
+	/* This log_book is owned by all the struct loggers */
 	struct log_book *log_book;
 	/* Log for general stuff. */
-	struct log *log;
+	struct logger *log;
 	const char **logfiles;
 
 	/* This is us. */
@@ -232,6 +238,11 @@ struct lightningd {
 	struct list_head ping_commands;
 	/* Outstanding disconnect commands. */
 	struct list_head disconnect_commands;
+	/* Outstanding wait commands */
+	struct list_head wait_commands;
+
+	/* Outstanding splice commands. */
+	struct list_head splice_commands;
 
 	/* Maintained by invoices.c */
 	struct invoices *invoices;
@@ -260,9 +271,15 @@ struct lightningd {
 	/* Announce names in config as DNS records (recently BOLT 7 addition) */
 	bool announce_dns;
 
+	/* Indexes used by all the wait infra */
+	struct indexes indexes[NUM_WAIT_SUBSYSTEM];
+
+	/* Contains the codex32 string used with --recover flag */
+	char *recover;
+
 #if DEVELOPER
 	/* If we want to debug a subdaemon/plugin. */
-	const char *dev_debug_subprocess;
+	char *dev_debug_subprocess;
 
 	/* If we have --dev-no-plugin-checksum */
 	bool dev_no_plugin_checksum;
@@ -360,6 +377,15 @@ struct lightningd {
 
 	/* EXPERIMENTAL: websocket port if non-zero */
 	u16 websocket_port;
+
+	/* --experimental-upgrade-protocol */
+	bool experimental_upgrade_protocol;
+
+	/* For anchors: how much do we keep for spending close txs? */
+	struct amount_sat emergency_sat;
+
+	/* runes! */
+	struct runes *runes;
 };
 
 /* Turning this on allows a tal allocation to return NULL, rather than aborting.

@@ -251,17 +251,13 @@ static void setup_force_nannounce_regen_timer(struct daemon *daemon);
  * the routing.c code like any other `node_announcement`.  Such announcements
  * are only accepted if there is an announced channel associated with that node
  * (to prevent spam), so we only call this once we've announced a channel. */
-/* Returns true if this sent one, or has arranged to send one in future. */
-static bool update_own_node_announcement(struct daemon *daemon,
+static void update_own_node_announcement(struct daemon *daemon,
 					 bool startup,
 					 bool always_refresh)
 {
 	u32 timestamp = gossip_time_now(daemon->rstate).ts.tv_sec;
 	u8 *nannounce;
 	struct node *self = get_node(daemon->rstate, &daemon->id);
-
-	/* Discard existing timer. */
-	daemon->node_announce_timer = tal_free(daemon->node_announce_timer);
 
 	/* If we don't have any channels now, don't send node_announcement */
 	if (!self || !node_has_broadcastable_channels(self))
@@ -287,7 +283,15 @@ static bool update_own_node_announcement(struct daemon *daemon,
 					 &only_missing_tlv)) {
 			if (always_refresh)
 				goto send;
-			return false;
+			/* Update if old announcement is at least 7 days old. */
+			if (timestamp > self->bcast.timestamp &&
+			    timestamp - self->bcast.timestamp >
+			    GOSSIP_PRUNE_INTERVAL(daemon->rstate->dev_fast_gossip_prune) / 2)
+				goto send;
+			/* First time? Start regen timer. */
+			if (!daemon->node_announce_regen_timer)
+				goto reset_timer;
+			return;
 		}
 
 		/* Missing liquidity_ad, maybe we'll get plugin callback */
@@ -296,13 +300,16 @@ static bool update_own_node_announcement(struct daemon *daemon,
 			status_debug("node_announcement: delaying"
 				     " %u secs at start", delay);
 
+			/* Discard existing timer. */
+			daemon->node_announce_timer
+				= tal_free(daemon->node_announce_timer);
 			daemon->node_announce_timer
 				= new_reltimer(&daemon->timers,
 					       daemon,
 					       time_from_sec(delay),
 					       update_own_node_announcement_after_startup,
 					       daemon);
-			return true;
+			return;
 		}
 		/* BOLT #7:
 		 *
@@ -318,13 +325,16 @@ static bool update_own_node_announcement(struct daemon *daemon,
 			status_debug("node_announcement: delaying %u secs",
 				     next - timestamp);
 
+			/* Discard existing timer. */
+			daemon->node_announce_timer
+				= tal_free(daemon->node_announce_timer);
 			daemon->node_announce_timer
 				= new_reltimer(&daemon->timers,
 					       daemon,
 					       time_from_sec(next - timestamp),
 					       update_own_node_announcement_after_startup,
 					       daemon);
-			return true;
+			return;
 		}
 	}
 
@@ -335,7 +345,7 @@ reset_timer:
 	/* Generate another one in 24 hours. */
 	setup_force_nannounce_regen_timer(daemon);
 
-	return true;
+	return;
 }
 
 static void update_own_node_announcement_after_startup(struct daemon *daemon)
@@ -524,7 +534,7 @@ static u8 *create_unsigned_update(const tal_t *ctx,
 	/* So valgrind doesn't complain */
 	memset(&dummy_sig, 0, sizeof(dummy_sig));
 
-	/* BOLT #7:
+	/* BOLT-f3a9f7f4e9e7a5a2997f3129e13d94090091846a #7:
 	 *
 	 * The `channel_flags` bitfield is used to indicate the direction of
 	 * the channel: it identifies the node that this update originated
@@ -590,7 +600,7 @@ static void apply_update(struct daemon *daemon,
 			take(update);
 	}
 
-	msg = handle_channel_update(daemon->rstate, update, peer, NULL, true);
+	msg = handle_channel_update(daemon->rstate, update, &chan->nodes[!direction]->id, NULL, true);
 	if (msg)
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 			      "%s: rejected local channel update %s: %s",
@@ -750,7 +760,7 @@ void refresh_local_channel(struct daemon *daemon,
 		return;
 	}
 
-	/* BOLT #7:
+	/* BOLT-f3a9f7f4e9e7a5a2997f3129e13d94090091846a #7:
 	 *
 	 * The `channel_flags` bitfield is used to indicate the direction of
 	 * the channel: it identifies the node that this update originated

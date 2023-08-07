@@ -1,12 +1,25 @@
 #include "config.h"
+#include "../bech32.c"
 #include "../json_filter.c"
 #include "../json_parse.c"
 #include "../json_parse_simple.c"
-#include "../json_param.c"
+#include <assert.h>
 #include <ccan/array_size/array_size.h>
 #include <common/channel_type.h>
 #include <common/setup.h>
 #include <stdio.h>
+
+/* We want to catch parameter checs for bad_programmer() */
+#define paramcheck_assert save_paramcheck_assert
+
+static bool paramcheck_assert_failed;
+static void save_paramcheck_assert(bool cond)
+{
+	if (!cond)
+		paramcheck_assert_failed = true;
+}
+
+#include "../json_param.c"
 
 char *fail_msg = NULL;
 bool failed = false;
@@ -39,23 +52,15 @@ struct command_result *command_fail(struct command *cmd,
 /* Generated stub for command_filter_ptr */
 struct json_filter **command_filter_ptr(struct command *cmd UNNEEDED)
 { fprintf(stderr, "command_filter_ptr called!\n"); abort(); }
-/* Generated stub for deprecated_apis */
-bool deprecated_apis;
 /* Generated stub for fromwire_tlv */
 bool fromwire_tlv(const u8 **cursor UNNEEDED, size_t *max UNNEEDED,
 		  const struct tlv_record_type *types UNNEEDED, size_t num_types UNNEEDED,
 		  void *record UNNEEDED, struct tlv_field **fields UNNEEDED,
 		  const u64 *extra_types UNNEEDED, size_t *err_off UNNEEDED, u64 *err_type UNNEEDED)
 { fprintf(stderr, "fromwire_tlv called!\n"); abort(); }
-/* Generated stub for segwit_addr_decode */
-int segwit_addr_decode(
-    int* ver UNNEEDED,
-    uint8_t* prog UNNEEDED,
-    size_t* prog_len UNNEEDED,
-    const char* hrp UNNEEDED,
-    const char* addr
-)
-{ fprintf(stderr, "segwit_addr_decode called!\n"); abort(); }
+/* Generated stub for to_canonical_invstr */
+const char *to_canonical_invstr(const tal_t *ctx UNNEEDED, const char *invstring UNNEEDED)
+{ fprintf(stderr, "to_canonical_invstr called!\n"); abort(); }
 /* Generated stub for towire_tlv */
 void towire_tlv(u8 **pptr UNNEEDED,
 		const struct tlv_record_type *types UNNEEDED, size_t num_types UNNEEDED,
@@ -72,6 +77,7 @@ enum command_mode {
 
 struct command {
 	enum command_mode mode;
+	bool deprecated_apis;
 	const char *usage;
 };
 
@@ -88,6 +94,11 @@ bool command_usage_only(const struct command *cmd)
 bool command_check_only(const struct command *cmd)
 {
 	return cmd->mode == CMD_CHECK;
+}
+
+bool command_deprecated_apis(const struct command *cmd)
+{
+	return cmd->deprecated_apis;
 }
 
 struct json {
@@ -300,8 +311,6 @@ static void no_params(void)
 	assert(!param(cmd, j->buffer, j->toks, NULL));
 }
 
-
-#if DEVELOPER
 /*
  * Check to make sure there are no programming mistakes.
  */
@@ -312,56 +321,60 @@ static void bad_programmer(void)
 	u64 *fpval;
 	struct json *j = json_parse(cmd, "[ '25', '546', '26' ]");
 
+	/* Usage mode makes it check parameters are sane */
+	cmd->mode = CMD_USAGE;
+
 	/* check for repeated names */
-	assert(!param(cmd, j->buffer, j->toks,
-		      p_req("repeat", param_u64, &ival),
-		      p_req("fp", param_millionths, &fpval),
-		      p_req("repeat", param_u64, &ival2), NULL));
-	assert(check_fail());
-	assert(strstr(fail_msg, "developer error"));
+	paramcheck_assert_failed = false;
+	param(cmd, j->buffer, j->toks,
+	      p_req("repeat", param_u64, &ival),
+	      p_req("fp", param_millionths, &fpval),
+	      p_req("repeat", param_u64, &ival2), NULL);
+	assert(paramcheck_assert_failed);
 
-	assert(!param(cmd, j->buffer, j->toks,
-		      p_req("repeat", param_u64, &ival),
-		      p_req("fp", param_millionths, &fpval),
-		      p_req("repeat", param_u64, &ival), NULL));
-	assert(check_fail());
-	assert(strstr(fail_msg, "developer error"));
+	paramcheck_assert_failed = false;
+	param(cmd, j->buffer, j->toks,
+	      p_req("repeat", param_u64, &ival),
+	      p_req("fp", param_millionths, &fpval),
+	      p_req("repeat", param_u64, &ival), NULL);
+	assert(paramcheck_assert_failed);
 
-	assert(!param(cmd, j->buffer, j->toks,
-		      p_req("u64", param_u64, &ival),
-		      p_req("repeat", param_millionths, &fpval),
-		      p_req("repeat", param_millionths, &fpval), NULL));
-	assert(check_fail());
-	assert(strstr(fail_msg, "developer error"));
+	paramcheck_assert_failed = false;
+	param(cmd, j->buffer, j->toks,
+	      p_req("u64", param_u64, &ival),
+	      p_req("repeat", param_millionths, &fpval),
+	      p_req("repeat", param_millionths, &fpval), NULL);
+	assert(paramcheck_assert_failed);
 
 	/* check for repeated arguments */
-	assert(!param(cmd, j->buffer, j->toks,
-		      p_req("u64", param_u64, &ival),
-		      p_req("repeated-arg", param_u64, &ival), NULL));
-	assert(check_fail());
-	assert(strstr(fail_msg, "developer error"));
+	paramcheck_assert_failed = false;
+	param(cmd, j->buffer, j->toks,
+	      p_req("u64", param_u64, &ival),
+	      p_req("repeated-arg", param_u64, &ival), NULL);
+	assert(paramcheck_assert_failed);
 
-	assert(!param(cmd, j->buffer, j->toks,
-		      p_req("u64", (param_cbx) NULL, NULL), NULL));
-	assert(check_fail());
-	assert(strstr(fail_msg, "developer error"));
+	paramcheck_assert_failed = false;
+	param(cmd, j->buffer, j->toks,
+	      p_req("u64", (param_cbx) NULL, NULL), NULL);
+	assert(paramcheck_assert_failed);
 
 	/* Add required param after optional */
 	j = json_parse(cmd, "[ '25', '546', '26', '1.1' ]");
 	unsigned int *msatoshi;
 	u64 *riskfactor_millionths;
-	assert(!param(
+	paramcheck_assert_failed = false;
+	param(
 	    cmd, j->buffer, j->toks, p_req("u64", param_u64, &ival),
 	    p_req("fp", param_millionths, &fpval),
 	    p_opt_def("msatoshi", param_number, &msatoshi, 100),
 	    p_req("riskfactor", param_millionths, &riskfactor_millionths),
-	    NULL));
+	    NULL);
 	assert(*msatoshi);
 	assert(*msatoshi == 100);
-	assert(check_fail());
-	assert(strstr(fail_msg, "developer error"));
+	assert(paramcheck_assert_failed);
+
+	cmd->mode = CMD_NORMAL;
 }
-#endif
 
 static void add_members(struct param **params,
 			char **obj,
@@ -454,15 +467,52 @@ static void deprecated_rename(void)
 		     NULL));
 	assert(*u64 == 42);
 
-	deprecated_apis = true;
+	cmd->deprecated_apis = true;
 	j = json_parse(cmd, "{ 'old_u64': 42 }");
 	assert(param(cmd, j->buffer, j->toks,
 		     p_req("u64|old_u64", param_u64, &u64),
 		     NULL));
-	deprecated_apis = false;
+	cmd->deprecated_apis = false;
 	assert(!param(cmd, j->buffer, j->toks,
 		      p_req("u64|old_u64", param_u64, &u64),
 		      NULL));
+}
+
+static void invalid_bech32m(void)
+{
+	int wit_version;
+	uint8_t data_out[500];
+	size_t data_out_len;
+
+	/* Taken from BIP-350 */
+
+	/* Correct */
+	assert(segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "BC1SW50QGDZ25J"));
+	assert(wit_version == 16);
+	assert(data_out_len == 2);
+
+	/* Correct encoding, but expecting the wrong hrp*/
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "tb", "BC1SW50QGDZ25J"));
+
+	/* BIP350-valid, but fake HRP so was put in "invalid" section of BIP */
+	assert(segwit_addr_decode(&wit_version, data_out, &data_out_len, "tc", "tc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vq5zuyut"));
+
+	/* Incorrect for various reasons (including wrong checksum between bech32 <->bech32m */
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqh2y7hd"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "tb", "tb1z0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqglt7rf"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "BC1S0XLXVLHEMJA6C4DQV22UAPCTQUPFHLXM9H8Z3K2E72Q4K9HCZ7VQ54WELL"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kemeawh"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "tb", "tb1q0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vq24jc47"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "bc1p38j9r5y49hruaue7wxjce0updqjuyyx0kh56v8s25huc6995vvpql3jow4"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "BC130XLXVLHEMJA6C4DQV22UAPCTQUPFHLXM9H8Z3K2E72Q4K9HCZ7VQ7ZWS8R"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "bc1pw5dgrnzv"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7v8n0nx0muaewav253zgeav"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "BC1QR508D6QEJXTDG4Y5R3ZARVARYV98GJ9P"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "tb", "tb1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vq47Zagq"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7v07qwwzcrf"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "tb", "tb1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vpggkg4j"));
+	assert(!segwit_addr_decode(&wit_version, data_out, &data_out_len, "bc", "bc1gmk9yu"));
+
 }
 
 static void sendpay_nulltok(void)
@@ -629,9 +679,7 @@ int main(int argc, char *argv[])
 	tok_tok();
 	null_params();
 	no_params();
-#if DEVELOPER
 	bad_programmer();
-#endif
 	dup_names();
 	five_hundred_params();
 	sendpay();
@@ -641,6 +689,7 @@ int main(int argc, char *argv[])
 	param_tests();
 	usage();
 	deprecated_rename();
+	invalid_bech32m();
 
 	printf("run-params ok\n");
 	common_shutdown();

@@ -50,8 +50,10 @@
 #include <common/daemon.h>
 #include <common/ecdh_hsmd.h>
 #include <common/hsm_encryption.h>
+#include <common/json_stream.h>
 #include <common/memleak.h>
 #include <common/timeout.h>
+#include <common/trace.h>
 #include <common/type_to_string.h>
 #include <common/version.h>
 #include <db/exec.h>
@@ -71,8 +73,11 @@
 #include <lightningd/lightningd.h>
 #include <lightningd/onchain_control.h>
 #include <lightningd/plugin.h>
+#include <lightningd/plugin_hook.h>
+#include <lightningd/runes.h>
 #include <lightningd/subd.h>
 #include <sys/resource.h>
+#include <wallet/invoices.h>
 #include <wallet/txfilter.h>
 #include <wally_bip32.h>
 
@@ -198,20 +203,23 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	/*~ Note the tal context arg (by convention, the first argument to any
 	 * allocation function): ld->log will be implicitly freed when ld
 	 * is. */
-	ld->log = new_log(ld, ld->log_book, NULL, "lightningd");
+	ld->log = new_logger(ld, ld->log_book, NULL, "lightningd");
 	ld->logfiles = NULL;
 
 	/*~ We explicitly set these to NULL: if they're still NULL after option
 	 * parsing, we know they're to be set to the defaults. */
 	ld->alias = NULL;
 	ld->rgb = NULL;
+	ld->recover = NULL;
 	list_head_init(&ld->connects);
 	list_head_init(&ld->waitsendpay_commands);
 	list_head_init(&ld->sendpay_commands);
 	list_head_init(&ld->close_commands);
 	list_head_init(&ld->ping_commands);
 	list_head_init(&ld->disconnect_commands);
+	list_head_init(&ld->splice_commands);
 	list_head_init(&ld->waitblockheight_commands);
+	list_head_init(&ld->wait_commands);
 
 	/*~ Tal also explicitly supports arrays: it stores the number of
 	 * elements, which can be accessed with tal_count() (or tal_bytelen()
@@ -235,6 +243,9 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	ld->try_reexec = false;
 	ld->db_upgrade_ok = NULL;
 
+	/* --experimental-upgrade-protocol */
+	ld->experimental_upgrade_protocol = false;
+
 	/*~ This is from ccan/timer: it is efficient for the case where timers
 	 * are deleted before expiry (as is common with timeouts) using an
 	 * ingenious bucket system which more precisely sorts timers as they
@@ -252,6 +263,7 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	ld->pure_tor_setup = false;
 	ld->tor_service_password = NULL;
 	ld->websocket_port = 0;
+	ld->deprecated_apis = true;
 
 	/*~ This is initialized later, but the plugin loop examines this,
 	 * so set it to NULL explicitly now. */
@@ -318,6 +330,19 @@ static struct lightningd *new_lightningd(const tal_t *ctx)
 	 * we allow overriding them with --force-feerates, in which
 	 * case this is a pointer to an enum feerate-indexed array of values */
 	ld->force_feerates = NULL;
+
+	/*~ We need some funds to help CPFP spend unilateral closes.  How
+	 * much?  But let's assume we want to boost the commitment tx (1112
+	 * Sipa).
+	 *
+	 * Anchor witness script is 40 bytes, sig is 72, input bytes is 32 + 4
+	 * + 1 + 1 + 4, core is 10 bytes, P2WKH output is 8 + 1 + 1 + 1 + 32
+	 * bytes.  Weight (40 + 42 + 10 + 43)*4 + 40 + 72 = 652.
+	 *
+	 * So every 441 sats we can increase feerate by 1 sat / vbyte.  Set
+	 * the default minimum at 25,000 sats.
+	 */
+	ld->emergency_sat = AMOUNT_SAT(25000);
 
 	return ld;
 }
@@ -859,11 +884,6 @@ static struct feature_set *default_features(const tal_t *ctx)
 		OPTIONAL_FEATURE(OPT_ZEROCONF),
 		OPTIONAL_FEATURE(OPT_CHANNEL_TYPE),
 		OPTIONAL_FEATURE(OPT_ROUTE_BLINDING),
-#if EXPERIMENTAL_FEATURES
-		OPTIONAL_FEATURE(OPT_ANCHOR_OUTPUTS),
-		OPTIONAL_FEATURE(OPT_QUIESCE),
-		OPTIONAL_FEATURE(OPT_ONION_MESSAGES),
-#endif
 	};
 
 	for (size_t i = 0; i < ARRAY_SIZE(features); i++) {
@@ -895,6 +915,49 @@ void lightningd_exit(struct lightningd *ld, int exit_code)
 	io_break(ld);
 }
 
+struct recover_payload {
+	const char *codex32secret;
+};
+
+static bool
+recover_hook_deserialize(struct recover_payload *payload,
+			 const char *buffer, const jsmntok_t *toks)
+{
+	const jsmntok_t *t_res;
+
+	if (!toks || !buffer)
+		return true;
+
+	t_res = json_get_member(buffer, toks, "result");
+
+	/* fail */
+	if (!t_res || !json_tok_streq(buffer, t_res, "continue"))
+		fatal("Plugin returned an invalid response to the "
+		      "recover hook: %s", buffer);
+
+	/* call next hook */
+	return true;
+}
+
+static void recover_hook_final(struct recover_payload *payload STEALS)
+{
+	tal_steal(tmpctx, payload);
+}
+
+static void recover_hook_serialize(struct recover_payload *payload,
+					struct json_stream *stream,
+					struct plugin *plugin)
+{
+	json_add_string(stream, "codex32", payload->codex32secret);
+}
+
+
+REGISTER_PLUGIN_HOOK(recover,
+		     recover_hook_deserialize,
+		     recover_hook_final,
+		     recover_hook_serialize,
+		     struct recover_payload *);
+
 int main(int argc, char *argv[])
 {
 	struct lightningd *ld;
@@ -909,6 +972,8 @@ int main(int argc, char *argv[])
 	int exit_code = 0;
 	char **orig_argv;
 	bool try_reexec;
+
+	trace_span_start("lightningd/startup", argv);
 
 	/*~ We fork out new processes very very often; every channel gets its
 	 * own process, for example, and we have `hsmd` and `gossipd` and
@@ -984,6 +1049,7 @@ int main(int argc, char *argv[])
 	orig_argv = notleak(tal_arr(ld, char *, argc + 1));
 	for (size_t i = 1; i < argc; i++)
 		orig_argv[i] = tal_strdup(orig_argv, argv[i]);
+
 	/*~ Turn argv[0] into an absolute path (if not already) */
 	orig_argv[0] = path_join(orig_argv, take(path_cwd(NULL)), argv[0]);
 	orig_argv[argc] = NULL;
@@ -1009,7 +1075,9 @@ int main(int argc, char *argv[])
 	/*~ Initialize all the plugins we just registered, so they can
 	 *  do their thing and tell us about themselves (including
 	 *  options registration). */
+	trace_span_start("plugins/init", ld->plugins);
 	plugins_init(ld->plugins);
+	trace_span_end(ld->plugins);
 
 	/*~ If the plugis are misconfigured we don't want to proceed. A
 	 * misconfiguration could for example be a plugin marked as important
@@ -1022,7 +1090,7 @@ int main(int argc, char *argv[])
 		fatal("Could not initialize the plugins, see above for details.");
 
 	/*~ Handle options and config. */
-	handle_opts(ld, argc, argv);
+	handle_opts(ld);
 
 	/*~ Now create the PID file: this errors out if there's already a
 	 * daemon running, so we call before doing almost anything else. */
@@ -1033,8 +1101,10 @@ int main(int argc, char *argv[])
 	 * but the `dev_no_version_checks` field of `ld` doesn't even exist
 	 * if DEVELOPER isn't defined, so we use IFDEV(devoption,non-devoption):
 	 */
+	trace_span_start("test_subdaemons", ld);
 	if (IFDEV(!ld->dev_no_version_checks, 1))
 		test_subdaemons(ld);
+	trace_span_end(ld);
 
 	/*~ Set up the HSM daemon, which knows our node secret key, so tells
 	 *  us who we are.
@@ -1043,12 +1113,23 @@ int main(int argc, char *argv[])
 	 * standard of key storage; ours is in software for now, so the name
 	 * doesn't really make sense, but we can't call it the Badly-named
 	 * Daemon Software Module. */
+	trace_span_start("hsmd_init", ld);
 	ld->bip32_base = hsm_init(ld);
+	trace_span_end(ld);
+
+	/*~ We have bearer tokens called `runes` you can use to control access.  They have
+	 * a fascinating history which I shall not go into now, but they're derived from
+	 * Macaroons which was a over-engineered Googlism.
+	 *
+	 * We need them minimally bootstrapped for our db migration code. */
+	ld->runes = runes_early_init(ld);
 
 	/*~ Our "wallet" code really wraps the db, which is more than a simple
 	 * bitcoin wallet (though it's that too).  It also stores channel
 	 * states, invoices, payments, blocks and bitcoin transactions. */
+	trace_span_start("wallet_new", ld);
 	ld->wallet = wallet_new(ld, ld->timers);
+	trace_span_end(ld);
 
 	/*~ We keep a filter of scriptpubkeys we're interested in. */
 	ld->owned_txfilter = txfilter_new(ld);
@@ -1070,7 +1151,9 @@ int main(int argc, char *argv[])
 	 * which knows (via node_announcement messages) the public
 	 * addresses of nodes, so connectd_init hands it one end of a
 	 * socket pair, and gives us the other */
+	trace_span_start("connectd_init", ld);
 	connectd_gossipd_fd = connectd_init(ld);
+	trace_span_end(ld);
 
 	/*~ We do every database operation within a transaction; usually this
 	 * is covered by the infrastructure (eg. opening a transaction before
@@ -1088,7 +1171,9 @@ int main(int argc, char *argv[])
 		errx(EXITCODE_WALLET_DB_MISMATCH, "Wallet sanity check failed.");
 
 	/*~ Initialize the transaction filter with our pubkeys. */
+	trace_span_start("init_txfilter", ld->wallet);
 	init_txfilter(ld->wallet, ld->bip32_base, ld->owned_txfilter);
+	trace_span_end(ld->wallet);
 
 	/*~ Get the blockheight we are currently at, UINT32_MAX is used to signal
 	 * an uninitialized wallet and that we should start off of bitcoind's
@@ -1106,12 +1191,20 @@ int main(int argc, char *argv[])
 	else if (max_blockheight != UINT32_MAX)
 		max_blockheight -= ld->config.rescan;
 
+	/*~ Finish our runes initialization (includes reading from db) */
+	runes_finish_init(ld->runes);
+
+	/*~ Start expiring old invoices now ld->wallet is set.*/
+	invoices_start_expiration(ld);
+
 	/*~ That's all of the wallet db operations for now. */
 	db_commit_transaction(ld->wallet->db);
 
 	/*~ Initialize block topology.  This does its own io_loop to
 	 * talk to bitcoind, so does its own db transactions. */
+	trace_span_start("setup_topology", ld->topology);
 	setup_topology(ld->topology, min_blockheight, max_blockheight);
+	trace_span_end(ld->topology);
 
 	db_begin_transaction(ld->wallet->db);
 
@@ -1162,6 +1255,8 @@ int main(int argc, char *argv[])
 	/*~ Now handle sigchld, so we can clean up appropriately. */
 	sigchld_conn = notleak(io_new_conn(ld, sigchld_rfd, sigchld_rfd_in, ld));
 
+	trace_span_end(argv);
+
 	/*~ Mark ourselves live.
 	 *
 	 * Note the use of type_to_string() here: it's a typesafe formatter,
@@ -1177,6 +1272,12 @@ int main(int argc, char *argv[])
 		 tal_hex(tmpctx, ld->rgb), version());
 	ld->state = LD_STATE_RUNNING;
 
+	if (ld->recover) {
+		struct recover_payload *payload = tal(NULL, struct recover_payload);
+		payload->codex32secret = tal_strdup(payload,
+						    ld->recover);
+		plugin_hook_call_recover(ld, NULL, payload);
+	}
 	/*~ If `closefrom_may_be_slow`, we limit ourselves to 4096 file
 	 * descriptors; tell the user about it as that limits the number
 	 * of channels they can have.

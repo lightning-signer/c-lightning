@@ -4,6 +4,7 @@
 #include <bitcoin/psbt.h>
 #include <bitcoin/pubkey.h>
 #include <bitcoin/script.h>
+#include <bitcoin/varint.h>
 #include <ccan/ccan/array_size/array_size.h>
 #include <ccan/ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
@@ -17,32 +18,20 @@ static void psbt_destroy(struct wally_psbt *psbt)
 	wally_psbt_free(psbt);
 }
 
-static struct wally_psbt *init_psbt(const tal_t *ctx, size_t num_inputs, size_t num_outputs)
+struct wally_psbt *create_psbt(const tal_t *ctx, size_t num_inputs, size_t num_outputs, u32 locktime)
 {
-	int wally_err;
+	const u32 init_flags = is_elements(chainparams) ? WALLY_PSBT_INIT_PSET : 0;
 	struct wally_psbt *psbt;
+	int wally_err;
 
 	tal_wally_start();
-	if (is_elements(chainparams))
-		wally_err = wally_psbt_init_alloc(2, num_inputs, num_outputs, 0, WALLY_PSBT_INIT_PSET, &psbt);
-	else
-		wally_err = wally_psbt_init_alloc(2, num_inputs, num_outputs, 0, 0, &psbt);
+	wally_err = wally_psbt_init_alloc(2, num_inputs, num_outputs, 0, init_flags, &psbt);
 	assert(wally_err == WALLY_OK);
+	wally_psbt_set_fallback_locktime(psbt, locktime);
 	/* By default we are modifying them internally; allow it */
 	wally_psbt_set_tx_modifiable_flags(psbt, WALLY_PSBT_TXMOD_INPUTS | WALLY_PSBT_TXMOD_OUTPUTS);
 	tal_add_destructor(psbt, psbt_destroy);
 	tal_wally_end_onto(ctx, psbt, struct wally_psbt);
-
-	return psbt;
-}
-
-/* FIXME extremely thin wrapper; remove? */
-struct wally_psbt *create_psbt(const tal_t *ctx, size_t num_inputs, size_t num_outputs, u32 locktime)
-{
-	struct wally_psbt *psbt;
-
-	psbt = init_psbt(ctx, num_inputs, num_outputs);
-	wally_psbt_set_fallback_locktime(psbt, locktime);
 
 	return psbt;
 }
@@ -66,9 +55,8 @@ struct wally_psbt *new_psbt(const tal_t *ctx, const struct wally_tx *wtx)
 
 	tal_wally_start();
 
-	/* locktime set in create_psbt for now */
+	/* locktime and modifiable flags are set in create_psbt */
 	wally_psbt_set_tx_version(psbt, wtx->version);
-	wally_psbt_set_tx_modifiable_flags(psbt, WALLY_PSBT_TXMOD_INPUTS | WALLY_PSBT_TXMOD_OUTPUTS);
 
 	for (size_t i = 0; i < wtx->num_inputs; i++) {
 		wally_err = wally_psbt_add_tx_input_at(psbt, i, 0, &wtx->inputs[i]);
@@ -107,7 +95,7 @@ bool psbt_is_finalized(const struct wally_psbt *psbt)
 }
 
 struct wally_psbt_input *psbt_add_input(struct wally_psbt *psbt,
-					struct wally_tx_input *input,
+					const struct wally_tx_input *input,
 				       	size_t insert_at)
 {
 	const u32 flags = WALLY_PSBT_FLAG_NON_FINAL; /* Skip script/witness */
@@ -200,13 +188,9 @@ struct wally_psbt_output *psbt_append_output(struct wally_psbt *psbt,
 					     const u8 *script,
 					     struct amount_sat amount)
 {
-	struct wally_psbt_output *out;
-	struct wally_tx_output *tx_out = wally_tx_output(NULL, script, amount);
-
-	out = psbt_add_output(psbt, tx_out, psbt->num_outputs);
-	wally_tx_output_free(tx_out);
-	return out;
+	return psbt_insert_output(psbt, script, amount, psbt->num_outputs);
 }
+
 struct wally_psbt_output *psbt_insert_output(struct wally_psbt *psbt,
 					     const u8 *script,
 					     struct amount_sat amount,
@@ -228,7 +212,7 @@ void psbt_rm_output(struct wally_psbt *psbt,
 }
 
 void psbt_input_add_pubkey(struct wally_psbt *psbt, size_t in,
-			   const struct pubkey *pubkey)
+			   const struct pubkey *pubkey, bool is_taproot)
 {
 	int wally_err;
 	u32 empty_path[1] = {0};
@@ -250,11 +234,20 @@ void psbt_input_add_pubkey(struct wally_psbt *psbt, size_t in,
 	pubkey_to_der(pk_der, pubkey);
 
 	tal_wally_start();
-	wally_err = wally_psbt_input_keypath_add(&psbt->inputs[in],
-						      pk_der, sizeof(pk_der),
-						      fingerprint, sizeof(fingerprint),
-						      empty_path, ARRAY_SIZE(empty_path));
-	assert(wally_err == WALLY_OK);
+	if (is_taproot) {
+		wally_err = wally_psbt_input_taproot_keypath_add(&psbt->inputs[in],
+								  pk_der + 1, 32,
+								  NULL /* tapleaf_hashes */, 0 /* tapleaf_hashes_len */,
+								  fingerprint, sizeof(fingerprint),
+								  empty_path, ARRAY_SIZE(empty_path));
+		assert(wally_err == WALLY_OK);
+	} else {
+		wally_err = wally_psbt_input_keypath_add(&psbt->inputs[in],
+								  pk_der, sizeof(pk_der),
+								  fingerprint, sizeof(fingerprint),
+								  empty_path, ARRAY_SIZE(empty_path));
+		assert(wally_err == WALLY_OK);
+	}
 	tal_wally_end(psbt);
 }
 
@@ -327,6 +320,15 @@ void psbt_input_set_utxo(struct wally_psbt *psbt, size_t in,
 					      prev_tx);
 	tal_wally_end(psbt);
 	assert(wally_err == WALLY_OK);
+}
+
+void psbt_input_set_outpoint(struct wally_psbt *psbt, size_t in,
+			     struct bitcoin_outpoint outpoint)
+{
+	assert(in < psbt->num_inputs);
+	psbt->inputs[in].index = outpoint.n;
+	memcpy(psbt->inputs[in].txhash, &outpoint.txid,
+	       sizeof(struct bitcoin_txid));
 }
 
 void psbt_input_set_witscript(struct wally_psbt *psbt, size_t in, const u8 *wscript)
@@ -453,6 +455,28 @@ struct amount_sat psbt_input_get_amount(const struct wally_psbt *psbt,
 	return val;
 }
 
+size_t psbt_input_get_weight(const struct wally_psbt *psbt,
+			     size_t in)
+{
+	size_t weight;
+	const struct wally_map_item *redeem_script;
+
+	redeem_script = wally_map_get_integer(&psbt->inputs[in].psbt_fields, /* PSBT_IN_REDEEM_SCRIPT */ 0x04);
+
+	/* txid + txout + sequence */
+	weight = (32 + 4 + 4) * 4;
+	if (redeem_script) {
+		weight +=
+			(redeem_script->value_len +
+				varint_size(redeem_script->value_len)) * 4;
+	} else {
+		/* zero scriptSig length */
+		weight += varint_size(0) * 4;
+	}
+
+	return weight;
+}
+
 struct amount_sat psbt_output_get_amount(const struct wally_psbt *psbt,
 					 size_t out)
 {
@@ -461,6 +485,13 @@ struct amount_sat psbt_output_get_amount(const struct wally_psbt *psbt,
 	asset = wally_psbt_output_get_amount(&psbt->outputs[out]);
 	assert(amount_asset_is_main(&asset));
 	return amount_asset_to_sat(&asset);
+}
+
+size_t psbt_output_get_weight(const struct wally_psbt *psbt,
+			      size_t outnum)
+{
+	return (8 /* amount*/ + varint_size(psbt->outputs[outnum].script_len) +
+		psbt->outputs[outnum].script_len) * 4;
 }
 
 static void add(u8 **key, const void *mem, size_t len)
@@ -475,12 +506,12 @@ static void add_type(u8 **key, const u8 num)
 	add(key, &num, 1);
 }
 
-static void add_varint(u8 **key, size_t val)
+void add_varint(u8 **arr, size_t val)
 {
 	u8 vt[VARINT_MAX_LEN];
 	size_t vtlen;
 	vtlen = varint_put(vt, val);
-	add(key, vt, vtlen);
+	tal_expand(arr, vt, vtlen);
 }
 
 #define LIGHTNING_PROPRIETARY_PREFIX "lightning"
@@ -603,7 +634,7 @@ bool psbt_finalize(struct wally_psbt *psbt)
 	tal_wally_start();
 
 	/* Wally doesn't know how to finalize P2WSH; this happens with
-	 * option_anchor_outputs, and finalizing is trivial. */
+	 * option_anchor_outputs, and finalizing those two cases is trivial. */
 	/* FIXME: miniscript! miniscript! miniscript! */
 	for (size_t i = 0; i < psbt->num_inputs; i++) {
 		struct wally_psbt_input *input = &psbt->inputs[i];
@@ -611,9 +642,15 @@ bool psbt_finalize(struct wally_psbt *psbt)
 		const struct wally_map_item *iws;
 
 		iws = wally_map_get_integer(&input->psbt_fields, /* PSBT_IN_WITNESS_SCRIPT */ 0x05);
-		if (!iws || !is_to_remote_anchored_witness_script(iws->value,
-								  iws->value_len))
+		if (!iws)
 			continue;
+
+		if (!is_to_remote_anchored_witness_script(iws->value,
+							  iws->value_len)
+		    && !is_anchor_witness_script(iws->value,
+						 iws->value_len)) {
+			continue;
+		}
 
 		if (input->signatures.num_items != 1)
 			continue;
@@ -632,6 +669,19 @@ bool psbt_finalize(struct wally_psbt *psbt)
 		 *
 		 *    <remote_sig>
 		 */
+		/* BOLT #3:
+		 * #### `to_local_anchor` and `to_remote_anchor` Output (option_anchors)
+		 *...
+		 *    <local_funding_pubkey/remote_funding_pubkey> OP_CHECKSIG OP_IFDUP
+		 *    OP_NOTIF
+		 *        OP_16 OP_CHECKSEQUENCEVERIFY
+		 *    OP_ENDIF
+		 *...
+		 * Spending of the output requires the following witness:
+		 *     <local_sig/remote_sig>
+		 */
+
+		/* i.e. in both cases, this is the same thing */
 		wally_tx_witness_stack_init_alloc(2, &stack);
 		wally_tx_witness_stack_add(stack,
 					   input->signatures.items[0].value,
@@ -640,6 +690,7 @@ bool psbt_finalize(struct wally_psbt *psbt)
 					   iws->value,
 					   iws->value_len);
 		wally_psbt_input_set_final_witness(input, stack);
+		wally_tx_witness_stack_free(stack);
 	}
 
 	ok = (wally_psbt_finalize(psbt, 0 /* flags */) == WALLY_OK);
@@ -718,6 +769,12 @@ const u8 *psbt_get_bytes(const tal_t *ctx, const struct wally_psbt *psbt,
 		abort();
 	}
 	return bytes;
+}
+
+bool validate_psbt(const struct wally_psbt *psbt)
+{
+	size_t len;
+	return wally_psbt_get_length(psbt, 0, &len) == WALLY_OK;
 }
 
 struct wally_psbt *psbt_from_bytes(const tal_t *ctx, const u8 *bytes,

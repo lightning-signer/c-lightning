@@ -3,6 +3,7 @@
 #include <ccan/list/list.h>
 #include <ccan/str/hex/hex.h>
 #include <ccan/tal/path/path.h>
+#include <ccan/tal/str/str.h>
 #include <ccan/utf8/utf8.h>
 #include <common/utils.h>
 #include <errno.h>
@@ -55,78 +56,6 @@ void tal_wally_end_onto_(const tal_t *parent,
 	if (from_wally)
 		tal_set_name_(from_wally, from_wally_name, 1);
 	tal_wally_end(tal_steal(parent, from_wally));
-}
-
-#if DEVELOPER
-/* If you've got a softref, we assume no reallocs. */
-static void dont_move_softref(tal_t *ctx, enum tal_notify_type ntype, void *info)
-{
-	abort();
-}
-#endif
-
-static void softref_nullify(tal_t *obj, void **ptr)
-{
-	*ptr = NULL;
-#if DEVELOPER
-	tal_del_notifier(obj, dont_move_softref);
-#endif
-}
-
-static void softref_cleanup(const tal_t *outer, void **ptr)
-{
-	if (*ptr) {
-		tal_del_destructor2(*ptr, softref_nullify, ptr);
-	}
-#if DEVELOPER
-	tal_del_notifier(outer, dont_move_softref);
-#endif
-}
-
-void set_softref_(const tal_t *outer, size_t outersize, void **ptr, tal_t *obj)
-{
-	/* pointer is inside outer, right? */
-	assert((char *)ptr >= (char *)outer);
-	assert((char *)ptr < (char *)outer + outersize);
-
-	/* This is harmless if there was no prior, otherwise constrains the
-	 * leak: we don't have enough information in softref_nullify to
-	 * clear softref_cleanup */
-	tal_del_destructor2(outer, softref_cleanup, ptr);
-
-	if (obj) {
-		tal_add_destructor2(outer, softref_cleanup, ptr);
-		tal_add_destructor2(obj, softref_nullify, ptr);
-#if DEVELOPER
-		tal_add_notifier(obj, TAL_NOTIFY_MOVE, dont_move_softref);
-#endif
-	}
-
-#if DEVELOPER
-	tal_add_notifier(outer, TAL_NOTIFY_MOVE, dont_move_softref);
-#endif
-
-	*ptr = obj;
-}
-
-void clear_softref_(const tal_t *outer, size_t outersize, void **ptr)
-{
-	assert((char *)ptr >= (char *)outer);
-	assert((char *)ptr < (char *)outer + outersize);
-
-	if (*ptr) {
-		tal_del_destructor2(outer, softref_cleanup, ptr);
-		tal_del_destructor2(*ptr, softref_nullify, ptr);
-#if DEVELOPER
-		tal_del_notifier(*ptr, dont_move_softref);
-#endif
-	}
-
-#if DEVELOPER
-	tal_del_notifier(outer, dont_move_softref);
-#endif
-
-	*ptr = NULL;
 }
 
 char *tal_hexstr(const tal_t *ctx, const void *data, size_t len)
@@ -219,6 +148,16 @@ char *utf8_str(const tal_t *ctx, const u8 *buf TAKES, size_t buflen)
 	return ret;
 }
 
+char *tal_strdup_or_null(const tal_t *ctx, const char *str)
+{
+	if (!str) {
+		/* You might have taken NULL; that's legal!  Release now. */
+		taken(str);
+		return NULL;
+	}
+	return tal_strdup(ctx, str);
+}
+
 int tmpdir_mkstemp(const tal_t *ctx, const char *template TAKES, char **created)
 {
 	char *tmpdir = getenv("TMPDIR");
@@ -231,4 +170,13 @@ int tmpdir_mkstemp(const tal_t *ctx, const char *template TAKES, char **created)
 		tal_free(path);
 
 	return fd;
+}
+
+char *str_lowering(const void *ctx, const char *string TAKES)
+{
+	char *ret;
+
+	ret = tal_strdup(ctx, string);
+	for (char *p = ret; *p; p++) *p = tolower(*p);
+	return ret;
 }

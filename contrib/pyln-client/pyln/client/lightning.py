@@ -503,12 +503,14 @@ class LightningRpc(UnixDomainSocketRpc):
             """
             if isinstance(obj, dict):
                 for k, v in obj.items():
-                    if k.endswith('msat'):
+                    # Objects ending in msat are not treated specially!
+                    if k.endswith('msat') and not isinstance(v, dict):
                         if isinstance(v, list):
                             obj[k] = [Millisatoshi(e) for e in v]
                         # FIXME: Deprecated "listconfigs" gives two 'null' fields:
                         #            "lease-fee-base-msat": null,
                         #            "channel-fee-max-base-msat": null,
+                        # FIXME: Removed for v23.08, delete this code in 24.08?
                         elif v is None:
                             obj[k] = None
                         else:
@@ -1021,7 +1023,7 @@ class LightningRpc(UnixDomainSocketRpc):
         """
         return self.call("listtransactions")
 
-    def listinvoices(self, label=None, payment_hash=None, invstring=None, offer_id=None):
+    def listinvoices(self, label=None, payment_hash=None, invstring=None, offer_id=None, index=None, start=None, limit=None):
         """Query invoices
 
         Show invoice matching {label}, {payment_hash}, {invstring} or {offer_id}
@@ -1033,6 +1035,9 @@ class LightningRpc(UnixDomainSocketRpc):
             "payment_hash": payment_hash,
             "invstring": invstring,
             "offer_id": offer_id,
+            "index": index,
+            "start": start,
+            "limit": limit,
         }
         return self.call("listinvoices", payload)
 
@@ -1207,6 +1212,32 @@ class LightningRpc(UnixDomainSocketRpc):
         }
         return self.call("openchannel_abort", payload)
 
+    def splice_init(self, chan_id, amount, initialpsbt=None, feerate_per_kw=None):
+        """ Initiate a splice """
+        payload = {
+            "channel_id": chan_id,
+            "relative_amount": amount,
+            "initialpsbt": initialpsbt,
+            "feerate_per_kw": feerate_per_kw,
+        }
+        return self.call("splice_init", payload)
+
+    def splice_update(self, chan_id, psbt):
+        """ Update a splice """
+        payload = {
+            "channel_id": chan_id,
+            "psbt": psbt
+        }
+        return self.call("splice_update", payload)
+
+    def splice_signed(self, chan_id, psbt):
+        """ Initiate a splice """
+        payload = {
+            "channel_id": chan_id,
+            "psbt": psbt
+        }
+        return self.call("splice_signed", payload)
+
     def paystatus(self, bolt11=None):
         """Detail status of attempts to pay {bolt11} or any."""
         payload = {
@@ -1319,7 +1350,7 @@ class LightningRpc(UnixDomainSocketRpc):
         }
         return self.call("sendonion", payload)
 
-    def setchannel(self, id, feebase=None, feeppm=None, htlcmin=None, htlcmax=None, enforcedelay=None):
+    def setchannel(self, id, feebase=None, feeppm=None, htlcmin=None, htlcmax=None, enforcedelay=None, ignorefeelimits=None):
         """Set configuration a channel/peer {id} (or 'all').
 
         {feebase} is a value in millisatoshi that is added as base fee
@@ -1337,6 +1368,8 @@ class LightningRpc(UnixDomainSocketRpc):
         {enforcedelay} is the number of seconds before enforcing this
         change.
 
+        {ignorefeelimits} is a flag to indicate peer can set any feerate (dangerous!)
+
         """
         payload = {
             "id": id,
@@ -1345,6 +1378,7 @@ class LightningRpc(UnixDomainSocketRpc):
             "htlcmin": htlcmin,
             "htlcmax": htlcmax,
             "enforcedelay": enforcedelay,
+            "ignorefeelimits": ignorefeelimits,
         }
         return self.call("setchannel", payload)
 

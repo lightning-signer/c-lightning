@@ -2,10 +2,9 @@ from pyln.testing.utils import TEST_NETWORK, TIMEOUT, VALGRIND, DEVELOPER, DEPRE
 from pyln.testing.utils import env, only_one, wait_for, write_config, TailableProc, sync_blockheight, wait_channel_quiescent, get_tx_p2wsh_outnum, mine_funding_to_announce, scid_to_int  # noqa: F401
 import bitstring
 from pyln.client import Millisatoshi
-from pyln.testing.utils import EXPERIMENTAL_DUAL_FUND
+from pyln.testing.utils import EXPERIMENTAL_DUAL_FUND, EXPERIMENTAL_SPLICING
 import time
 
-EXPERIMENTAL_FEATURES = env("EXPERIMENTAL_FEATURES", "0") == "1"
 COMPAT = env("COMPAT", "1") == "1"
 
 # Big enough to make channels with 10k effective capacity, including Elements channels
@@ -25,10 +24,6 @@ def default_ln_port(network: str) -> int:
     return network_map[network]
 
 
-def anchor_expected():
-    return EXPERIMENTAL_FEATURES
-
-
 def hex_bits(features):
     # We always to full bytes
     flen = (max(features + [0]) + 7) // 8 * 8
@@ -42,18 +37,15 @@ def hex_bits(features):
 def expected_peer_features(wumbo_channels=False, extra=[]):
     """Return the expected peer features hexstring for this configuration"""
     features = [1, 5, 7, 8, 11, 13, 14, 17, 25, 27, 45, 47, 51]
-    if EXPERIMENTAL_FEATURES:
-        # OPT_ONION_MESSAGES
-        features += [39]
-        # option_anchor_outputs
-        features += [21]
-        # option_quiesce
-        features += [35]
     if wumbo_channels:
         features += [19]
     if EXPERIMENTAL_DUAL_FUND:
         # option_dual_fund
         features += [29]
+    if EXPERIMENTAL_SPLICING:
+        features += [29]  # option_dual_fund
+        features += [35]  # option_quiesce
+        features += [63]  # option_splice
     return hex_bits(features + extra)
 
 
@@ -62,18 +54,15 @@ def expected_peer_features(wumbo_channels=False, extra=[]):
 def expected_node_features(wumbo_channels=False, extra=[]):
     """Return the expected node features hexstring for this configuration"""
     features = [1, 5, 7, 8, 11, 13, 14, 17, 25, 27, 45, 47, 51, 55]
-    if EXPERIMENTAL_FEATURES:
-        # OPT_ONION_MESSAGES
-        features += [39]
-        # option_anchor_outputs
-        features += [21]
-        # option_quiesce
-        features += [35]
     if wumbo_channels:
         features += [19]
     if EXPERIMENTAL_DUAL_FUND:
         # option_dual_fund
         features += [29]
+    if EXPERIMENTAL_SPLICING:
+        features += [29]  # option_dual_fund
+        features += [35]  # option_quiesce
+        features += [63]  # option_splice
     return hex_bits(features + extra)
 
 
@@ -117,7 +106,8 @@ def check_balance_snaps(n, expected_bals):
     snaps = n.rpc.listsnapshots()['balance_snapshots']
     for snap, exp in zip(snaps, expected_bals):
         assert snap['blockheight'] == exp['blockheight']
-        assert _dictify(snap) == _dictify(exp)
+        if _dictify(snap) != _dictify(exp):
+            raise Exception('Unexpected balance snap: {} vs {}'.format(_dictify(snap), _dictify(exp)))
 
 
 def check_coin_moves(n, account_id, expected_moves, chainparams):
@@ -417,9 +407,9 @@ def first_scid(n1, n2):
     return only_one(n1.rpc.listpeerchannels(n2.info['id'])['channels'])['short_channel_id']
 
 
-def basic_fee(feerate):
-    if anchor_expected():
-        # option_anchor_outputs
+def basic_fee(feerate, anchor_expected):
+    if anchor_expected:
+        # option_anchor_outputs / option_anchors_zero_fee_htlc_tx
         weight = 1124
     else:
         weight = 724
@@ -428,7 +418,8 @@ def basic_fee(feerate):
 
 def closing_fee(feerate, num_outputs):
     assert num_outputs == 1 or num_outputs == 2
-    weight = 428 + 124 * num_outputs
+    # Assumes p2tr outputs
+    weight = 428 + (8 + 1 + 1 + 1 + 32) * 4 * num_outputs
     return (weight * feerate) // 1000
 
 

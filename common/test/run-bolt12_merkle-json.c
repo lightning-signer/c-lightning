@@ -4,15 +4,10 @@
 #include "../bolt12_merkle.c"
 #include "../json_parse.c"
 #include "../json_parse_simple.c"
+#include "../../wire/bolt12_wiregen.c"
 #include "../../wire/fromwire.c"
+#include "../../wire/peer_wiregen.c"
 #include "../../wire/tlvstream.c"
-#if EXPERIMENTAL_FEATURES
-  #include "../../wire/peer_exp_wiregen.c"
-  #include "../../wire/bolt12_exp_wiregen.c"
-#else
-  #include "../../wire/peer_wiregen.c"
-  #include "../../wire/bolt12_wiregen.c"
-#endif
 #include <ccan/tal/grab_file/grab_file.h>
 #include <ccan/tal/path/path.h>
 #include <common/channel_type.h>
@@ -72,6 +67,9 @@ void towire_u32(u8 **pptr UNNEEDED, u32 v UNNEEDED)
 /* Generated stub for towire_u64 */
 void towire_u64(u8 **pptr UNNEEDED, u64 v UNNEEDED)
 { fprintf(stderr, "towire_u64 called!\n"); abort(); }
+/* Generated stub for towire_s64 */
+void towire_s64(u8 **pptr UNNEEDED, s64 v UNNEEDED)
+{ fprintf(stderr, "towire_s64 called!\n"); abort(); }
 /* Generated stub for towire_u8 */
 void towire_u8(u8 **pptr UNNEEDED, u8 v UNNEEDED)
 { fprintf(stderr, "towire_u8 called!\n"); abort(); }

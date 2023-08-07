@@ -425,17 +425,18 @@ static bool handle_peer_error(struct subd *sd, const u8 *msg, int fds[1])
 	struct peer_fd *peer_fd;
 	u8 *err_for_them;
 	bool warning;
+	bool aborted;
 
 	if (!fromwire_status_peer_error(msg, msg,
 					&channel_id, &desc, &warning,
-					&err_for_them))
+					&aborted, &err_for_them))
 		return false;
 
 	peer_fd = new_peer_fd_arr(msg, fds);
 
 	/* Don't free sd; we may be about to free channel. */
 	sd->channel = NULL;
-	sd->errcb(channel, peer_fd, &channel_id, desc, warning, err_for_them);
+	sd->errcb(channel, peer_fd, &channel_id, desc, warning, aborted, err_for_them);
 	return true;
 }
 
@@ -648,7 +649,7 @@ static void destroy_subd(struct subd *sd)
 			sd->errcb(channel, NULL, NULL,
 				  tal_fmt(sd, "Owning subdaemon %s died (%i)",
 					  sd->name, status),
-				  false, NULL);
+				  false, false, NULL);
 		if (!outer_transaction)
 			db_commit_transaction(db);
 	}
@@ -696,7 +697,7 @@ static struct subd *new_subd(const tal_t *ctx,
 			     const char *name,
 			     void *channel,
 			     const struct node_id *node_id,
-			     struct log *base_log,
+			     struct logger *base_log,
 			     bool talks_to_peer,
 			     const char *(*msgname)(int msgtype),
 			     unsigned int (*msgcb)(struct subd *,
@@ -706,6 +707,7 @@ static struct subd *new_subd(const tal_t *ctx,
 					   const struct channel_id *channel_id,
 					   const char *desc,
 					   bool warning,
+					   bool aborted,
 					   const u8 *err_for_them),
 			     void (*billboardcb)(void *channel,
 						 bool perm,
@@ -726,10 +728,10 @@ static struct subd *new_subd(const tal_t *ctx,
 		shortname = name;
 
 	if (base_log) {
-		sd->log = new_log(sd, ld->log_book, node_id,
-				  "%s-%s", shortname, log_prefix(base_log));
+		sd->log = new_logger(sd, ld->log_book, node_id,
+				     "%s-%s", shortname, log_prefix(base_log));
 	} else {
-		sd->log = new_log(sd, ld->log_book, node_id, "%s", shortname);
+		sd->log = new_logger(sd, ld->log_book, node_id, "%s", shortname);
 	}
 
 #if DEVELOPER
@@ -742,7 +744,7 @@ static struct subd *new_subd(const tal_t *ctx,
 		       &msg_fd,
 		       /* We only turn on subdaemon io logging if we're going
 			* to print it: too stressful otherwise! */
-		       log_print_level(sd->log, node_id) < LOG_DBG,
+		       log_has_io_logging(sd->log),
 		       ap);
 	if (sd->pid == (pid_t)-1) {
 		log_unusual(ld->log, "subd %s failed: %s",
@@ -806,7 +808,7 @@ struct subd *new_channel_subd_(const tal_t *ctx,
 			       const char *name,
 			       void *channel,
 			       const struct node_id *node_id,
-			       struct log *base_log,
+			       struct logger *base_log,
 			       bool talks_to_peer,
 			       const char *(*msgname)(int msgtype),
 			       unsigned int (*msgcb)(struct subd *, const u8 *,
@@ -816,6 +818,7 @@ struct subd *new_channel_subd_(const tal_t *ctx,
 					     const struct channel_id *channel_id,
 					     const char *desc,
 					     bool warning,
+					     bool aborted,
 					     const u8 *err_for_them),
 			       void (*billboardcb)(void *channel, bool perm,
 						   const char *happenings),
@@ -921,6 +924,11 @@ void subd_release_channel(struct subd *owner, const void *channel)
 		assert(owner->channel == channel);
 		owner->channel = NULL;
 		tal_free(owner);
+	} else {
+		/* Caller has reassigned channel->owner, so there's no pointer
+		 * to this subd owner while it's freeing itself.  If we
+		 * ask memleak right now, it will complain! */
+		notleak(owner);
 	}
 }
 

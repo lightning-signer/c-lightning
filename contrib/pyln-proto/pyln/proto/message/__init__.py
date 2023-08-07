@@ -1,5 +1,5 @@
 from .array_types import SizedArrayType, DynamicArrayType, EllipsisArrayType
-from .message import MessageNamespace, MessageType, Message, SubtypeType
+from .message import MessageNamespace, MessageType, Message, SubtypeType, TlvStreamType, TlvMessageType
 from .fundamental_types import split_field, FieldType
 
 __all__ = [
@@ -14,12 +14,18 @@ __all__ = [
     "SizedArrayType",
     "DynamicArrayType",
     "EllipsisArrayType",
+    "TlvStreamType",
+    "TlvMessageType",
 
     # fundamental_types
     'byte',
     'u16',
     'u32',
     'u64',
+    's8',
+    's16',
+    's32',
+    's64',
     'tu16',
     'tu32',
     'tu64',

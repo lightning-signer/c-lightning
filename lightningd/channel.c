@@ -133,7 +133,9 @@ new_inflight(struct channel *channel,
 	     const u32 lease_chan_max_msat, const u16 lease_chan_max_ppt,
 	     const u32 lease_blockheight_start,
 	     const struct amount_msat lease_fee,
-	     const struct amount_sat lease_amt)
+	     const struct amount_sat lease_amt,
+	     s64 splice_amnt,
+	     bool i_am_initiator)
 {
 	struct wally_psbt *last_tx_psbt_clone;
 	struct channel_inflight *inflight
@@ -145,6 +147,7 @@ new_inflight(struct channel *channel,
 	funding->total_funds = total_funds;
 	funding->feerate = funding_feerate;
 	funding->our_funds = our_funds;
+	funding->splice_amnt = splice_amnt;
 
 	inflight->funding = funding;
 	inflight->channel = channel;
@@ -152,8 +155,11 @@ new_inflight(struct channel *channel,
 	inflight->funding_psbt = tal_steal(inflight, psbt);
 
 	/* Make a 'clone' of this tx */
-	last_tx_psbt_clone = clone_psbt(inflight, last_tx->psbt);
-	inflight->last_tx = bitcoin_tx_with_psbt(inflight, last_tx_psbt_clone);
+	inflight->last_tx = NULL;
+	if (last_tx) {
+		last_tx_psbt_clone = clone_psbt(inflight, last_tx->psbt);
+		inflight->last_tx = bitcoin_tx_with_psbt(inflight, last_tx_psbt_clone);
+	}
 	inflight->last_sig = last_sig;
 	inflight->tx_broadcast = false;
 
@@ -168,6 +174,8 @@ new_inflight(struct channel *channel,
 	inflight->lease_chan_max_ppt = lease_chan_max_ppt;
 	inflight->lease_fee = lease_fee;
 	inflight->lease_amt = lease_amt;
+
+	inflight->i_am_initiator = i_am_initiator;
 
 	list_add_tail(&channel->inflights, &inflight->list);
 	tal_add_destructor(inflight, destroy_inflight);
@@ -211,10 +219,10 @@ struct channel *new_unsaved_channel(struct peer *peer,
 	memset(&channel->billboard, 0, sizeof(channel->billboard));
 	channel->billboard.transient = tal_fmt(channel, "%s",
 					       "Empty channel init'd");
-	channel->log = new_log(channel, ld->log_book,
-			       &peer->id,
-			       "chan#%"PRIu64,
-			       channel->unsaved_dbid);
+	channel->log = new_logger(channel, ld->log_book,
+				  &peer->id,
+				  "chan#%"PRIu64,
+				  channel->unsaved_dbid);
 
 	channel->our_config.id = 0;
 	channel->open_attempt = NULL;
@@ -246,6 +254,11 @@ struct channel *new_unsaved_channel(struct peer *peer,
 	/* closer not yet known */
 	channel->closer = NUM_SIDES;
 	channel->close_blockheight = NULL;
+	/* In case someone looks at channels before open negotiation,
+	 * initialize this with default */
+	channel->type = default_channel_type(channel,
+					     ld->our_features,
+					     peer->their_features);
 
 	/* BOLT-7b04b1461739c5036add61782d58ac490842d98b #9
 	 * | 222/223 | `option_dual_fund`
@@ -257,6 +270,7 @@ struct channel *new_unsaved_channel(struct peer *peer,
 	channel->future_per_commitment_point = NULL;
 
 	channel->lease_commit_sig = NULL;
+	channel->ignore_fee_limits = ld->config.ignore_fee_limits;
 
 	/* No shachain yet */
 	channel->their_shachain.id = 0;
@@ -329,7 +343,7 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 			    enum channel_state state,
 			    enum side opener,
 			    /* NULL or stolen */
-			    struct log *log,
+			    struct logger *log,
 			    const char *transient_billboard TAKES,
 			    u8 channel_flags,
 			    bool req_confirmed_ins_local,
@@ -388,10 +402,15 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 			    u32 lease_chan_max_msat,
 			    u16 lease_chan_max_ppt,
 			    struct amount_msat htlc_minimum_msat,
-			    struct amount_msat htlc_maximum_msat)
+			    struct amount_msat htlc_maximum_msat,
+			    bool ignore_fee_limits)
 {
 	struct channel *channel = tal(peer->ld, struct channel);
 	struct amount_msat htlc_min, htlc_max;
+
+	bool anysegwit = !chainparams->is_elements && feature_negotiated(peer->ld->our_features,
+                        peer->their_features,
+                        OPT_SHUTDOWN_ANYSEGWIT);
 
 	assert(dbid != 0);
 	channel->peer = peer;
@@ -411,21 +430,27 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	channel->owner = NULL;
 	memset(&channel->billboard, 0, sizeof(channel->billboard));
 	channel->billboard.transient = tal_strdup(channel, transient_billboard);
-	channel->scb = tal(channel, struct scb_chan);
-	channel->scb->id = dbid;
-	channel->scb->addr = peer->addr;
-	channel->scb->node_id = peer->id;
-	channel->scb->funding = *funding;
-	channel->scb->cid = *cid;
-	channel->scb->funding_sats = funding_sats;
-	channel->scb->type = channel_type_dup(channel->scb, type);
+
+	/* If it's a unix domain socket connection, we don't save it */
+	if (peer->addr.itype == ADDR_INTERNAL_WIREADDR) {
+		channel->scb = tal(channel, struct scb_chan);
+		channel->scb->id = dbid;
+		channel->scb->unused = 0;
+		channel->scb->addr = peer->addr.u.wireaddr.wireaddr;
+		channel->scb->node_id = peer->id;
+		channel->scb->funding = *funding;
+		channel->scb->cid = *cid;
+		channel->scb->funding_sats = funding_sats;
+		channel->scb->type = channel_type_dup(channel->scb, type);
+	} else
+		channel->scb = NULL;
 
 	if (!log) {
-		channel->log = new_log(channel,
-				       peer->ld->log_book,
-				       &channel->peer->id,
-				       "chan#%"PRIu64,
-				       dbid);
+		channel->log = new_logger(channel,
+					  peer->ld->log_book,
+					  &channel->peer->id,
+					  "chan#%"PRIu64,
+					  dbid);
 	} else
 		channel->log = tal_steal(channel, log);
 	channel->req_confirmed_ins[LOCAL] = req_confirmed_ins_local;
@@ -466,13 +491,18 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	channel->shutdown_wrong_funding
 		= tal_steal(channel, shutdown_wrong_funding);
 	channel->closing_feerate_range = NULL;
-	if (local_shutdown_scriptpubkey)
+	if (local_shutdown_scriptpubkey) {
 		channel->shutdown_scriptpubkey[LOCAL]
 			= tal_steal(channel, local_shutdown_scriptpubkey);
-	else
+	} else if (anysegwit) {
+		channel->shutdown_scriptpubkey[LOCAL]
+			= p2tr_for_keyidx(channel, channel->peer->ld,
+						channel->final_key_idx);
+	} else {
 		channel->shutdown_scriptpubkey[LOCAL]
 			= p2wpkh_for_keyidx(channel, channel->peer->ld,
-					    channel->final_key_idx);
+						channel->final_key_idx);
+	}
 	channel->last_was_revoke = last_was_revoke;
 	channel->last_sent_commit = tal_steal(channel, last_sent_commit);
 	channel->first_blocknum = first_blocknum;
@@ -521,11 +551,20 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 	channel->closer = closer;
 	channel->close_blockheight = NULL;
 	channel->state_change_cause = reason;
+	channel->ignore_fee_limits = ignore_fee_limits;
 
 	/* Make sure we see any spends using this key */
-	txfilter_add_scriptpubkey(peer->ld->owned_txfilter,
-				  take(p2wpkh_for_keyidx(NULL, peer->ld,
-							 channel->final_key_idx)));
+	if (!local_shutdown_scriptpubkey) {
+		if (anysegwit) {
+			txfilter_add_scriptpubkey(peer->ld->owned_txfilter,
+						  take(p2tr_for_keyidx(NULL, peer->ld,
+									 channel->final_key_idx)));
+		} else {
+			txfilter_add_scriptpubkey(peer->ld->owned_txfilter,
+						  take(p2wpkh_for_keyidx(NULL, peer->ld,
+									 channel->final_key_idx)));
+		}
+	}
 	/* scid is NULL when opening a new channel so we don't
 	 * need to set error in that case as well */
 	if (is_stub_scid(scid))
@@ -547,6 +586,23 @@ const char *channel_state_str(enum channel_state state)
 		if (enum_channel_state_names[i].v == state)
 			return enum_channel_state_names[i].name;
 	return "unknown";
+}
+
+bool channel_state_normalish(const struct channel *channel)
+{
+	return channel->state == CHANNELD_NORMAL
+		|| channel->state == CHANNELD_AWAITING_SPLICE;
+}
+
+bool channel_state_awaitish(const struct channel *channel)
+{
+	return channel->state == CHANNELD_AWAITING_LOCKIN
+		|| channel->state == CHANNELD_AWAITING_SPLICE;
+}
+
+bool channel_state_closish(enum channel_state channel_state)
+{
+	return channel_state > CHANNELD_NORMAL && channel_state <= CLOSED;
 }
 
 struct channel *peer_any_active_channel(struct peer *peer, bool *others)
@@ -718,6 +774,31 @@ struct channel *find_channel_by_alias(const struct peer *peer,
 	return NULL;
 }
 
+bool have_anchor_channel(struct lightningd *ld)
+{
+	struct peer *p;
+	struct channel *channel;
+	struct peer_node_id_map_iter it;
+
+	for (p = peer_node_id_map_first(ld->peers, &it);
+	     p;
+	     p = peer_node_id_map_next(ld->peers, &it)) {
+		if (p->uncommitted_channel) {
+			/* FIXME: Assume anchors if supported */
+			if (feature_negotiated(ld->our_features,
+					       p->their_features,
+					       OPT_ANCHORS_ZERO_FEE_HTLC_TX))
+				return true;
+		}
+		list_for_each(&p->channels, channel, list) {
+			if (channel_type_has(channel->type,
+					     OPT_ANCHORS_ZERO_FEE_HTLC_TX))
+				return true;
+		}
+	}
+	return false;
+}
+
 void channel_set_last_tx(struct channel *channel,
 			 struct bitcoin_tx *tx,
 			 const struct bitcoin_signature *sig)
@@ -737,7 +818,7 @@ void channel_set_state(struct channel *channel,
 	struct timeabs timestamp;
 
 	/* set closer, if known */
-	if (state > CHANNELD_NORMAL && channel->closer == NUM_SIDES) {
+	if (channel_state_closish(state) && channel->closer == NUM_SIDES) {
 		if (reason == REASON_LOCAL)   channel->closer = LOCAL;
 		if (reason == REASON_USER)    channel->closer = LOCAL;
 		if (reason == REASON_REMOTE)  channel->closer = REMOTE;

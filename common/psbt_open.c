@@ -75,8 +75,13 @@ static const u8 *linearize_input(const tal_t *ctx,
 	wally_psbt_input_set_final_scriptsig(&psbt->inputs[0], NULL, 0);
 	wally_psbt_input_set_witness_script(&psbt->inputs[0], NULL, 0);
 	wally_psbt_input_set_redeem_script(&psbt->inputs[0], NULL, 0);
+	wally_psbt_input_set_taproot_signature(&psbt->inputs[0], NULL, 0);
+	psbt->inputs[0].taproot_leaf_hashes.num_items = 0;
+	psbt->inputs[0].taproot_leaf_paths.num_items = 0;
 	psbt->inputs[0].keypaths.num_items = 0;
 	psbt->inputs[0].signatures.num_items = 0;
+	psbt->inputs[0].utxo = NULL;
+	psbt->inputs[0].witness_utxo = NULL;
 
 	const u8 *bytes = psbt_get_bytes(ctx, psbt, &byte_len);
 
@@ -104,6 +109,8 @@ static const u8 *linearize_output(const tal_t *ctx,
 
 	/* We don't care if the keypaths change */
 	psbt->outputs[0].keypaths.num_items = 0;
+	psbt->outputs[0].taproot_leaf_hashes.num_items = 0;
+	psbt->outputs[0].taproot_leaf_paths.num_items = 0;
 	/* And you can add scripts, no problem */
 	wally_psbt_output_set_witness_script(&psbt->outputs[0], NULL, 0);
 	wally_psbt_output_set_redeem_script(&psbt->outputs[0], NULL, 0);

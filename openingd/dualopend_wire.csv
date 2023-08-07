@@ -33,6 +33,7 @@ msgdata,dualopend_init,require_confirmed_inputs,bool,
 # master-dualopend: peer has reconnected
 msgtype,dualopend_reinit,7001
 msgdata,dualopend_reinit,chainparams,chainparams,
+msgdata,dualopend_reinit,from_abort,bool,
 msgdata,dualopend_reinit,our_feature_set,feature_set,
 msgdata,dualopend_reinit,their_init_features_len,u16,
 msgdata,dualopend_reinit,their_init_features,u8,their_init_features_len
@@ -188,6 +189,7 @@ msgdata,dualopend_opener_init,local_shutdown_len,u16,
 msgdata,dualopend_opener_init,local_shutdown_scriptpubkey,u8,local_shutdown_len
 msgdata,dualopend_opener_init,local_shutdown_wallet_index,?u32,
 msgdata,dualopend_opener_init,feerate_per_kw,u32,
+msgdata,dualopend_opener_init,anchor_feerate_per_kw,u32,
 msgdata,dualopend_opener_init,feerate_per_kw_funding,u32,
 msgdata,dualopend_opener_init,channel_flags,u8,
 msgdata,dualopend_opener_init,requested_sats,?amount_sat,

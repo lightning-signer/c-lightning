@@ -22,6 +22,10 @@ typemap = {
     'u8': 'uint32',  # Yep, this is the smallest integer type in grpc...
     'u32': 'uint32',
     'u64': 'uint64',
+    's8': 'int32',
+    's16': 'int32',
+    's32': 'int32',
+    's64': 'int64',
     'u16': 'uint32',  # Yeah, I know...
     'f32': 'float',
     'integer': 'sint64',
@@ -247,9 +251,17 @@ class GrpcConverterGenerator(IGenerator):
                 self.generate_composite(prefix, f)
 
         pbname = self.to_camel_case(field.typename)
+
+        # If any of the field accesses would result in a deprecated
+        # warning we mark the construction here to allow deprecated
+        # fields being access.
+
+        has_deprecated = any([f.deprecated for f in field.fields])
+        deprecated = ",deprecated" if has_deprecated else ""
+
         # And now we can convert the current field:
         self.write(f"""\
-        #[allow(unused_variables,deprecated)]
+        #[allow(unused_variables{deprecated})]
         impl From<{prefix}::{field.typename}> for pb::{pbname} {{
             fn from(c: {prefix}::{field.typename}) -> Self {{
                 Self {{
@@ -406,10 +418,13 @@ class GrpcUnconverterGenerator(GrpcConverterGenerator):
             elif isinstance(f, CompositeField):
                 self.generate_composite(prefix, f)
 
+        has_deprecated = any([f.deprecated for f in field.fields])
+        deprecated = ",deprecated" if has_deprecated else ""
+
         pbname = self.to_camel_case(field.typename)
         # And now we can convert the current field:
         self.write(f"""\
-        #[allow(unused_variables,deprecated)]
+        #[allow(unused_variables{deprecated})]
         impl From<pb::{pbname}> for {prefix}::{field.typename} {{
             fn from(c: pb::{pbname}) -> Self {{
                 Self {{

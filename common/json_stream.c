@@ -38,7 +38,7 @@ static void adjust_io_write(struct json_out *jout,
 
 struct json_stream *new_json_stream(const tal_t *ctx,
 				    struct command *writer,
-				    struct log *log)
+				    struct logger *log)
 {
 	struct json_stream *js = tal(ctx, struct json_stream);
 
@@ -73,7 +73,7 @@ const char *json_stream_detach_filter(const tal_t *ctx, struct json_stream *js)
 
 struct json_stream *json_stream_dup(const tal_t *ctx,
 				    struct json_stream *original,
-				    struct log *log)
+				    struct logger *log)
 {
 	struct json_stream *js = tal_dup(ctx, struct json_stream, original);
 
@@ -93,13 +93,6 @@ struct json_stream *json_stream_dup(const tal_t *ctx,
 static bool json_stream_still_writing(const struct json_stream *js)
 {
 	return js->writer != NULL;
-}
-
-void json_stream_log_suppress(struct json_stream *js, const char *cmd_name)
-{
-	/* Really shouldn't be used for anything else */
-	assert(streq(cmd_name, "getlog"));
-	js->log = NULL;
 }
 
 void json_stream_append(struct json_stream *js,
@@ -493,38 +486,54 @@ void json_add_short_channel_id(struct json_stream *response,
 			 short_channel_id_outnum(scid));
 }
 
+static void json_add_address_fields(struct json_stream *response,
+				    const struct wireaddr *addr,
+				    const char *typefield)
+{
+	switch (addr->type) {
+	case ADDR_TYPE_IPV4: {
+		char addrstr[INET_ADDRSTRLEN];
+		inet_ntop(AF_INET, addr->addr, addrstr, INET_ADDRSTRLEN);
+		json_add_string(response, typefield, "ipv4");
+		json_add_string(response, "address", addrstr);
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	case ADDR_TYPE_IPV6: {
+		char addrstr[INET6_ADDRSTRLEN];
+		inet_ntop(AF_INET6, addr->addr, addrstr, INET6_ADDRSTRLEN);
+		json_add_string(response, typefield, "ipv6");
+		json_add_string(response, "address", addrstr);
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	case ADDR_TYPE_TOR_V2_REMOVED: {
+		json_add_string(response, typefield, "torv2");
+		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	case ADDR_TYPE_TOR_V3: {
+		json_add_string(response, typefield, "torv3");
+		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	case ADDR_TYPE_DNS: {
+		json_add_string(response, typefield, "dns");
+		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
+		json_add_num(response, "port", addr->port);
+		return;
+	}
+	}
+	abort();
+}
+
 void json_add_address(struct json_stream *response, const char *fieldname,
 		      const struct wireaddr *addr)
 {
 	json_object_start(response, fieldname);
-	if (addr->type == ADDR_TYPE_IPV4) {
-		char addrstr[INET_ADDRSTRLEN];
-		inet_ntop(AF_INET, addr->addr, addrstr, INET_ADDRSTRLEN);
-		json_add_string(response, "type", "ipv4");
-		json_add_string(response, "address", addrstr);
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_IPV6) {
-		char addrstr[INET6_ADDRSTRLEN];
-		inet_ntop(AF_INET6, addr->addr, addrstr, INET6_ADDRSTRLEN);
-		json_add_string(response, "type", "ipv6");
-		json_add_string(response, "address", addrstr);
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_TOR_V2_REMOVED) {
-		json_add_string(response, "type", "torv2");
-		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_TOR_V3) {
-		json_add_string(response, "type", "torv3");
-		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_DNS) {
-		json_add_string(response, "type", "dns");
-		json_add_string(response, "address", fmt_wireaddr_without_port(tmpctx, addr));
-		json_add_num(response, "port", addr->port);
-	} else if (addr->type == ADDR_TYPE_WEBSOCKET) {
-		json_add_string(response, "type", "websocket");
-		json_add_num(response, "port", addr->port);
-	}
+	json_add_address_fields(response, addr, "type");
 	json_object_end(response);
 }
 
@@ -541,8 +550,13 @@ void json_add_address_internal(struct json_stream *response,
 		return;
 	case ADDR_INTERNAL_ALLPROTO:
 		json_object_start(response, fieldname);
-		json_add_string(response, "type", "any protocol");
-		json_add_num(response, "port", addr->u.port);
+		if (addr->u.allproto.is_websocket) {
+			json_add_string(response, "type", "websocket");
+			json_add_string(response, "subtype", "any protocol");
+		} else {
+			json_add_string(response, "type", "any protocol");
+		}
+		json_add_num(response, "port", addr->u.allproto.port);
 		json_object_end(response);
 		return;
 	case ADDR_INTERNAL_AUTOTOR:
@@ -565,7 +579,14 @@ void json_add_address_internal(struct json_stream *response,
 		json_object_end(response);
 		return;
 	case ADDR_INTERNAL_WIREADDR:
-		json_add_address(response, fieldname, &addr->u.wireaddr);
+		json_object_start(response, fieldname);
+		if (addr->u.wireaddr.is_websocket) {
+			json_add_string(response, "type", "websocket");
+			json_add_address_fields(response, &addr->u.wireaddr.wireaddr, "subtype");
+		} else {
+			json_add_address_fields(response, &addr->u.wireaddr.wireaddr, "type");
+		}
+		json_object_end(response);
 		return;
 	}
 	abort();

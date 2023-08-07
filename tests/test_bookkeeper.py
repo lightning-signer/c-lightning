@@ -4,8 +4,7 @@ from pyln.client import Millisatoshi
 from db import Sqlite3Db
 from fixtures import TEST_NETWORK
 from utils import (
-    sync_blockheight, wait_for, only_one, first_channel_id, TIMEOUT,
-    anchor_expected
+    sync_blockheight, wait_for, only_one, first_channel_id, TIMEOUT
 )
 
 from pathlib import Path
@@ -337,7 +336,6 @@ def test_bookkeeping_rbf_withdraw(node_factory, bitcoind):
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "turns off bookkeeper at start")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "network fees hardcoded")
-@pytest.mark.developer("dev-force-features")
 def test_bookkeeping_missed_chans_leases(node_factory, bitcoind):
     """
     Test that a lease is correctly recorded if bookkeeper was off
@@ -347,10 +345,8 @@ def test_bookkeeping_missed_chans_leases(node_factory, bitcoind):
     opts = {'funder-policy': 'match', 'funder-policy-mod': 100,
             'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
             'plugin': str(coin_mvt_plugin),
-            'disable-plugin': 'bookkeeper'}
-
-    if not anchor_expected():
-        opts['dev-force-features'] = '+21'
+            'disable-plugin': 'bookkeeper',
+            'experimental-anchors': None}
 
     l1, l2 = node_factory.get_nodes(2, opts=opts)
 
@@ -399,13 +395,13 @@ def test_bookkeeping_missed_chans_leases(node_factory, bitcoind):
 
     # l1 events
     exp_events = [('channel_open', open_amt * 1000 + lease_fee, 0),
-                  ('onchain_fee', 1224000, 0),
+                  ('onchain_fee', 1320000, 0),
                   ('lease_fee', 0, lease_fee),
                   ('journal_entry', 0, invoice_msat)]
     _check_events(l1, channel_id, exp_events)
 
     exp_events = [('channel_open', open_amt * 1000, 0),
-                  ('onchain_fee', 796000, 0),
+                  ('onchain_fee', 892000, 0),
                   ('lease_fee', lease_fee, 0),
                   ('journal_entry', invoice_msat, 0)]
     _check_events(l2, channel_id, exp_events)
@@ -413,6 +409,7 @@ def test_bookkeeping_missed_chans_leases(node_factory, bitcoind):
 
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "turns off bookkeeper at start")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "network fees hardcoded")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "remote_hsmd doesn't allow push of non-trivial amount")
 @pytest.mark.openchannel('v1', 'Uses push-msat')
 def test_bookkeeping_missed_chans_pushed(node_factory, bitcoind):
     """
@@ -465,7 +462,7 @@ def test_bookkeeping_missed_chans_pushed(node_factory, bitcoind):
 
     # l1 events
     exp_events = [('channel_open', open_amt * 1000, 0),
-                  ('onchain_fee', 4567000, 0),
+                  ('onchain_fee', 4927000, 0),
                   ('pushed', 0, push_amt),
                   ('journal_entry', 0, invoice_msat)]
     _check_events(l1, channel_id, exp_events)
@@ -538,7 +535,7 @@ def test_bookkeeping_missed_chans_pay_after(node_factory, bitcoind):
 
     # l1 events
     exp_events = [('channel_open', open_amt * 1000, 0),
-                  ('onchain_fee', 4567000, 0),
+                  ('onchain_fee', 4927000, 0),
                   ('invoice', 0, invoice_msat)]
     _check_events(l1, channel_id, exp_events)
 
@@ -604,6 +601,7 @@ def test_bookkeeping_onchaind_txs(node_factory, bitcoind):
     assert outs == only_one(wallet_bal['balances'])['balance_msat']
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "invoice from offer: Invalid bech32: invalid checksum")
 def test_bookkeeping_descriptions(node_factory, bitcoind, chainparams):
     """
     When an 'invoice' type event comes through, we look up the description details

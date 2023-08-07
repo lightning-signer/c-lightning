@@ -73,6 +73,7 @@ struct peer *find_peer_by_dbid(struct lightningd *ld, u64 dbid);
 struct peer *new_peer(struct lightningd *ld, u64 dbid,
 		      const struct node_id *id,
 		      const struct wireaddr_internal *addr,
+		      const u8 *their_features TAKES,
 		      bool connected_incoming);
 
 /* Last one out deletes peer.  Also removes from db. */
@@ -96,9 +97,11 @@ void channel_errmsg(struct channel *channel,
 		    const struct channel_id *channel_id,
 		    const char *desc,
 		    bool warning,
+		    bool aborted,
 		    const u8 *err_for_them);
 
 u8 *p2wpkh_for_keyidx(const tal_t *ctx, struct lightningd *ld, u64 keyidx);
+u8 *p2tr_for_keyidx(const tal_t *ctx, struct lightningd *ld, u64 keyidx);
 
 /* We've loaded peers from database, set them going. */
 void setup_peers(struct lightningd *ld);
@@ -111,7 +114,14 @@ void resend_closing_transactions(struct lightningd *ld);
 
 void drop_to_chain(struct lightningd *ld, struct channel *channel, bool cooperative);
 
+void update_channel_from_inflight(struct lightningd *ld,
+				  struct channel *channel,
+				  const struct channel_inflight *inflight);
+
 void channel_watch_funding(struct lightningd *ld, struct channel *channel);
+void channel_watch_inflight(struct lightningd *ld,
+			    struct channel *channel,
+			    struct channel_inflight *inflight);
 /* If this channel has a "wrong funding" shutdown, watch that too. */
 void channel_watch_wrong_funding(struct lightningd *ld, struct channel *channel);
 

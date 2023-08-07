@@ -41,7 +41,7 @@ bool notifications_have_topic(const struct plugins *plugins, const char *topic)
 	return false;
 }
 
-static void connect_notification_serialize(struct json_stream *stream,
+static void json_add_connect_fields(struct json_stream *stream,
 					   const struct node_id *nodeid,
 					   bool incoming,
 					   const struct wireaddr_internal *addr)
@@ -49,6 +49,20 @@ static void connect_notification_serialize(struct json_stream *stream,
 	json_add_node_id(stream, "id", nodeid);
 	json_add_string(stream, "direction", incoming ? "in" : "out");
 	json_add_address_internal(stream, "address", addr);
+}
+
+static void connect_notification_serialize(struct json_stream *stream,
+					   struct lightningd *ld,
+					   const struct node_id *nodeid,
+					   bool incoming,
+					   const struct wireaddr_internal *addr)
+{
+	/* Old style: Add raw fields without connect key */
+	if (ld->deprecated_apis)
+		json_add_connect_fields(stream, nodeid, incoming, addr);
+	json_object_start(stream, "connect");
+	json_add_connect_fields(stream, nodeid, incoming, addr);
+	json_object_end(stream);
 }
 
 REGISTER_NOTIFICATION(connect,
@@ -60,21 +74,34 @@ void notify_connect(struct lightningd *ld,
 		    const struct wireaddr_internal *addr)
 {
 	void (*serialize)(struct json_stream *,
+			  struct lightningd *,
 			  const struct node_id *,
 			  bool,
 			  const struct wireaddr_internal *) = connect_notification_gen.serialize;
 
 	struct jsonrpc_notification *n
 		= jsonrpc_notification_start(NULL, connect_notification_gen.topic);
-	serialize(n->stream, nodeid, incoming, addr);
+	serialize(n->stream, ld, nodeid, incoming, addr);
 	jsonrpc_notification_end(n);
 	plugins_notify(ld->plugins, take(n));
 }
 
-static void disconnect_notification_serialize(struct json_stream *stream,
-					      struct node_id *nodeid)
+static void json_add_disconnect_fields(struct json_stream *stream,
+					   const struct node_id *nodeid)
 {
 	json_add_node_id(stream, "id", nodeid);
+}
+
+static void disconnect_notification_serialize(struct json_stream *stream,
+					      struct lightningd *ld,
+					      struct node_id *nodeid)
+{
+	/* Old style: Add raw fields without disconnect key */
+	if (ld->deprecated_apis)
+		json_add_disconnect_fields(stream, nodeid);
+	json_object_start(stream, "disconnect");
+	json_add_disconnect_fields(stream, nodeid);
+	json_object_end(stream);
 }
 
 REGISTER_NOTIFICATION(disconnect,
@@ -83,11 +110,12 @@ REGISTER_NOTIFICATION(disconnect,
 void notify_disconnect(struct lightningd *ld, struct node_id *nodeid)
 {
 	void (*serialize)(struct json_stream *,
+			  struct lightningd *,
 			  struct node_id *) = disconnect_notification_gen.serialize;
 
 	struct jsonrpc_notification *n
 		= jsonrpc_notification_start(NULL, disconnect_notification_gen.topic);
-	serialize(n->stream, nodeid);
+	serialize(n->stream, ld, nodeid);
 	jsonrpc_notification_end(n);
 	plugins_notify(ld->plugins, take(n));
 }
@@ -198,6 +226,7 @@ void notify_invoice_creation(struct lightningd *ld, struct amount_msat *amount,
 
 /* FIXME: Use outpoint here! */
 static void channel_opened_notification_serialize(struct json_stream *stream,
+						  struct lightningd *ld,
 						  struct node_id *node_id,
 						  struct amount_sat *funding_sat,
 						  struct bitcoin_txid *funding_txid,
@@ -207,7 +236,7 @@ static void channel_opened_notification_serialize(struct json_stream *stream,
 	json_add_node_id(stream, "id", node_id);
 	json_add_amount_sat_msat(stream, "funding_msat", *funding_sat);
 	json_add_txid(stream, "funding_txid", funding_txid);
-	if (deprecated_apis)
+	if (ld->deprecated_apis)
 		json_add_bool(stream, "funding_locked", channel_ready);
 	json_add_bool(stream, "channel_ready", channel_ready);
 	json_object_end(stream);
@@ -221,6 +250,7 @@ void notify_channel_opened(struct lightningd *ld, struct node_id *node_id,
 			   bool channel_ready)
 {
 	void (*serialize)(struct json_stream *,
+			  struct lightningd *,
 			  struct node_id *,
 			  struct amount_sat *,
 			  struct bitcoin_txid *,
@@ -228,7 +258,7 @@ void notify_channel_opened(struct lightningd *ld, struct node_id *node_id,
 
 	struct jsonrpc_notification *n
 		= jsonrpc_notification_start(NULL, channel_opened_notification_gen.topic);
-	serialize(n->stream, node_id, funding_sat, funding_txid, channel_ready);
+	serialize(n->stream, ld, node_id, funding_sat, funding_txid, channel_ready);
 	jsonrpc_notification_end(n);
 	plugins_notify(ld->plugins, take(n));
 }
@@ -572,13 +602,25 @@ void notify_balance_snapshot(struct lightningd *ld,
 	plugins_notify(ld->plugins, take(n));
 }
 
-static void block_added_notification_serialize(struct json_stream *stream,
-					       struct block *block)
+static void json_add_block_added_fields(struct json_stream *stream,
+					   const struct block *block)
 {
-	json_object_start(stream, "block");
 	json_add_string(stream, "hash",
 			type_to_string(tmpctx, struct bitcoin_blkid, &block->blkid));
 	json_add_u32(stream, "height", block->height);
+}
+
+static void block_added_notification_serialize(struct json_stream *stream,
+					       struct lightningd *ld,
+					       struct block *block)
+{
+	if (ld->deprecated_apis) {
+		json_object_start(stream, "block");
+		json_add_block_added_fields(stream, block);
+		json_object_end(stream);
+	}
+	json_object_start(stream, "block_added");
+	json_add_block_added_fields(stream, block);
 	json_object_end(stream);
 }
 
@@ -589,11 +631,12 @@ void notify_block_added(struct lightningd *ld,
 			const struct block *block)
 {
 	void (*serialize)(struct json_stream *,
+			  struct lightningd *ld,
 			  const struct block *block) = block_added_notification_gen.serialize;
 
 	struct jsonrpc_notification *n =
 		jsonrpc_notification_start(NULL, "block_added");
-	serialize(n->stream, block);
+	serialize(n->stream, ld, block);
 	jsonrpc_notification_end(n);
 	plugins_notify(ld->plugins, take(n));
 }
@@ -657,6 +700,9 @@ bool notify_plugin_shutdown(struct lightningd *ld, struct plugin *p)
 	struct jsonrpc_notification *n =
 		jsonrpc_notification_start(NULL, "shutdown");
 
+	/* Even shutdown should follow the same "object inside notification" pattern */
+	json_object_start(n->stream, "shutdown");
+	json_object_end(n->stream);
 	jsonrpc_notification_end(n);
 	return plugin_single_notify(p, take(n));
 }

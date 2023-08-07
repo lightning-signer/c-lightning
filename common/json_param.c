@@ -15,6 +15,11 @@
 #include <common/json_param.h>
 #include <common/route.h>
 
+/* Overridden by run-param.c */
+#ifndef paramcheck_assert
+#define paramcheck_assert assert
+#endif
+
 struct param {
 	const char *name;
 	bool is_set;
@@ -23,16 +28,16 @@ struct param {
 	void *arg;
 };
 
-static bool param_add(struct param **params,
+static void param_add(struct param **params,
 		      const char *name,
 		      enum param_style style,
 		      param_cbx cbx, void *arg)
 {
-#if DEVELOPER
-	if (!(name && cbx && arg))
-		return false;
-#endif
 	struct param last;
+
+	paramcheck_assert(name);
+	paramcheck_assert(cbx);
+	paramcheck_assert(arg);
 
 	last.is_set = false;
 	last.name = name;
@@ -41,7 +46,6 @@ static bool param_add(struct param **params,
 	last.arg = arg;
 
 	tal_arr_expand(params, last);
-	return true;
 }
 
 /* FIXME: To support the deprecated p_req_dup_ok */
@@ -115,7 +119,8 @@ static struct command_result *parse_by_position(struct command *cmd,
 	return post_check(cmd, params);
 }
 
-static struct param *find_param(struct param *params, const char *start,
+static struct param *find_param(struct command *cmd,
+				struct param *params, const char *start,
 				size_t n)
 {
 	struct param *first = params;
@@ -125,11 +130,11 @@ static struct param *find_param(struct param *params, const char *start,
 		size_t arglen = strcspn(first->name, "|");
 		if (memeq(first->name, arglen, start, n))
 			return first;
-		if (deprecated_apis
-		    && first->name[arglen]
+		if (first->name[arglen]
 		    && memeq(first->name + arglen + 1,
 			     strlen(first->name + arglen + 1),
-			     start, n))
+			     start, n)
+		    && command_deprecated_apis(cmd))
 			return first;
 		first++;
 	}
@@ -146,7 +151,7 @@ static struct command_result *parse_by_name(struct command *cmd,
 	const jsmntok_t *t;
 
 	json_for_each_obj(i, t, tokens) {
-		struct param *p = find_param(params, buffer + t->start,
+		struct param *p = find_param(cmd, params, buffer + t->start,
 					     t->end - t->start);
 		if (!p) {
 			if (!allow_extra) {
@@ -174,7 +179,6 @@ static struct command_result *parse_by_name(struct command *cmd,
 	return post_check(cmd, params);
 }
 
-#if DEVELOPER
 static int comp_by_name(const struct param *a, const struct param *b,
 			void *unused)
 {
@@ -207,54 +211,47 @@ static int comp_req_order(const struct param *a, const struct param *b,
  * Make sure 2 sequential items in @params are not equal (based on
  * provided comparator).
  */
-static bool check_distinct(struct param *params,
-			   int (*compar) (const struct param *a,
-					  const struct param *b, void *unused))
+static void check_distinct(const struct param *params,
+			   int (*compar)(const struct param *a,
+					 const struct param *b, void *unused))
 {
-	struct param *first = params;
-	struct param *last = first + tal_count(params);
+	const struct param *first = params;
+	const struct param *last = first + tal_count(params);
 	first++;
 	while (first != last) {
-		if (compar(first - 1, first, NULL) == 0)
-			return false;
+		paramcheck_assert(compar(first - 1, first, NULL) != 0);
 		first++;
 	}
-	return true;
 }
 
-static bool check_unique(struct param *copy,
+static void check_unique(struct param *copy,
 			 int (*compar) (const struct param *a,
 					const struct param *b, void *unused))
 {
 	asort(copy, tal_count(copy), compar, NULL);
-	return check_distinct(copy, compar);
+	check_distinct(copy, compar);
 }
 
 /*
  * Verify consistent internal state.
  */
-static bool check_params(struct param *params)
+static void check_params(const struct param *params)
 {
 	if (tal_count(params) < 2)
-		return true;
+		return;
 
 	/* make sure there are no required params following optional */
-	if (!check_distinct(params, comp_req_order))
-		return false;
+	check_distinct(params, comp_req_order);
 
 	/* duplicate so we can sort */
 	struct param *copy = tal_dup_talarr(params, struct param, params);
 
 	/* check for repeated names and args */
-	if (!check_unique(copy, comp_by_name))
-		return false;
-	if (!check_unique(copy, comp_by_arg))
-		return false;
+	check_unique(copy, comp_by_name);
+	check_unique(copy, comp_by_arg);
 
 	tal_free(copy);
-	return true;
 }
-#endif
 
 static char *param_usage(const tal_t *ctx,
 			 const struct param *params)
@@ -278,12 +275,6 @@ static struct command_result *param_arr(struct command *cmd, const char *buffer,
 					struct param *params,
 					bool allow_extra)
 {
-#if DEVELOPER
-	if (!check_params(params)) {
-		return command_fail(cmd, PARAM_DEV_ERROR,
-				    "developer error: check_params");
-	}
-#endif
 	if (tokens->type == JSMN_ARRAY)
 		return parse_by_position(cmd, params, buffer, tokens, allow_extra);
 	else if (tokens->type == JSMN_OBJECT)
@@ -314,6 +305,7 @@ const char *param_subcommand(struct command *cmd, const char *buffer,
 		for (size_t i = 0; i < tal_count(names); i++)
 			tal_append_fmt(&usage, "%c%s",
 				       i == 0 ? '=' : '|', names[i]);
+		check_params(params);
 		command_set_usage(cmd, usage);
 		return NULL;
 	}
@@ -353,19 +345,12 @@ bool param(struct command *cmd, const char *buffer,
 			allow_extra = true;
 			continue;
 		}
-		if (!param_add(&params, name, style, cbx, arg)) {
-			/* We really do ignore this return! */
-			struct command_result *ignore;
-			ignore = command_fail(cmd, PARAM_DEV_ERROR,
-					      "developer error: param_add %s", name);
-			assert(ignore);
-			va_end(ap);
-			return false;
-		}
+		param_add(&params, name, style, cbx, arg);
 	}
 	va_end(ap);
 
 	if (command_usage_only(cmd)) {
+		check_params(params);
 		command_set_usage(cmd, param_usage(cmd, params));
 		return false;
 	}
@@ -439,6 +424,15 @@ struct command_result *param_string(struct command *cmd, const char *name,
 	return NULL;
 }
 
+struct command_result *param_invstring(struct command *cmd, const char *name,
+				       const char * buffer, const jsmntok_t *tok,
+				       const char **str)
+{
+	const char *strtmp = json_strdup(cmd, buffer, tok);
+	*str = to_canonical_invstr(cmd, strtmp);
+	return NULL;
+}
+
 struct command_result *param_ignore(struct command *cmd, const char *name,
 				    const char *buffer, const jsmntok_t *tok,
 				    const void *unused)
@@ -507,6 +501,18 @@ struct command_result *param_u64(struct command *cmd, const char *name,
 
 	return command_fail_badparam(cmd, name, buffer, tok,
 				     "should be an unsigned 64 bit integer");
+}
+
+struct command_result *param_s64(struct command *cmd, const char *name,
+				 const char *buffer, const jsmntok_t *tok,
+				 int64_t **num)
+{
+	*num = tal(cmd, int64_t);
+	if (json_to_s64(buffer, tok, *num))
+		return NULL;
+
+	return command_fail_badparam(cmd, name, buffer, tok,
+				     "should be an sign 64 bit integer");
 }
 
 struct command_result *param_msat(struct command *cmd, const char *name,
@@ -686,13 +692,14 @@ struct command_result *param_secrets_array(struct command *cmd,
 }
 
 /**
- * segwit_addr_net_decode - Try to decode a Bech32 address and detect
+ * segwit_addr_net_decode - Try to decode a Bech32(m) address and detect
  * testnet/mainnet/regtest/signet
  *
  * This processes the address and returns a string if it is a Bech32
- * address specified by BIP173. The string is set whether it is
- * testnet or signet (both "tb"),  mainnet ("bc"), regtest ("bcrt")
- * It does not check, witness version and program size restrictions.
+ * address specified by BIP173 or Bech32m as by BIP350. The string is
+ * set whether it is testnet or signet (both "tb"),  mainnet ("bc"),
+ * regtest ("bcrt"). It does not check witness version and program size
+ * restrictions.
  *
  *  Out: witness_version: Pointer to an int that will be updated to contain
  *                 the witness program version (between 0 and 16 inclusive).
@@ -732,7 +739,7 @@ json_to_address_scriptpubkey(const tal_t *ctx,
 	size_t witness_program_len;
 
 	char *addrz;
-	const char *bip173;
+	const char *bech32;
 
 	u8 addr_version;
 
@@ -756,12 +763,12 @@ json_to_address_scriptpubkey(const tal_t *ctx,
 	addrz = tal_dup_arr(tmpctx, char, buffer + tok->start, tok->end - tok->start, 1);
 	addrz[tok->end - tok->start] = '\0';
 
-	bip173 = segwit_addr_net_decode(&witness_version, witness_program,
+	bech32 = segwit_addr_net_decode(&witness_version, witness_program,
 					&witness_program_len, addrz, chainparams);
-	if (bip173) {
+	if (bech32) {
 		bool witness_ok;
 
-		/* We know the rules for v0, rest remain undefined */
+		/* Only V0 has restricted lengths of witness programs */
 		if (witness_version == 0) {
 			witness_ok = (witness_program_len == 20 ||
 				       witness_program_len == 32);
@@ -771,7 +778,7 @@ json_to_address_scriptpubkey(const tal_t *ctx,
 		if (!witness_ok)
 			return ADDRESS_PARSE_UNRECOGNIZED;
 
-		if (!streq(bip173, chainparams->onchain_hrp))
+		if (!streq(bech32, chainparams->onchain_hrp))
 			return ADDRESS_PARSE_WRONG_NETWORK;
 
 		*scriptpubkey = scriptpubkey_witness_raw(ctx, witness_version,

@@ -6,13 +6,16 @@ authors = ["Christian Decker <cdecker@blockstream.com>"]
 
 [tool.poetry.dependencies]
 # Build dependencies belong here
-python = "^3.7"
-pyln-client = { path = "./contrib/pyln-client", develop = true }
-pyln-proto = { path = "./contrib/pyln-proto", develop = true }
+python = "^3.8"
+pyln-client = { path = "contrib/pyln-client", develop = true }
+pyln-proto = { path = "contrib/pyln-proto", develop = true }
 Mako = "^1.1.6"
 websocket-client = "^1.2.3"
-grpcio-tools = "1.47.0"
-grpcio = "1.47.0"
+grpcio-tools = "^1"
+grpcio = "^1"
+# We want a specific version of protobuf to match CI's .github/scripts/setup.sh
+protobuf = "4.21.12"
+cryptography = "^41.0.2"
 
 [tool.poetry.dev-dependencies]
 # Test dependencies and inherited dependencies belong here

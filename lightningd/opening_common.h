@@ -14,7 +14,7 @@ struct basepoints;
 struct channel_config;
 struct command;
 struct lightningd;
-struct log;
+struct logger;
 struct peer;
 struct wally_tx;
 
@@ -32,7 +32,7 @@ struct uncommitted_channel {
 	struct channel_id cid;
 
 	/* For logging */
-	struct log *log;
+	struct logger *log;
 
 	/* Openingd can tell us stuff. */
 	const char *transient_billboard;
@@ -112,6 +112,7 @@ void opend_channel_errmsg(struct uncommitted_channel *uc,
 			  const struct channel_id *channel_id UNUSED,
 			  const char *desc,
 			  bool warning UNUSED,
+			  bool aborted UNUSED,
 			  const u8 *err_for_them UNUSED);
 
 void opend_channel_set_billboard(struct uncommitted_channel *uc,

@@ -508,9 +508,7 @@ static bool can_carry_onionmsg(const struct gossmap *map,
 
 	/* Check features of recipient */
 	n = gossmap_nth_node(map, c, !dir);
-	/* 102/103 was the old EXPERIMENTAL feature bit: remove soon! */
-	return gossmap_node_get_feature(map, n, OPT_ONION_MESSAGES) != -1
-		|| gossmap_node_get_feature(map, n, 102) != -1;
+	return gossmap_node_get_feature(map, n, OPT_ONION_MESSAGES) != -1;
 }
 
 static struct pubkey *path_to_node(const tal_t *ctx,
@@ -1619,7 +1617,7 @@ static const char *init(struct plugin *p, const char *buf UNUSED,
 
 	rpc_scan(p, "listconfigs",
 		 take(json_out_obj(NULL, "config", "experimental-offers")),
-		 "{experimental-offers:%}",
+		 "{configs:{experimental-offers:{set:%}}}",
 		 JSON_SCAN(json_to_bool, &exp_offers));
 
 	if (!exp_offers)

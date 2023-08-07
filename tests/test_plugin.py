@@ -14,7 +14,6 @@ from utils import (
 
 import ast
 import base64
-import concurrent.futures
 import json
 import os
 import pytest
@@ -68,7 +67,7 @@ def test_option_passthrough(node_factory, directory):
         ], capture_output=True, check=True).stderr.decode('utf-8')
 
         # first come first serve
-        assert("error starting plugin '{}': option name '--greeting' is already taken".format(plugin_path2) in err_out)
+        assert("error starting plugin '{}': option name 'greeting' is already taken".format(plugin_path2) in err_out)
 
 
 def test_option_types(node_factory):
@@ -113,34 +112,46 @@ def test_option_types(node_factory):
     # the node should fail after start, and we get a stderr msg
     n.daemon.start(wait_for_initialized=False, stderr_redir=True)
     assert n.daemon.wait() == 1
-    wait_for(lambda: n.daemon.is_in_stderr('bool_opt: ! does not parse as type bool'))
+    wait_for(lambda: n.daemon.is_in_stderr("--bool_opt=!: Invalid argument '!'"))
 
     # What happens if we give it a bad int-option?
     n = node_factory.get_node(options={
         'plugin': plugin_path,
         'str_opt': 'ok',
         'int_opt': 'notok',
-        'bool_opt': 1,
+        'bool_opt': True,
     }, may_fail=True, start=False)
 
     # the node should fail after start, and we get a stderr msg
     n.daemon.start(wait_for_initialized=False, stderr_redir=True)
     assert n.daemon.wait() == 1
-    assert n.daemon.is_in_stderr('--int_opt: notok does not parse as type int')
+    assert n.daemon.is_in_stderr("--int_opt=notok: 'notok' is not a number")
+
+    # We no longer allow '1' or '0' as boolean options
+    n = node_factory.get_node(options={
+        'plugin': plugin_path,
+        'str_opt': 'ok',
+        'bool_opt': '1',
+    }, may_fail=True, start=False)
+
+    # the node should fail after start, and we get a stderr msg
+    n.daemon.start(wait_for_initialized=False, stderr_redir=True)
+    assert n.daemon.wait() == 1
+    assert n.daemon.is_in_stderr("--bool_opt=1: boolean plugin arguments must be true or false")
 
     # Flag opts shouldn't allow any input
     n = node_factory.get_node(options={
         'plugin': plugin_path,
         'str_opt': 'ok',
         'int_opt': 11,
-        'bool_opt': 1,
+        'bool_opt': True,
         'flag_opt': True,
     }, may_fail=True, start=False)
 
     # the node should fail after start, and we get a stderr msg
     n.daemon.start(wait_for_initialized=False, stderr_redir=True)
     assert n.daemon.wait() == 1
-    assert n.daemon.is_in_stderr("--flag_opt: doesn't allow an argument")
+    assert n.daemon.is_in_stderr("--flag_opt=True: doesn't allow an argument")
 
     n = node_factory.get_node(options={
         'plugin': plugin_path,
@@ -351,7 +362,7 @@ def test_plugin_disable(node_factory):
     n = node_factory.get_node(options={'disable-plugin':
                                        ['something-else.py', 'helloworld.py']})
 
-    assert n.rpc.listconfigs()['disable-plugin'] == ['something-else.py', 'helloworld.py']
+    assert n.rpc.listconfigs()['configs']['disable-plugin'] == {'values_str': ['something-else.py', 'helloworld.py'], 'sources': ['cmdline', 'cmdline']}
 
 
 def test_plugin_hook(node_factory, executor):
@@ -453,7 +464,13 @@ def test_plugin_connected_hook_chaining(node_factory):
     ])
     assert len(l1.rpc.listpeers(l2id)['peers']) == 1
 
-    l3.connect(l1)
+    # If reject happens fast enough, connect fails with "disconnected
+    # during connection"
+    try:
+        l3.connect(l1)
+    except RpcError as err:
+        assert "disconnected during connection" in err.error
+
     l1.daemon.wait_for_logs([
         f"peer_connected_logger_a {l3id}",
         f"{l3id} is in reject list"
@@ -689,6 +706,7 @@ def test_openchannel_hook(node_factory, bitcoind):
         l1.rpc.fundchannel(l2.info['id'], 100001)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "this test frequently hangs w/ VLSD")
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
 def test_openchannel_hook_error_handling(node_factory, bitcoind):
@@ -1299,12 +1317,14 @@ def test_forward_event_notification(node_factory, bitcoind, executor):
     route = l1.rpc.getroute(l3.info['id'], amount, 1)['route']
 
     # status: offered -> settled
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, payment_hash13, payment_secret=inv['payment_secret'])
     l1.rpc.waitsendpay(payment_hash13)
 
     # status: offered -> failed
     route = l1.rpc.getroute(l4.info['id'], amount, 1)['route']
     payment_hash14 = "f" * 64
+    l1.rpc.preapprovekeysend(l4.info['id'], payment_hash14, amount)
     with pytest.raises(RpcError):
         l1.rpc.sendpay(route, payment_hash14, payment_secret="f" * 64)
         l1.rpc.waitsendpay(payment_hash14)
@@ -1324,6 +1344,7 @@ def test_forward_event_notification(node_factory, bitcoind, executor):
               'delay': 5,
               'channel': c25}]
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     executor.submit(l1.rpc.sendpay, route, payment_hash15, payment_secret=inv['payment_secret'])
 
     l5.daemon.wait_for_log('permfail')
@@ -1401,11 +1422,13 @@ def test_sendpay_notifications(node_factory, bitcoind):
     payment_hash2 = inv2['payment_hash']
     route = l1.rpc.getroute(l3.info['id'], amount, 1)['route']
 
+    l1.rpc.preapproveinvoice(bolt11=inv1['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, payment_hash1, payment_secret=inv1['payment_secret'])
     response1 = l1.rpc.waitsendpay(payment_hash1)
 
     l2.rpc.close(chanid23, 1)
 
+    l1.rpc.preapproveinvoice(bolt11=inv2['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, payment_hash2, payment_secret=inv2['payment_secret'])
     with pytest.raises(RpcError) as err:
         l1.rpc.waitsendpay(payment_hash2)
@@ -1432,11 +1455,13 @@ def test_sendpay_notifications_nowaiter(node_factory):
     payment_hash2 = inv2['payment_hash']
     route = l1.rpc.getroute(l3.info['id'], amount, 1)['route']
 
+    l1.rpc.preapproveinvoice(bolt11=inv1['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, payment_hash1, payment_secret=inv1['payment_secret'])
     l1.daemon.wait_for_log(r'Received a sendpay_success')
 
     l2.rpc.close(chanid23, 1)
 
+    l1.rpc.preapproveinvoice(bolt11=inv2['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, payment_hash2, payment_secret=inv2['payment_secret'])
     l1.daemon.wait_for_log(r'Received a sendpay_failure')
 
@@ -1560,7 +1585,7 @@ def test_libplugin(node_factory):
     with pytest.raises(RpcError, match=r"Deprecated command.*testrpc-deprecated"):
         l1.rpc.help('testrpc-deprecated')
 
-    assert 'somearg-deprecated' not in str(l1.rpc.listconfigs())
+    assert 'somearg-deprecated' not in str(l1.rpc.listconfigs()['configs'])
 
     l1.stop()
     l1.daemon.opts["somearg-deprecated"] = "test_opt"
@@ -1568,7 +1593,7 @@ def test_libplugin(node_factory):
     l1.daemon.start(wait_for_initialized=False, stderr_redir=True)
     # Will exit with failure code.
     assert l1.daemon.wait() == 1
-    assert l1.daemon.is_in_stderr(r"somearg-deprecated: deprecated option")
+    assert l1.daemon.is_in_stderr(r"somearg-deprecated=test_opt: deprecated option")
 
     del l1.daemon.opts["somearg-deprecated"]
     l1.start()
@@ -1730,6 +1755,35 @@ def test_bitcoin_backend(node_factory, bitcoind):
                                " bitcoind")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "channel too big, then feerate above maximum")
+def test_bitcoin_bad_estimatefee(node_factory, bitcoind):
+    """
+    This tests that we don't crash if bitcoind backend gives bad estimatefees.
+    """
+    plugin = os.path.join(os.getcwd(), "tests/plugins/badestimate.py")
+    l1 = node_factory.get_node(options={"disable-plugin": "bcli",
+                                        "plugin": plugin,
+                                        "badestimate-badorder": True,
+                                        "wumbo": None},
+                               start=False,
+                               may_fail=True, allow_broken_log=True)
+    l1.daemon.start(wait_for_initialized=False, stderr_redir=True)
+    assert l1.daemon.wait() == 1
+    l1.daemon.is_in_stderr(r"badestimate.py error: bad response to estimatefees.feerates \(Blocks must be ascending order: 2 <= 100!\)")
+
+    del l1.daemon.opts["badestimate-badorder"]
+    l1.start()
+
+    l2 = node_factory.get_node(options={"disable-plugin": "bcli",
+                                        "plugin": plugin,
+                                        "wumbo": None})
+    # Give me some funds.
+    bitcoind.generate_block(5)
+    l1.fundwallet(100 * 10**8)
+    l1.connect(l2)
+    l1.rpc.fundchannel(l2.info["id"], 50 * 10**8)
+
+
 def test_bcli(node_factory, bitcoind, chainparams):
     """
     This tests the bcli plugin, used to gather Bitcoin data from a local
@@ -1747,7 +1801,7 @@ def test_bcli(node_factory, bitcoind, chainparams):
     assert 'feerate_floor' in estimates
     assert [f['blocks'] for f in estimates['feerates']] == [2, 6, 12, 100]
 
-    resp = l1.rpc.call("getchaininfo")
+    resp = l1.rpc.call("getchaininfo", {"last_height": 0})
     assert resp["chain"] == chainparams['name']
     for field in ["headercount", "blockcount", "ibd"]:
         assert field in resp
@@ -1871,9 +1925,10 @@ def test_replacement_payload(node_factory):
     with pytest.raises(RpcError, match=r"WIRE_INCORRECT_OR_UNKNOWN_PAYMENT_DETAILS \(reply from remote\)"):
         l1.rpc.pay(inv)
 
-    assert l2.daemon.wait_for_log("Attept to pay.*with wrong secret")
+    assert l2.daemon.wait_for_log("Attempt to pay.*with wrong secret")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "dev_sign_last_tx causes subsequent validate_holder_commitment_tx failure")
 @pytest.mark.developer("Requires dev_sign_last_tx")
 def test_watchtower(node_factory, bitcoind, directory, chainparams):
     """Test watchtower hook.
@@ -2015,12 +2070,14 @@ def test_coin_movement_notices(node_factory, bitcoind, chainparams):
     route = l1.rpc.getroute(l3.info['id'], amount, 1)['route']
 
     # status: offered -> settled
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, payment_hash13, payment_secret=inv['payment_secret'])
     l1.rpc.waitsendpay(payment_hash13)
 
     # status: offered -> failed
     route = l1.rpc.getroute(l3.info['id'], amount, 1)['route']
     payment_hash13 = "f" * 64
+    l1.rpc.preapprovekeysend(l3.info['id'], payment_hash13, amount)
     with pytest.raises(RpcError):
         l1.rpc.sendpay(route, payment_hash13, payment_secret=inv['payment_secret'])
         l1.rpc.waitsendpay(payment_hash13)
@@ -2029,6 +2086,7 @@ def test_coin_movement_notices(node_factory, bitcoind, chainparams):
     inv = l1.rpc.invoice(amount // 2, "first", "desc")
     payment_hash31 = inv['payment_hash']
     route = l3.rpc.getroute(l1.info['id'], amount // 2, 1)['route']
+    l3.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l3.rpc.sendpay(route, payment_hash31, payment_secret=inv['payment_secret'])
     l3.rpc.waitsendpay(payment_hash31)
 
@@ -2036,6 +2094,7 @@ def test_coin_movement_notices(node_factory, bitcoind, chainparams):
     inv = l2.rpc.invoice(amount, "first", "desc")
     payment_hash12 = inv['payment_hash']
     route = l1.rpc.getroute(l2.info['id'], amount, 1)['route']
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, payment_hash12, payment_secret=inv['payment_secret'])
     l1.rpc.waitsendpay(payment_hash12)
 
@@ -2043,6 +2102,7 @@ def test_coin_movement_notices(node_factory, bitcoind, chainparams):
     inv = l1.rpc.invoice(amount // 2, "second", "desc")
     payment_hash21 = inv['payment_hash']
     route = l2.rpc.getroute(l1.info['id'], amount // 2, 1)['route']
+    l2.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l2.rpc.sendpay(route, payment_hash21, payment_secret=inv['payment_secret'])
     l2.rpc.waitsendpay(payment_hash21)
 
@@ -2087,43 +2147,7 @@ def test_coin_movement_notices(node_factory, bitcoind, chainparams):
     check_coin_moves(l2, chanid_3, l2_l3_mvts, chainparams)
 
 
-def test_3847_repro(node_factory, bitcoind):
-    """Reproduces the issue in #3847: duplicate response from plugin
-
-    l2 holds on to HTLCs until the deadline expires. Then we allow them
-    through and either should terminate the payment attempt, and the second
-    would return a redundant result.
-
-    """
-    l1, l2, l3 = node_factory.line_graph(3, opts=[
-        {},
-        {},
-        {
-            'plugin': os.path.join(os.getcwd(), 'tests/plugins/hold_htlcs.py'),
-            'hold-time': 11,
-            'hold-result': 'fail',
-        },
-    ], wait_for_announce=True)
-    wait_for(lambda: len(l1.rpc.listchannels()['channels']) == 4)
-
-    # Amount sufficient to trigger the presplit modifier
-    amt = 20 * 1000 * 1000
-
-    i1 = l3.rpc.invoice(
-        amount_msat=amt, label="direct", description="desc"
-    )['bolt11']
-    with pytest.raises(RpcError):
-        l1.rpc.pay(i1, retry_for=10)
-
-    # We wait for at least two parts, and the bug would cause the `pay` plugin
-    # to crash
-    l1.daemon.wait_for_logs([r'Payment deadline expired, not retrying'] * 2)
-
-    # This call to paystatus would fail if the pay plugin crashed (it's
-    # provided by the plugin)
-    l1.rpc.paystatus(i1)
-
-
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "trouble managing remotesigner when node killed this way")
 def test_important_plugin(node_factory):
     # Cache it here.
     pluginsdir = os.path.join(os.path.dirname(__file__), "plugins")
@@ -2428,12 +2452,11 @@ def test_dynamic_args(node_factory):
     l1.rpc.plugin_start(plugin_path, greeting='Test arg parsing')
 
     assert l1.rpc.call("hello") == "Test arg parsing world"
-    plugin = only_one([p for p in l1.rpc.listconfigs()['plugins'] if p['path'] == plugin_path])
-    assert plugin['options']['greeting'] == 'Test arg parsing'
+    assert l1.rpc.listconfigs('greeting')['configs']['greeting']['value_str'] == 'Test arg parsing'
+    assert l1.rpc.listconfigs('greeting')['configs']['greeting']['plugin'] == plugin_path
 
     l1.rpc.plugin_stop(plugin_path)
-
-    assert [p for p in l1.rpc.listconfigs()['plugins'] if p['path'] == plugin_path] == []
+    assert 'greeting' not in l1.rpc.listconfigs()['configs']
 
 
 def test_pyln_request_notify(node_factory):
@@ -2520,7 +2543,7 @@ def test_custom_notification_topics(node_factory):
 
     # The plugin just dist what previously was a fatal mistake (emit
     # an unknown notification), make sure we didn't kill it.
-    assert 'custom_notifications.py' in [p['name'] for p in l1.rpc.listconfigs()['plugins']]
+    assert str(plugin) in [p['name'] for p in l1.rpc.plugin_list()['plugins']]
 
 
 def test_restart_on_update(node_factory):
@@ -2608,13 +2631,6 @@ def test_plugin_shutdown(node_factory):
 def test_commando(node_factory, executor):
     l1, l2 = node_factory.line_graph(2, fundchannel=False,
                                      opts={'log-level': 'io'})
-
-    # Nothing works until we've issued a rune.
-    fut = executor.submit(l2.rpc.call, method='commando',
-                          payload={'peer_id': l1.info['id'],
-                                   'method': 'listpeers'})
-    with pytest.raises(concurrent.futures.TimeoutError):
-        fut.result(10)
 
     rune = l1.rpc.commando_rune()['rune']
 
@@ -2710,57 +2726,40 @@ def test_commando(node_factory, executor):
 
 
 def test_commando_rune(node_factory):
-    l1, l2 = node_factory.get_nodes(2)
-
-    # Force l1's commando secret
-    l1.rpc.datastore(key=['commando', 'secret'], hex='1241faef85297127c2ac9bde95421b2c51e5218498ae4901dc670c974af4284b')
-    l1.restart()
-    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
-
-    # I put that into a test node's commando.py to generate these runes (modified readonly to match ours):
-    # $ l1-cli commando-rune
-    #   "rune": "zKc2W88jopslgUBl0UE77aEe5PNCLn5WwqSusU_Ov3A9MA=="
-    # $ l1-cli commando-rune restrictions=readonly
-    #   "rune": "1PJnoR9a7u4Bhglj2s7rVOWqRQnswIwUoZrDVMKcLTY9MSZtZXRob2RebGlzdHxtZXRob2ReZ2V0fG1ldGhvZD1zdW1tYXJ5Jm1ldGhvZC9saXN0ZGF0YXN0b3Jl"
-    # $ l1-cli commando-rune restrictions='[[time>1656675211]]'
-    #   "rune": "RnlWC4lwBULFaObo6ZP8jfqYRyTbfWPqcMT3qW-Wmso9MiZ0aW1lPjE2NTY2NzUyMTE="
-    # $ l1-cli commando-rune restrictions='[["id^022d223620a359a47ff7"],["method=listpeers"]]'
-    #   "rune": "lXFWzb51HjWxKV5TmfdiBgd74w0moeyChj3zbLoxmws9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJz"
-    # $ l1-cli commando-rune lXFWzb51HjWxKV5TmfdiBgd74w0moeyChj3zbLoxmws9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJz '[pnamelevel!,pnamelevel/io]'
-    #   "rune": "Dw2tzGCoUojAyT0JUw7fkYJYqExpEpaDRNTkyvWKoJY9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJzJnBuYW1lbGV2ZWwhfHBuYW1lbGV2ZWwvaW8="
+    l1, l2 = node_factory.line_graph(2, fundchannel=False)
 
     rune1 = l1.rpc.commando_rune()
-    assert rune1['rune'] == 'zKc2W88jopslgUBl0UE77aEe5PNCLn5WwqSusU_Ov3A9MA=='
+    assert rune1['rune'] == 'OSqc7ixY6F-gjcigBfxtzKUI54uzgFSA6YfBQoWGDV89MA=='
     assert rune1['unique_id'] == '0'
     rune2 = l1.rpc.commando_rune(restrictions="readonly")
-    assert rune2['rune'] == '1PJnoR9a7u4Bhglj2s7rVOWqRQnswIwUoZrDVMKcLTY9MSZtZXRob2RebGlzdHxtZXRob2ReZ2V0fG1ldGhvZD1zdW1tYXJ5Jm1ldGhvZC9saXN0ZGF0YXN0b3Jl'
+    assert rune2['rune'] == 'zm0x_eLgHexaTvZn3Cz7gb_YlvrlYGDo_w4BYlR9SS09MSZtZXRob2RebGlzdHxtZXRob2ReZ2V0fG1ldGhvZD1zdW1tYXJ5Jm1ldGhvZC9saXN0ZGF0YXN0b3Jl'
     assert rune2['unique_id'] == '1'
     rune3 = l1.rpc.commando_rune(restrictions=[["time>1656675211"]])
-    assert rune3['rune'] == 'RnlWC4lwBULFaObo6ZP8jfqYRyTbfWPqcMT3qW-Wmso9MiZ0aW1lPjE2NTY2NzUyMTE='
+    assert rune3['rune'] == 'mxHwVsC_W-PH7r79wXQWqxBNHaHncIqIjEPyP_vGOsE9MiZ0aW1lPjE2NTY2NzUyMTE='
     assert rune3['unique_id'] == '2'
     rune4 = l1.rpc.commando_rune(restrictions=[["id^022d223620a359a47ff7"], ["method=listpeers"]])
-    assert rune4['rune'] == 'lXFWzb51HjWxKV5TmfdiBgd74w0moeyChj3zbLoxmws9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJz'
+    assert rune4['rune'] == 'YPojv9qgHPa3im0eiqRb-g8aRq76OasyfltGGqdFUOU9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJz'
     assert rune4['unique_id'] == '3'
     rune5 = l1.rpc.commando_rune(rune4['rune'], [["pnamelevel!", "pnamelevel/io"]])
-    assert rune5['rune'] == 'Dw2tzGCoUojAyT0JUw7fkYJYqExpEpaDRNTkyvWKoJY9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJzJnBuYW1lbGV2ZWwhfHBuYW1lbGV2ZWwvaW8='
+    assert rune5['rune'] == 'Zm7A2mKkLnd5l6Er_OMAHzGKba97ij8lA-MpNYMw9nk9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJzJnBuYW1lbGV2ZWwhfHBuYW1lbGV2ZWwvaW8='
     assert rune5['unique_id'] == '3'
     rune6 = l1.rpc.commando_rune(rune5['rune'], [["parr1!", "parr1/io"]])
-    assert rune6['rune'] == '2Wh6F4R51D3esZzp-7WWG51OhzhfcYKaaI8qiIonaHE9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJzJnBuYW1lbGV2ZWwhfHBuYW1lbGV2ZWwvaW8mcGFycjEhfHBhcnIxL2lv'
+    assert rune6['rune'] == 'm_tyR0qqHUuLEbFJW6AhmBg-9npxVX2yKocQBFi9cvY9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJzJnBuYW1lbGV2ZWwhfHBuYW1lbGV2ZWwvaW8mcGFycjEhfHBhcnIxL2lv'
     assert rune6['unique_id'] == '3'
     rune7 = l1.rpc.commando_rune(restrictions=[["pnum=0"]])
-    assert rune7['rune'] == 'QJonN6ySDFw-P5VnilZxlOGRs_tST1ejtd-bAYuZfjk9NCZwbnVtPTA='
+    assert rune7['rune'] == 'enX0sTpHB8y1ktyTAF80CnEvGetG340Ne3AGItudBS49NCZwbnVtPTA='
     assert rune7['unique_id'] == '4'
     rune8 = l1.rpc.commando_rune(rune7['rune'], [["rate=3"]])
-    assert rune8['rune'] == 'kSYFx6ON9hr_ExcQLwVkm1ABnvc1TcMFBwLrAVee0EA9NCZwbnVtPTAmcmF0ZT0z'
+    assert rune8['rune'] == '_h2eKjoK7ITAF-JQ1S5oum9oMQesrz-t1FR9kDChRB49NCZwbnVtPTAmcmF0ZT0z'
     assert rune8['unique_id'] == '4'
     rune9 = l1.rpc.commando_rune(rune8['rune'], [["rate=1"]])
-    assert rune9['rune'] == 'O8Zr-ULTBKO3_pKYz0QKE9xYl1vQ4Xx9PtlHuist9Rk9NCZwbnVtPTAmcmF0ZT0zJnJhdGU9MQ=='
+    assert rune9['rune'] == 'U1GDXqXRvfN1A4WmDVETazU9YnvMsDyt7WwNzpY0khE9NCZwbnVtPTAmcmF0ZT0zJnJhdGU9MQ=='
     assert rune9['unique_id'] == '4'
 
     # Test rune with \|.
     weirdrune = l1.rpc.commando_rune(restrictions=[["method=invoice"],
                                                    ["pnamedescription=@tipjar|jb55@sendsats.lol"]])
-    with pytest.raises(RpcError, match='Not authorized:'):
+    with pytest.raises(RpcError, match='Invalid rune: Not permitted: pnamedescription is not equal to @tipjar|jb55@sendsats.lol'):
         l2.rpc.call(method='commando',
                     payload={'peer_id': l1.info['id'],
                              'rune': weirdrune['rune'],
@@ -2870,7 +2869,7 @@ def test_commando_rune(node_factory):
 
     for rune, cmd, params in failures:
         print("{} {}".format(cmd, params))
-        with pytest.raises(RpcError, match='Not authorized:') as exc_info:
+        with pytest.raises(RpcError, match='Invalid rune: Not permitted:') as exc_info:
             l2.rpc.call(method='commando',
                         payload={'peer_id': l1.info['id'],
                                  'rune': rune['rune'],
@@ -2893,7 +2892,7 @@ def test_commando_rune(node_factory):
         time.sleep(1)
 
     # This fails immediately, since we've done one.
-    with pytest.raises(RpcError, match='Not authorized:') as exc_info:
+    with pytest.raises(RpcError, match='Invalid rune: Not permitted: Rate of 1 per minute exceeded') as exc_info:
         l2.rpc.call(method='commando',
                     payload={'peer_id': l1.info['id'],
                              'rune': rune9['rune'],
@@ -2911,7 +2910,7 @@ def test_commando_rune(node_factory):
     assert exc_info.value.error['code'] == 0x4c51
 
     # Now we've had 3 in one minute, this will fail.
-    with pytest.raises(RpcError, match='Not authorized:') as exc_info:
+    with pytest.raises(RpcError, match='') as exc_info:
         l2.rpc.call(method='commando',
                     payload={'peer_id': l1.info['id'],
                              'rune': rune8['rune'],
@@ -2922,7 +2921,7 @@ def test_commando_rune(node_factory):
     # rune5 can only be used by l2:
     l3 = node_factory.get_node()
     l3.connect(l1)
-    with pytest.raises(RpcError, match='Not authorized:') as exc_info:
+    with pytest.raises(RpcError, match='Invalid rune: Not permitted: id does not start with 022d223620a359a47ff7') as exc_info:
         l3.rpc.call(method='commando',
                     payload={'peer_id': l1.info['id'],
                              'rune': rune5['rune'],
@@ -2975,9 +2974,64 @@ def test_commando_listrunes(node_factory):
     our_unstored_rune = l1.rpc.commando_listrunes(rune='M8f4jNx9gSP2QoiRbr10ybwzFxUgd-rS4CR4yofMSuA9Mg==')['runes'][0]
     assert our_unstored_rune['stored'] is False
 
+    our_unstored_rune = l1.rpc.commando_listrunes(rune='m_tyR0qqHUuLEbFJW6AhmBg-9npxVX2yKocQBFi9cvY9MyZpZF4wMjJkMjIzNjIwYTM1OWE0N2ZmNyZtZXRob2Q9bGlzdHBlZXJzJnBuYW1lbGV2ZWwhfHBuYW1lbGV2ZWwvaW8mcGFycjEhfHBhcnIxL2lv')['runes'][0]
+    assert our_unstored_rune['stored'] is False
+
     not_our_rune = l1.rpc.commando_listrunes(rune='Am3W_wI0PRn4qVNEsJ2iInHyFPQK8wfdqEXztm8-icQ9MA==')['runes'][0]
     assert not_our_rune['stored'] is False
     assert not_our_rune['our_rune'] is False
+
+
+def test_commando_rune_pay_amount(node_factory):
+    l1, l2 = node_factory.line_graph(2)
+
+    # This doesn't really work, since amount_msat is illegal if invoice
+    # includes an amount, and runes aren't smart enough to decode bolt11!
+    rune = l1.rpc.commando_rune(restrictions=[['method=pay'],
+                                              ['pnameamountmsat<10000']])['rune']
+    inv1 = l2.rpc.invoice(amount_msat=12300, label='inv1', description='description1')['bolt11']
+    inv2 = l2.rpc.invoice(amount_msat='any', label='inv2', description='description2')['bolt11']
+
+    # Rune requires amount_msat!
+    with pytest.raises(RpcError, match='Invalid rune: Not permitted: pnameamountmsat is not an integer field'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params={'bolt11': inv1})
+
+    # As a named parameter!
+    with pytest.raises(RpcError, match='Invalid rune: Not permitted: pnameamountmsat is not an integer field'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params=[inv1])
+
+    # Can't get around it this way!
+    with pytest.raises(RpcError, match='Invalid rune: Not permitted: pnameamountmsat is not an integer field'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params=[inv2, 12000])
+
+    # Nor this way, using a string!
+    with pytest.raises(RpcError, match='Invalid rune: Not permitted: pnameamountmsat is not an integer field'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params={'bolt11': inv2, 'amount_msat': '10000sat'})
+
+    # Too much!
+    with pytest.raises(RpcError, match='Invalid rune: Not permitted: pnameamountmsat is greater or equal to 10000'):
+        l2.rpc.commando(peer_id=l1.info['id'],
+                        rune=rune,
+                        method='pay',
+                        params={'bolt11': inv2, 'amount_msat': 12000})
+
+    # This works
+    l2.rpc.commando(peer_id=l1.info['id'],
+                    rune=rune,
+                    method='pay',
+                    params={'bolt11': inv2, 'amount_msat': 9999})
 
 
 def test_commando_blacklist(node_factory):
@@ -3061,6 +3115,7 @@ def test_commando_blacklist(node_factory):
     assert blacklisted_rune is True
 
 
+@pytest.mark.slow_test
 def test_commando_stress(node_factory, executor):
     """Stress test to slam commando with many large queries"""
     nodes = node_factory.get_nodes(5)
@@ -3117,8 +3172,7 @@ def test_commando_badrune(node_factory):
 
 
 def test_autoclean(node_factory):
-    l1, l2, l3 = node_factory.line_graph(3, opts={'autoclean-cycle': 10,
-                                                  'may_reconnect': True},
+    l1, l2, l3 = node_factory.line_graph(3, opts={'may_reconnect': True},
                                          wait_for_announce=True)
 
     # Under valgrind in CI, it can 50 seconds between creating invoice
@@ -3137,9 +3191,11 @@ def test_autoclean(node_factory):
     inv4 = l3.rpc.invoice(amount_msat=12300, label='inv4', description='description4', expiry=2000)
     inv5 = l3.rpc.invoice(amount_msat=12300, label='inv5', description='description5', expiry=2000)
 
-    l3.stop()
-    l3.daemon.opts['autoclean-expiredinvoices-age'] = 2
-    l3.start()
+    # It must be an integer!
+    with pytest.raises(RpcError, match=r'is not a number'):
+        l3.rpc.setconfig('autoclean-expiredinvoices-age', 'xxx')
+
+    l3.rpc.setconfig('autoclean-expiredinvoices-age', 2)
     assert l3.rpc.autoclean_status()['autoclean']['expiredinvoices']['enabled'] is True
     assert l3.rpc.autoclean_status()['autoclean']['expiredinvoices']['age'] == 2
 
@@ -3148,6 +3204,8 @@ def test_autoclean(node_factory):
     assert len(l3.rpc.listinvoices('inv1')['invoices']) == 1
     assert len(l3.rpc.listinvoices('inv2')['invoices']) == 1
     assert l3.rpc.listinvoices('inv1')['invoices'][0]['description'] == 'description1'
+
+    l3.rpc.setconfig('autoclean-cycle', 10)
 
     # First it expires.
     wait_for(lambda: only_one(l3.rpc.listinvoices('inv1')['invoices'])['status'] == 'expired')
@@ -3163,9 +3221,7 @@ def test_autoclean(node_factory):
     assert l3.rpc.autoclean_status()['autoclean']['expiredinvoices']['cleaned'] == 1
 
     # Disabling works
-    l3.stop()
-    l3.daemon.opts['autoclean-expiredinvoices-age'] = 0
-    l3.start()
+    l3.rpc.setconfig('autoclean-expiredinvoices-age', 0)
     assert l3.rpc.autoclean_status()['autoclean']['expiredinvoices']['enabled'] is False
     assert 'age' not in l3.rpc.autoclean_status()['autoclean']['expiredinvoices']
 
@@ -3186,9 +3242,7 @@ def test_autoclean(node_factory):
     assert 'age' not in l3.rpc.autoclean_status()['autoclean']['expiredinvoices']
 
     # Now enable: they will get autocleaned
-    l3.stop()
-    l3.daemon.opts['autoclean-expiredinvoices-age'] = 2
-    l3.start()
+    l3.rpc.setconfig('autoclean-expiredinvoices-age', 2)
     wait_for(lambda: len(l3.rpc.listinvoices()['invoices']) == 2)
     assert l3.rpc.autoclean_status()['autoclean']['expiredinvoices']['cleaned'] == 3
 
@@ -3203,9 +3257,7 @@ def test_autoclean(node_factory):
 
     assert l3.rpc.autoclean_status()['autoclean']['paidinvoices']['enabled'] is False
     assert l3.rpc.autoclean_status()['autoclean']['paidinvoices']['cleaned'] == 0
-    l3.stop()
-    l3.daemon.opts['autoclean-paidinvoices-age'] = 1
-    l3.start()
+    l3.rpc.setconfig('autoclean-paidinvoices-age', 1)
     assert l3.rpc.autoclean_status()['autoclean']['paidinvoices']['enabled'] is True
 
     wait_for(lambda: l3.rpc.listinvoices()['invoices'] == [])
@@ -3214,17 +3266,14 @@ def test_autoclean(node_factory):
 
     assert only_one(l1.rpc.listpays(inv5['bolt11'])['pays'])['status'] == 'failed'
     assert only_one(l1.rpc.listpays(inv4['bolt11'])['pays'])['status'] == 'complete'
-    l1.stop()
-    l1.daemon.opts['autoclean-failedpays-age'] = 1
-    l1.start()
+    l1.rpc.setconfig('autoclean-failedpays-age', 1)
+    l1.rpc.setconfig('autoclean-cycle', 5)
 
     wait_for(lambda: l1.rpc.listpays(inv5['bolt11'])['pays'] == [])
     assert l1.rpc.autoclean_status()['autoclean']['failedpays']['cleaned'] == 1
     assert l1.rpc.autoclean_status()['autoclean']['succeededpays']['cleaned'] == 0
 
-    l1.stop()
-    l1.daemon.opts['autoclean-succeededpays-age'] = 2
-    l1.start()
+    l1.rpc.setconfig('autoclean-succeededpays-age', 2)
     wait_for(lambda: l1.rpc.listpays(inv4['bolt11'])['pays'] == [])
     assert l1.rpc.listsendpays() == {'payments': []}
 
@@ -3234,9 +3283,8 @@ def test_autoclean(node_factory):
     assert len(l2.rpc.listforwards()['forwards']) == 2
 
     # Clean failed ones.
-    l2.stop()
-    l2.daemon.opts['autoclean-failedforwards-age'] = 2
-    l2.start()
+    l2.rpc.setconfig('autoclean-cycle', 5)
+    l2.rpc.setconfig('autoclean-failedforwards-age', 2)
     wait_for(lambda: l2.rpc.listforwards(status='failed')['forwards'] == [])
 
     assert len(l2.rpc.listforwards(status='settled')['forwards']) == 1
@@ -3246,9 +3294,7 @@ def test_autoclean(node_factory):
     amt_before = l2.rpc.getinfo()['fees_collected_msat']
 
     # Clean succeeded ones
-    l2.stop()
-    l2.daemon.opts['autoclean-succeededforwards-age'] = 2
-    l2.start()
+    l2.rpc.setconfig('autoclean-succeededforwards-age', 2)
     wait_for(lambda: l2.rpc.listforwards(status='settled')['forwards'] == [])
     assert l2.rpc.listforwards() == {'forwards': []}
     assert l2.rpc.autoclean_status()['autoclean']['failedforwards']['cleaned'] == 1
@@ -3402,6 +3448,7 @@ def test_block_added_notifications(node_factory, bitcoind):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("wants dev-announce-localhost so we see listnodes.addresses")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "commit c0cc285a causes: channel stub can only return point for commitment number zero")
 def test_sql(node_factory, bitcoind):
     opts = {'experimental-offers': None,
             'experimental-dual-fund': None,
@@ -3624,6 +3671,10 @@ def test_sql(node_factory, bitcoind):
                          'type': 'hex'},
                         {'name': 'invreq_payer_note',
                          'type': 'string'},
+                        {'name': 'created_index',
+                         'type': 'u64'},
+                        {'name': 'updated_index',
+                         'type': 'u64'},
                         {'name': 'pay_index',
                          'type': 'u64'},
                         {'name': 'amount_received_msat',
@@ -3707,6 +3758,8 @@ def test_sql(node_factory, bitcoind):
                          'type': 'string'},
                         {'name': 'scratch_txid',
                          'type': 'txid'},
+                        {'name': 'ignore_fee_limits',
+                         'type': 'boolean'},
                         {'name': 'feerate_perkw',
                          'type': 'u32'},
                         {'name': 'feerate_perkb',
@@ -3850,6 +3903,8 @@ def test_sql(node_factory, bitcoind):
                          'type': 'string'},
                         {'name': 'total_funding_msat',
                          'type': 'msat'},
+                        {'name': 'splice_amount',
+                         'type': 's64'},
                         {'name': 'our_funding_msat',
                          'type': 'msat'},
                         {'name': 'scratch_txid',
@@ -3914,11 +3969,7 @@ def test_sql(node_factory, bitcoind):
                         {'name': 'idx',
                          'type': 'u32'},
                         {'name': 'sequence',
-                         'type': 'u32'},
-                        {'name': 'type',
-                         'type': 'string'},
-                        {'name': 'channel',
-                         'type': 'short_channel_id'}]},
+                         'type': 'u32'}]},
         'transactions_outputs': {
             'columns': [{'name': 'row',
                          'type': 'u64'},
@@ -3929,11 +3980,7 @@ def test_sql(node_factory, bitcoind):
                         {'name': 'amount_msat',
                          'type': 'msat'},
                         {'name': 'scriptPubKey',
-                         'type': 'hex'},
-                        {'name': 'type',
-                         'type': 'string'},
-                        {'name': 'channel',
-                         'type': 'short_channel_id'}]},
+                         'type': 'hex'}]},
         'bkpr_accountevents': {
             'columns': [{'name': 'account',
                          'type': 'string'},
@@ -3995,6 +4042,7 @@ def test_sql(node_factory, bitcoind):
                   'u16': 'INTEGER',
                   'u32': 'INTEGER',
                   'u64': 'INTEGER',
+                  's64': 'INTEGER',
                   'msat': 'INTEGER',
                   'hex': 'BLOB',
                   'hash': 'BLOB',
@@ -4065,7 +4113,7 @@ def test_sql(node_factory, bitcoind):
                 assert len(bytes.fromhex(val)) == 32
             elif col['type'] == "pubkey":
                 assert len(bytes.fromhex(val)) == 33
-            elif col['type'] in ("msat", "integer", "u64", "u32", "u16", "u8", "boolean"):
+            elif col['type'] in ("msat", "integer", "s64", "u64", "u32", "u16", "u8", "boolean"):
                 int(val)
             elif col['type'] == "number":
                 float(val)
@@ -4091,8 +4139,8 @@ def test_sql(node_factory, bitcoind):
     l3.daemon.wait_for_log("Refreshing channel: {}".format(scid))
 
     # This has to wait for the hold_invoice plugin to let go!
-    l1.rpc.close(l2.info['id'])
-    bitcoind.generate_block(13, wait_for_mempool=1)
+    txid = l1.rpc.close(l2.info['id'])['txid']
+    bitcoind.generate_block(13, wait_for_mempool=txid)
     wait_for(lambda: len(l3.rpc.listchannels()['channels']) == 2)
     assert len(l3.rpc.sql("SELECT * FROM channels;")['rows']) == 2
     l3.daemon.wait_for_log("Deleting channel: {}".format(scid))
@@ -4152,3 +4200,75 @@ def test_sql_deprecated(node_factory, bitcoind):
 
     #  ret = l1.rpc.sql("SELECT funding_local_msat, funding_remote_msat FROM peerchannels;")
     #  assert ret == {'rows': []}
+
+
+def test_plugin_persist_option(node_factory):
+    """test that options from config file get remembered across plugin stop/start"""
+    plugin_path = os.path.join(os.getcwd(), 'contrib/plugins/helloworld.py')
+
+    l1 = node_factory.get_node(options={"plugin": plugin_path,
+                                        "greeting": "Static option"})
+    assert l1.rpc.call("hello") == "Static option world"
+    c = l1.rpc.listconfigs('greeting')['configs']['greeting']
+    assert c['source'] == "cmdline"
+    assert c['value_str'] == "Static option"
+    assert c['plugin'] == plugin_path
+    l1.rpc.plugin_stop(plugin_path)
+    assert 'greeting' not in l1.rpc.listconfigs()['configs']
+
+    # Restart works
+    l1.rpc.plugin_start(plugin_path)
+    c = l1.rpc.listconfigs('greeting')['configs']['greeting']
+    assert c['source'] == "cmdline"
+    assert c['value_str'] == "Static option"
+    assert c['plugin'] == plugin_path
+    assert l1.rpc.call("hello") == "Static option world"
+    l1.rpc.plugin_stop(plugin_path)
+    assert 'greeting' not in l1.rpc.listconfigs()['configs']
+
+    # This overrides!
+    l1.rpc.plugin_start(plugin_path, greeting="Dynamic option")
+    c = l1.rpc.listconfigs('greeting')['configs']['greeting']
+    assert c['source'] == "pluginstart"
+    assert c['value_str'] == "Dynamic option"
+    assert c['plugin'] == plugin_path
+    assert l1.rpc.call("hello") == "Dynamic option world"
+    l1.rpc.plugin_stop(plugin_path)
+    assert 'greeting' not in l1.rpc.listconfigs()['configs']
+
+    # Now restored!
+    l1.rpc.plugin_start(plugin_path)
+    c = l1.rpc.listconfigs('greeting')['configs']['greeting']
+    assert c['source'] == "cmdline"
+    assert c['value_str'] == "Static option"
+    assert c['plugin'] == plugin_path
+    assert l1.rpc.call("hello") == "Static option world"
+
+
+def test_all_subscription(node_factory, directory):
+    """Ensure that registering for all notifications works."""
+    plugin1 = os.path.join(os.getcwd(), 'tests/plugins/all_notifications.py')
+    plugin2 = os.path.join(os.getcwd(), "tests/plugins/test_libplugin")
+
+    l1, l2 = node_factory.line_graph(2, opts=[{"plugin": plugin1},
+                                              {"plugin": plugin2}])
+
+    l1.stop()
+    l2.stop()
+
+    # There will be a lot of these!
+    for notstr in ("block_added: {'block_added': {'hash': ",
+                   "balance_snapshot: {'balance_snapshot': {'node_id': ",
+                   "connect: {'connect': {'id': ",
+                   "channel_state_changed: {'channel_state_changed': {'peer_id': ",
+                   "shutdown: {'shutdown': {}"):
+        assert l1.daemon.is_in_log(f".*plugin-all_notifications.py: notification {notstr}.*")
+
+    for notstr in ('block_added: ',
+                   'balance_snapshot: ',
+                   'channel_state_changed: {'):
+        assert l2.daemon.is_in_log(f'.*test_libplugin: all: {notstr}.*')
+
+    # shutdown and connect are subscribed before the wildcard, so is handled by that handler
+    assert not l2.daemon.is_in_log(f'.*test_libplugin: all: shutdown.*')
+    assert not l2.daemon.is_in_log(f'.*test_libplugin: all: connect.*')

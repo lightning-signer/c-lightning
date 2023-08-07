@@ -4,6 +4,7 @@
   "additionalProperties": false,
   "required": [],
   "added": "v23.05",
+  "deprecated": "v23.08",
   "properties": {
     "start": {
       "type": "u64",

@@ -165,6 +165,11 @@ void json_add_unsaved_channel(struct json_stream *response,
 			       OPT_ANCHOR_OUTPUTS))
 		json_add_string(response, NULL, "option_anchor_outputs");
 
+	if (feature_negotiated(channel->peer->ld->our_features,
+			       channel->peer->their_features,
+			       OPT_ANCHORS_ZERO_FEE_HTLC_TX))
+		json_add_string(response, NULL, "option_anchors_zero_fee_htlc_tx");
+
 	json_array_end(response);
 	json_object_end(response);
 }
@@ -1181,7 +1186,9 @@ wallet_update_channel(struct lightningd *ld,
 				channel->lease_chan_max_ppt,
 				lease_blockheight_start,
 				channel->push,
-				lease_amt);
+				lease_amt,
+				0,
+				false);
 	wallet_inflight_add(ld->wallet, inflight);
 
 	return inflight;
@@ -1261,14 +1268,19 @@ wallet_commit_channel(struct lightningd *ld,
 					     &commitment_feerate);
 	channel->min_possible_feerate = commitment_feerate;
 	channel->max_possible_feerate = commitment_feerate;
-	channel->scb = tal(channel, struct scb_chan);
-	channel->scb->id = channel->dbid;
-	channel->scb->addr = channel->peer->addr;
-	channel->scb->node_id = channel->peer->id;
-	channel->scb->funding = *funding;
-	channel->scb->cid = channel->cid;
-	channel->scb->funding_sats = total_funding;
+	if (channel->peer->addr.itype == ADDR_INTERNAL_WIREADDR) {
+		channel->scb = tal(channel, struct scb_chan);
+		channel->scb->id = channel->dbid;
+		channel->scb->unused = 0;
+		channel->scb->addr = channel->peer->addr.u.wireaddr.wireaddr;
+		channel->scb->node_id = channel->peer->id;
+		channel->scb->funding = *funding;
+		channel->scb->cid = channel->cid;
+		channel->scb->funding_sats = total_funding;
+	} else
+		channel->scb = NULL;
 
+	tal_free(channel->type);
 	channel->type = channel_type_dup(channel, type);
 	channel->scb->type = channel_type_dup(channel->scb, type);
 
@@ -1277,7 +1289,7 @@ wallet_commit_channel(struct lightningd *ld,
 			= tal_steal(channel, our_upfront_shutdown_script);
 	else
 		channel->shutdown_scriptpubkey[LOCAL]
-			= p2wpkh_for_keyidx(channel, channel->peer->ld,
+			= p2tr_for_keyidx(channel, channel->peer->ld,
 					    channel->final_key_idx);
 
 	 /* Can't have gotten their alias for this channel yet. */
@@ -1328,7 +1340,9 @@ wallet_commit_channel(struct lightningd *ld,
 				channel->lease_chan_max_ppt,
 				lease_blockheight_start,
 				channel->push,
-				lease_amt);
+				lease_amt,
+				0,
+				false);
 	wallet_inflight_add(ld->wallet, inflight);
 
 	/* We might have disconnected and decided we didn't need to
@@ -1809,6 +1823,8 @@ static void handle_channel_locked(struct subd *dualopend,
 	peer_start_channeld(channel, peer_fd, NULL, false, NULL);
 	return;
 }
+
+
 
 void dualopen_tell_depth(struct subd *dualopend,
 			 struct channel *channel,
@@ -2302,6 +2318,33 @@ json_openchannel_abort(struct command *cmd,
 	return command_still_pending(cmd);
 }
 
+static char *restart_dualopend(const tal_t *ctx, const struct lightningd *ld,
+			       struct channel *channel, bool from_abort)
+{
+	int fds[2];
+	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, fds) != 0) {
+		log_broken(channel->log,
+			   "Failed to create socketpair: %s",
+			   strerror(errno));
+		return tal_fmt(ctx, "Unable to create socket: %s",
+			       strerror(errno));
+	}
+
+	if (!peer_restart_dualopend(channel->peer,
+				    new_peer_fd(tmpctx, fds[0]),
+				    channel, from_abort)) {
+		close(fds[1]);
+		return tal_fmt(ctx, "Peer not connected");
+	}
+	subd_send_msg(ld->connectd,
+		      take(towire_connectd_peer_connect_subd(NULL,
+							     &channel->peer->id,
+							     channel->peer->connectd_counter,
+							     &channel->cid)));
+	subd_send_fd(ld->connectd, fds[1]);
+	return NULL;
+}
+
 static struct command_result *
 json_openchannel_bump(struct command *cmd,
 		      const char *buffer,
@@ -2394,29 +2437,10 @@ json_openchannel_bump(struct command *cmd,
 	/* It's possible that the last open failed/was aborted.
 	 * So now we restart the attempt! */
 	if (!channel->owner) {
-		int fds[2];
-		if (socketpair(AF_LOCAL, SOCK_STREAM, 0, fds) != 0) {
-			log_broken(channel->log,
-				   "Failed to create socketpair: %s",
-				   strerror(errno));
+		char *err = restart_dualopend(cmd, cmd->ld, channel, false);
+		if (err)
 			return command_fail(cmd, FUNDING_PEER_NOT_CONNECTED,
-					    "Unable to create socket: %s",
-					    strerror(errno));
-		}
-
-		if (!peer_restart_dualopend(channel->peer,
-					    new_peer_fd(tmpctx, fds[0]),
-					    channel)) {
-			close(fds[1]);
-			return command_fail(cmd, FUNDING_PEER_NOT_CONNECTED,
-					      "Peer not connected.");
-		}
-		subd_send_msg(cmd->ld->connectd,
-			      take(towire_connectd_peer_connect_subd(NULL,
-								     &channel->peer->id,
-								     channel->peer->connectd_counter,
-								     &channel->cid)));
-		subd_send_fd(cmd->ld->connectd, fds[1]);
+					    "%s", err);
 	}
 
 	if (channel->open_attempt)
@@ -2602,7 +2626,7 @@ static void validate_input_unspent(struct bitcoind *bitcoind,
 		struct bitcoin_outpoint outpoint;
 
 		assert(pv->next_index > 0);
-		wally_tx_input_get_outpoint(&pv->psbt->tx->inputs[pv->next_index - 1],
+		wally_psbt_input_get_outpoint(&pv->psbt->inputs[pv->next_index - 1],
 					    &outpoint);
 
 		err = tal_fmt(pv, "Requested only confirmed"
@@ -2629,8 +2653,8 @@ static void validate_input_unspent(struct bitcoind *bitcoind,
 		if (serial % 2 != pv->role_to_validate)
 			continue;
 
-		wally_tx_input_get_outpoint(&pv->psbt->tx->inputs[i],
-					    &outpoint);
+		wally_psbt_input_get_outpoint(&pv->psbt->inputs[i],
+					      &outpoint);
 		pv->next_index = i + 1;
 
 		/* Confirm input is in a block */
@@ -2842,24 +2866,6 @@ static struct command_result *json_openchannel_init(struct command *cmd,
 		return command_fail(cmd, FUNDING_UNKNOWN_PEER, "Unknown peer");
 	}
 
-	channel = peer_any_unsaved_channel(peer, NULL);
-	if (!channel) {
-		channel = new_unsaved_channel(peer,
-					      peer->ld->config.fee_base,
-					      peer->ld->config.fee_per_satoshi);
-
-		/* We derive initial channel_id *now*, so we can tell it to
-		 * connectd. */
-		derive_tmp_channel_id(&channel->cid,
-				      &channel->local_basepoints.revocation);
-	}
-
-	if (channel->open_attempt
-	     || !list_empty(&channel->inflights))
-		return command_fail(cmd, FUNDING_STATE_INVALID,
-				    "Channel funding in-progress. %s",
-				    channel_state_name(channel));
-
 	if (!feature_negotiated(cmd->ld->our_features,
 			        peer->their_features,
 				OPT_DUAL_FUND)) {
@@ -2898,6 +2904,20 @@ static struct command_result *json_openchannel_init(struct command *cmd,
 				    type_to_string(tmpctx, struct wally_psbt,
 						   psbt));
 
+	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, fds) != 0) {
+		return command_fail(cmd, FUND_MAX_EXCEEDED,
+				    "Failed to create socketpair: %s",
+				    strerror(errno));
+	}
+
+	/* Now we can't fail, create channel */
+	channel = new_unsaved_channel(peer,
+				      peer->ld->config.fee_base,
+				      peer->ld->config.fee_per_satoshi);
+	/* We derive initial channel_id *now*, so we can tell it to connectd. */
+	derive_tmp_channel_id(&channel->cid,
+			      &channel->local_basepoints.revocation);
+
 	/* Get a new open_attempt going */
 	channel->opener = LOCAL;
 	channel->open_attempt = oa = new_channel_open_attempt(channel);
@@ -2935,6 +2955,7 @@ static struct command_result *json_openchannel_init(struct command *cmd,
 					   oa->our_upfront_shutdown_script,
 					   our_upfront_shutdown_script_wallet_index,
 					   *feerate_per_kw,
+					   unilateral_feerate(cmd->ld->topology, true),
 					   *feerate_per_kw_funding,
 					   channel->channel_flags,
 					   amount_sat_zero(*request_amt) ?
@@ -2942,12 +2963,6 @@ static struct command_result *json_openchannel_init(struct command *cmd,
 					   get_block_height(cmd->ld->topology),
 					   false,
 					   rates);
-
-	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, fds) != 0) {
-		return command_fail(cmd, FUND_MAX_EXCEEDED,
-				    "Failed to create socketpair: %s",
-				    strerror(errno));
-	}
 
 	/* Start dualopend! */
 	if (!peer_start_dualopend(peer, new_peer_fd(cmd, fds[0]), channel)) {
@@ -3424,24 +3439,14 @@ static struct command_result *json_queryrates(struct command *cmd,
 				    peer->connected == PEER_DISCONNECTED
 				    ? "not connected" : "still connecting");
 
-	/* FIXME: This is wrong: we should always create a new channel? */
-	channel = peer_any_unsaved_channel(peer, NULL);
-	if (!channel) {
-		channel = new_unsaved_channel(peer,
-					      peer->ld->config.fee_base,
-					      peer->ld->config.fee_per_satoshi);
+	channel = new_unsaved_channel(peer,
+				      peer->ld->config.fee_base,
+				      peer->ld->config.fee_per_satoshi);
 
-		/* We derive initial channel_id *now*, so we can tell it to
-		 * connectd. */
-		derive_tmp_channel_id(&channel->cid,
-				      &channel->local_basepoints.revocation);
-	}
-
-	if (channel->open_attempt
-	     || !list_empty(&channel->inflights))
-		return command_fail(cmd, FUNDING_STATE_INVALID,
-				    "Channel funding in-progress. %s",
-				    channel_state_name(channel));
+	/* We derive initial channel_id *now*, so we can tell it to
+	 * connectd. */
+	derive_tmp_channel_id(&channel->cid,
+			      &channel->local_basepoints.revocation);
 
 	if (!feature_negotiated(cmd->ld->our_features,
 			        peer->their_features,
@@ -3493,6 +3498,7 @@ static struct command_result *json_queryrates(struct command *cmd,
 					   oa->our_upfront_shutdown_script,
 					   our_upfront_shutdown_script_wallet_index,
 					   *feerate_per_kw,
+					   unilateral_feerate(cmd->ld->topology, true),
 					   *feerate_per_kw_funding,
 					   channel->channel_flags,
 					   amount_sat_zero(*request_amt) ?
@@ -3582,6 +3588,103 @@ AUTODATA(json_command, &openchannel_signed_command);
 AUTODATA(json_command, &openchannel_bump_command);
 AUTODATA(json_command, &openchannel_abort_command);
 
+void static dualopen_errmsg(struct channel *channel,
+			    struct peer_fd *peer_fd,
+			    const struct channel_id *channel_id UNUSED,
+			    const char *desc,
+			    bool warning,
+			    bool aborted,
+			    const u8 *err_for_them)
+{
+	/* Clean up any in-progress open attempts */
+	channel_cleanup_commands(channel, desc);
+
+	if (channel_unsaved(channel)) {
+		log_info(channel->log, "%s", "Unsaved peer failed."
+			 " Deleting channel.");
+		delete_channel(channel);
+		return;
+	}
+
+	/* No peer_fd means a subd crash or disconnection. */
+	if (!peer_fd) {
+		/* If the channel is unsaved, we forget it */
+		channel_fail_transient(channel, "%s: %s",
+				       channel->owner->name, desc);
+		return;
+	}
+
+	/* Do we have an error to send? */
+	if (err_for_them && !channel->error && !warning)
+		channel->error = tal_dup_talarr(channel, u8, err_for_them);
+
+	/* Other implementations chose to ignore errors early on.  Not
+	 * surprisingly, they now spew out spurious errors frequently,
+	 * and we would close the channel on them.  We now support warnings
+	 * for this case. */
+	if (warning || aborted) {
+		channel_fail_transient(channel, "%s %s: %s",
+				       channel->owner->name,
+				       warning ? "WARNING" : "ABORTED",
+				       desc);
+
+		if (aborted) {
+			char *err = restart_dualopend(tmpctx,
+						      channel->peer->ld,
+						      channel, true);
+			if (err)
+				log_broken(channel->log,
+					   "Unable to restart dualopend"
+					   " after abort: %s", err);
+		}
+
+		return;
+	}
+
+	/* BOLT #1:
+	 *
+	 * A sending node:
+	 *...
+	 *   - when sending `error`:
+	 *     - MUST fail the channel(s) referred to by the error message.
+	 *     - MAY set `channel_id` to all zero to indicate all channels.
+	 */
+	/* FIXME: Close if it's an all-channels error sent or rcvd */
+
+	/* BOLT #1:
+	 *
+	 * A sending node:
+	 *...
+	 *  - when sending `error`:
+	 *    - MUST fail the channel(s) referred to by the error message.
+	 *    - MAY set `channel_id` to all zero to indicate all channels.
+	 *...
+	 * The receiving node:
+	 *  - upon receiving `error`:
+	 *    - if `channel_id` is all zero:
+	 *       - MUST fail all channels with the sending node.
+	 *    - otherwise:
+	 *      - MUST fail the channel referred to by `channel_id`, if that channel is with the
+	 *        sending node.
+	 */
+
+	/* FIXME: We don't close all channels */
+	/* We should immediately forget the channel if we receive error during
+	 * CHANNELD_AWAITING_LOCKIN if we are fundee. */
+	if (!err_for_them && channel->opener == REMOTE
+	    && channel->state == CHANNELD_AWAITING_LOCKIN)
+		channel_fail_forget(channel, "%s: %s ERROR %s",
+				    channel->owner->name,
+				    err_for_them ? "sent" : "received", desc);
+	else
+		channel_fail_permanent(channel,
+				       err_for_them ? REASON_LOCAL : REASON_PROTOCOL,
+				       "%s: %s ERROR %s",
+				       channel->owner->name,
+				       err_for_them ? "sent" : "received", desc);
+}
+
+
 bool peer_start_dualopend(struct peer *peer,
 			  struct peer_fd *peer_fd,
 			  struct channel *channel)
@@ -3604,7 +3707,7 @@ bool peer_start_dualopend(struct peer *peer,
 					  channel->log, true,
 					  dualopend_wire_name,
 					  dual_opend_msg,
-					  channel_errmsg,
+					  dualopen_errmsg,
 					  channel_set_billboard,
 					  take(&peer_fd->fd),
 					  take(&hsmfd), NULL);
@@ -3649,7 +3752,8 @@ bool peer_start_dualopend(struct peer *peer,
 
 bool peer_restart_dualopend(struct peer *peer,
 			    struct peer_fd *peer_fd,
-			    struct channel *channel)
+			    struct channel *channel,
+			    bool from_abort)
 {
 	u32 max_to_self_delay, blockheight;
 	struct amount_msat min_effective_htlc_capacity;
@@ -3675,7 +3779,7 @@ bool peer_restart_dualopend(struct peer *peer,
 					   channel->log, true,
 					   dualopend_wire_name,
 					   dual_opend_msg,
-					   channel_errmsg,
+					   dualopen_errmsg,
 					   channel_set_billboard,
 					   take(&peer_fd->fd),
 					   take(&hsmfd), NULL));
@@ -3714,6 +3818,7 @@ bool peer_restart_dualopend(struct peer *peer,
 
 	msg = towire_dualopend_reinit(NULL,
 				      chainparams,
+				      from_abort,
 				      peer->ld->our_features,
 				      peer->their_features,
 				      &channel->our_config,

@@ -4,6 +4,7 @@
 #include <ccan/build_assert/build_assert.h>
 #include <ccan/mem/mem.h>
 #include <ccan/tal/str/str.h>
+#include <common/bolt11.h>
 #include <common/key_derive.h>
 #include <common/version.h>
 #include <db/bindings.h>
@@ -15,6 +16,7 @@
 #include <lightningd/channel.h>
 #include <lightningd/hsm_control.h>
 #include <lightningd/plugin_hook.h>
+#include <stddef.h>
 #include <wallet/db.h>
 #include <wallet/psbt_fixup.h>
 #include <wire/peer_wire.h>
@@ -61,6 +63,15 @@ static void migrate_invalid_last_tx_psbts(struct lightningd *ld,
 
 static void migrate_fill_in_channel_type(struct lightningd *ld,
 					 struct db *db);
+
+static void migrate_normalize_invstr(struct lightningd *ld,
+				     struct db *db);
+
+static void migrate_initialize_wait_indexes(struct lightningd *ld,
+					    struct db *db);
+
+static void migrate_invoice_created_index_var(struct lightningd *ld,
+					      struct db *db);
 
 /* Do not reorder or remove elements from this array, it is used to
  * migrate existing databases from a previous state, based on the
@@ -949,6 +960,21 @@ static struct migration dbmigrations[] = {
     {NULL, migrate_invalid_last_tx_psbts},
     {SQL("ALTER TABLE channels ADD channel_type BLOB DEFAULT NULL;"), NULL},
     {NULL, migrate_fill_in_channel_type},
+    {SQL("ALTER TABLE peers ADD feature_bits BLOB DEFAULT NULL;"), NULL},
+    {NULL, migrate_normalize_invstr},
+    {SQL("CREATE TABLE runes (id BIGSERIAL, rune TEXT, PRIMARY KEY (id));"), NULL},
+    {SQL("CREATE TABLE runes_blacklist (start_index BIGINT, end_index BIGINT);"), NULL},
+    {SQL("ALTER TABLE channels ADD ignore_fee_limits INTEGER DEFAULT 0;"), NULL},
+    {NULL, migrate_initialize_wait_indexes},
+    {SQL("ALTER TABLE invoices ADD updated_index BIGINT DEFAULT 0"), NULL},
+    {SQL("CREATE INDEX invoice_update_idx ON invoices (updated_index)"), NULL},
+    {NULL, migrate_datastore_commando_runes},
+    {NULL, migrate_invoice_created_index_var},
+    /* Splicing requires us to store HTLC sigs for inflight splices and allows us to discard old sigs after splice confirmation. */
+    {SQL("ALTER TABLE htlc_sigs ADD inflight_tx_id BLOB"), NULL},
+    {SQL("ALTER TABLE htlc_sigs ADD inflight_tx_outnum INTEGER"), NULL},
+    {SQL("ALTER TABLE channel_funding_inflights ADD splice_amnt BIGINT DEFAULT 0"), NULL},
+    {SQL("ALTER TABLE channel_funding_inflights ADD i_am_initiator INTEGER DEFAULT 0"), NULL},
 };
 
 /**
@@ -970,19 +996,15 @@ static bool db_migrate(struct lightningd *ld, struct db *db,
 	else if (available < current) {
 		err_msg = tal_fmt(tmpctx, "Refusing to migrate down from version %u to %u",
 			 current, available);
-		log_info(ld->log, "%s", err_msg);
-		db_fatal("%s", err_msg);
+		db_fatal(db, "%s", err_msg);
 	} else if (current != available) {
 		if (ld->db_upgrade_ok && *ld->db_upgrade_ok == false) {
-			err_msg = tal_fmt(tmpctx, "Refusing to upgrade db from version %u to %u (database-upgrade=false)",
+			db_fatal(db,
+				 "Refusing to upgrade db from version %u to %u (database-upgrade=false)",
 				 current, available);
-			log_info(ld->log, "%s", err_msg);
-			db_fatal("%s", err_msg);
 		} else if (!ld->db_upgrade_ok && !is_released_version()) {
-			err_msg = tal_fmt(tmpctx, "Refusing to irreversibly upgrade db from version %u to %u in non-final version %s (use --database-upgrade=true to override)",
-					    current, available, version());
-			log_info(ld->log, "%s", err_msg);
-			db_fatal("%s", err_msg);
+			db_fatal(db, "Refusing to irreversibly upgrade db from version %u to %u in non-final version %s (use --database-upgrade=true to override)",
+				 current, available, version());
 		}
 		log_info(ld->log, "Updating database from version %u to %u",
 			 current, available);
@@ -1001,7 +1023,7 @@ static bool db_migrate(struct lightningd *ld, struct db *db,
 
 	/* Finally update the version number in the version table */
 	stmt = db_prepare_v2(db, SQL("UPDATE version SET version=?;"));
-	db_bind_int(stmt, 0, available);
+	db_bind_int(stmt, available);
 	db_exec_prepared_v2(stmt);
 	tal_free(stmt);
 
@@ -1009,8 +1031,8 @@ static bool db_migrate(struct lightningd *ld, struct db *db,
 	if (current != orig) {
 		stmt = db_prepare_v2(
 		    db, SQL("INSERT INTO db_upgrades VALUES (?, ?);"));
-		db_bind_int(stmt, 0, orig);
-		db_bind_text(stmt, 1, version());
+		db_bind_int(stmt, orig);
+		db_bind_text(stmt, version());
 		db_exec_prepared_v2(stmt);
 		tal_free(stmt);
 	}
@@ -1018,10 +1040,22 @@ static bool db_migrate(struct lightningd *ld, struct db *db,
 	return current != orig;
 }
 
+static void db_error(struct lightningd *ld, bool fatal, const char *fmt, va_list ap)
+{
+	va_list ap2;
+
+	va_copy(ap2, ap);
+	logv(ld->log, LOG_BROKEN, NULL, true, fmt, ap);
+
+	if (fatal)
+		fatal_vfmt(fmt, ap2);
+	va_end(ap2);
+}
+
 struct db *db_setup(const tal_t *ctx, struct lightningd *ld,
 		    const struct ext_key *bip32_base)
 {
-	struct db *db = db_open(ctx, ld->wallet_dsn);
+	struct db *db = db_open(ctx, ld->wallet_dsn, db_error, ld);
 	bool migrated;
 
 	db->report_changes_fn = plugin_hook_db_sync;
@@ -1037,7 +1071,7 @@ struct db *db_setup(const tal_t *ctx, struct lightningd *ld,
 	 * It's a good idea to do this every so often, and on db
 	 * upgrade is a reasonable time. */
 	if (migrated && !db->config->vacuum_fn(db))
-		db_fatal("Error vacuuming db: %s", db->error);
+		db_fatal(db, "Error vacuuming db: %s", db->error);
 
 	return db;
 }
@@ -1048,8 +1082,8 @@ static void migrate_pr2342_feerate_per_channel(struct lightningd *ld, struct db 
 	struct db_stmt *stmt = db_prepare_v2(
 	    db, SQL("UPDATE channels SET feerate_base = ?, feerate_ppm = ?;"));
 
-	db_bind_int(stmt, 0, ld->config.fee_base);
-	db_bind_int(stmt, 1, ld->config.fee_per_satoshi);
+	db_bind_int(stmt, ld->config.fee_base);
+	db_bind_int(stmt, ld->config.fee_per_satoshi);
 
 	db_exec_prepared_v2(stmt);
 	tal_free(stmt);
@@ -1071,7 +1105,8 @@ static void migrate_our_funding(struct lightningd *ld, struct db *db)
 				     " WHERE funder = 0;")); /* 0 == LOCAL */
 	db_exec_prepared_v2(stmt);
 	if (stmt->error)
-		db_fatal("Error migrating funding satoshis to our_funding (%s)",
+		db_fatal(stmt->db,
+			 "Error migrating funding satoshis to our_funding (%s)",
 			 stmt->error);
 
 	tal_free(stmt);
@@ -1144,9 +1179,9 @@ void fillin_missing_scriptpubkeys(struct lightningd *ld, struct db *db)
 						    " SET scriptpubkey = ?"
 						    " WHERE prev_out_tx = ? "
 						    "   AND prev_out_index = ?"));
-		db_bind_blob(update_stmt, 0, scriptPubkey, tal_bytelen(scriptPubkey));
-		db_bind_txid(update_stmt, 1, &txid);
-		db_bind_int(update_stmt, 2, outnum);
+		db_bind_blob(update_stmt, scriptPubkey, tal_bytelen(scriptPubkey));
+		db_bind_txid(update_stmt, &txid);
+		db_bind_int(update_stmt, outnum);
 		db_exec_prepared_v2(update_stmt);
 		tal_free(update_stmt);
 	}
@@ -1185,8 +1220,8 @@ static void fillin_missing_channel_id(struct lightningd *ld, struct db *db)
 		update_stmt = db_prepare_v2(db, SQL("UPDATE channels"
 						    " SET full_channel_id = ?"
 						    " WHERE id = ?;"));
-		db_bind_channel_id(update_stmt, 0, &cid);
-		db_bind_u64(update_stmt, 1, id);
+		db_bind_channel_id(update_stmt, &cid);
+		db_bind_u64(update_stmt, id);
 
 		db_exec_prepared_v2(update_stmt);
 		tal_free(update_stmt);
@@ -1242,13 +1277,13 @@ static void fillin_missing_local_basepoints(struct lightningd *ld,
 			    ", delayed_payment_basepoint_local = ?"
 			    ", funding_pubkey_local = ? "
 			    "WHERE id = ?;"));
-		db_bind_pubkey(upstmt, 0, &base.revocation);
-		db_bind_pubkey(upstmt, 1, &base.payment);
-		db_bind_pubkey(upstmt, 2, &base.htlc);
-		db_bind_pubkey(upstmt, 3, &base.delayed_payment);
-		db_bind_pubkey(upstmt, 4, &funding_pubkey);
+		db_bind_pubkey(upstmt, &base.revocation);
+		db_bind_pubkey(upstmt, &base.payment);
+		db_bind_pubkey(upstmt, &base.htlc);
+		db_bind_pubkey(upstmt, &base.delayed_payment);
+		db_bind_pubkey(upstmt, &funding_pubkey);
 
-		db_bind_u64(upstmt, 5, dbid);
+		db_bind_u64(upstmt, dbid);
 
 		db_exec_prepared_v2(take(upstmt));
 	}
@@ -1331,7 +1366,7 @@ migrate_inflight_last_tx_to_psbt(struct lightningd *ld, struct db *db)
 			continue;
 		}
 		db_col_node_id(stmt, "p.node_id", &peer_id);
-		db_col_amount_sat(stmt, "inflight.funding_satoshi", &funding_sat);
+		funding_sat = db_col_amount_sat(stmt, "inflight.funding_satoshi");
 		db_col_pubkey(stmt, "c.fundingkey_remote", &remote_funding_pubkey);
 		db_col_txid(stmt, "inflight.funding_tx_id", &funding_txid);
 
@@ -1355,23 +1390,35 @@ migrate_inflight_last_tx_to_psbt(struct lightningd *ld, struct db *db)
 					      &remote_funding_pubkey, &last_sig))
 			abort();
 		psbt_input_add_pubkey(last_tx->psbt, 0,
-		    &local_funding_pubkey);
+		    &local_funding_pubkey, false /* is_taproot */);
 		psbt_input_add_pubkey(last_tx->psbt, 0,
-		    &remote_funding_pubkey);
+		    &remote_funding_pubkey, false /* is_taproot */);
 
 		update_stmt = db_prepare_v2(db,
 				SQL("UPDATE channel_funding_inflights"
 				    " SET last_tx = ?"
 				    " WHERE channel_id = ?"
 				    "   AND funding_tx_id = ?;"));
-		db_bind_psbt(update_stmt, 0, last_tx->psbt);
-		db_bind_int(update_stmt, 1, cdb_id);
-		db_bind_txid(update_stmt, 2, &funding_txid);
+		db_bind_psbt(update_stmt, last_tx->psbt);
+		db_bind_int(update_stmt, cdb_id);
+		db_bind_txid(update_stmt, &funding_txid);
 		db_exec_prepared_v2(update_stmt);
 		tal_free(update_stmt);
 	}
 
 	tal_free(stmt);
+}
+
+void load_indexes(struct db *db, struct indexes *indexes)
+{
+	for (size_t s = 0; s < NUM_WAIT_SUBSYSTEM; s++) {
+		for (size_t i = 0; i < NUM_WAIT_INDEX; i++) {
+			const char *fname = tal_fmt(tmpctx, "last_%s_%s_index",
+						    wait_subsystem_name(s),
+						    wait_index_name(i));
+			indexes[s].i[i] = db_get_intvar(db, fname, 0);
+		}
+	}
 }
 
 /* We're moving everything over to PSBTs from tx's, particularly our last_tx's
@@ -1420,7 +1467,7 @@ void migrate_last_tx_to_psbt(struct lightningd *ld, struct db *db)
 		}
 
 		db_col_node_id(stmt, "p.node_id", &peer_id);
-		db_col_amount_sat(stmt, "c.funding_satoshi", &funding_sat);
+		funding_sat = db_col_amount_sat(stmt, "c.funding_satoshi");
 		db_col_pubkey(stmt, "c.fundingkey_remote", &remote_funding_pubkey);
 
 		get_channel_basepoints(ld, &peer_id, cdb_id,
@@ -1451,15 +1498,15 @@ void migrate_last_tx_to_psbt(struct lightningd *ld, struct db *db)
 					      &remote_funding_pubkey, &last_sig))
 			abort();
 		psbt_input_add_pubkey(last_tx->psbt, 0,
-		    &local_funding_pubkey);
+		    &local_funding_pubkey, false /* is_taproot */);
 		psbt_input_add_pubkey(last_tx->psbt, 0,
-		    &remote_funding_pubkey);
+		    &remote_funding_pubkey, false /* is_taproot */);
 
 		update_stmt = db_prepare_v2(db, SQL("UPDATE channels"
 						    " SET last_tx = ?"
 						    " WHERE id = ?;"));
-		db_bind_psbt(update_stmt, 0, last_tx->psbt);
-		db_bind_int(update_stmt, 1, cdb_id);
+		db_bind_psbt(update_stmt, last_tx->psbt);
+		db_bind_int(update_stmt, cdb_id);
 		db_exec_prepared_v2(update_stmt);
 		tal_free(update_stmt);
 	}
@@ -1489,14 +1536,14 @@ static void migrate_channels_scids_as_integers(struct lightningd *ld,
 	for (size_t i = 0; i < tal_count(scids); i++) {
 		struct short_channel_id scid;
 		if (!short_channel_id_from_str(scids[i], strlen(scids[i]), &scid))
-			db_fatal("Cannot convert invalid channels.short_channel_id '%s'",
+			db_fatal(db, "Cannot convert invalid channels.short_channel_id '%s'",
 				 scids[i]);
 
 		stmt = db_prepare_v2(db, SQL("UPDATE channels"
 					     " SET scid = ?"
 					     " WHERE short_channel_id = ?"));
-		db_bind_short_channel_id(stmt, 0, &scid);
-		db_bind_text(stmt, 1, scids[i]);
+		db_bind_short_channel_id(stmt, &scid);
+		db_bind_text(stmt, scids[i]);
 		db_exec_prepared_v2(stmt);
 
 		/* This was reported to happen with an (old, closed) channel: that we'd have
@@ -1545,20 +1592,20 @@ static void migrate_payments_scids_as_integers(struct lightningd *ld,
 
 		str = db_col_strdup(tmpctx, stmt, "failchannel");
 		if (!short_channel_id_from_str(str, strlen(str), &scid))
-			db_fatal("Cannot convert invalid payments.failchannel '%s'",
+			db_fatal(db, "Cannot convert invalid payments.failchannel '%s'",
 				 str);
 		update_stmt = db_prepare_v2(db, SQL("UPDATE payments SET"
 						    " failscid = ?"
 						    " WHERE id = ?"));
-		db_bind_short_channel_id(update_stmt, 0, &scid);
-		db_bind_u64(update_stmt, 1, db_col_u64(stmt, "id"));
+		db_bind_short_channel_id(update_stmt, &scid);
+		db_bind_u64(update_stmt, db_col_u64(stmt, "id"));
 		db_exec_prepared_v2(update_stmt);
 		tal_free(update_stmt);
 	}
 	tal_free(stmt);
 
 	if (!db->config->delete_columns(db, "payments", colnames, ARRAY_SIZE(colnames)))
-		db_fatal("Could not delete payments.failchannel");
+		db_fatal(db, "Could not delete payments.failchannel");
 }
 
 static void fillin_missing_lease_satoshi(struct lightningd *ld,
@@ -1608,11 +1655,66 @@ static void migrate_fill_in_channel_type(struct lightningd *ld,
 		update_stmt = db_prepare_v2(db, SQL("UPDATE channels SET"
 						    " channel_type = ?"
 						    " WHERE id = ?"));
-		db_bind_channel_type(update_stmt, 0, type);
-		db_bind_u64(update_stmt, 1, id);
+		db_bind_channel_type(update_stmt, type);
+		db_bind_u64(update_stmt, id);
 		db_exec_prepared_v2(update_stmt);
 		tal_free(update_stmt);
 	}
+	tal_free(stmt);
+}
+
+static void migrate_initialize_wait_indexes(struct lightningd *ld,
+					    struct db *db)
+{
+	struct db_stmt *stmt;
+	bool res;
+
+	/* "invoices.id" serves as the created_index.  It's never 0. */
+	stmt = db_prepare_v2(db, SQL("SELECT MAX(id) FROM invoices;"));
+	db_query_prepared(stmt);
+	res = db_step(stmt);
+	assert(res);
+
+	if (!db_col_is_null(stmt, "MAX(id)"))
+		db_set_intvar(db, "last_invoice_created_index",
+			      db_col_u64(stmt, "MAX(id)"));
+	tal_free(stmt);
+}
+
+static void migrate_invoice_created_index_var(struct lightningd *ld, struct db *db)
+{
+	struct db_stmt *stmt;
+	s64 badindex, realindex;
+
+	/* Prior migration had a typo!  But we might have run since
+	 * then and created an invoice, so we have to set the real one
+	 * to the max of the two... */
+	badindex = db_get_intvar(db, "last_invoice_created_index", -1);
+	realindex = db_get_intvar(db, "last_invoices_created_index", -1);
+
+	/* Bad index does not exist?  Fine */
+	if (badindex < 0)
+		return;
+
+	/* Bad index exists, real index doesn't?  Rename */
+	if (badindex >= 0 && realindex < 0) {
+		stmt = db_prepare_v2(db, SQL("UPDATE vars"
+					     " SET name = 'last_invoices_created_index'"
+					     " WHERE name = 'last_invoice_created_index'"));
+		db_exec_prepared_v2(stmt);
+		tal_free(stmt);
+		return;
+	}
+
+	/* Both exist.  Correct value is the higher one. */
+	if (badindex > realindex)
+		realindex = badindex;
+
+	/* Update correct one, remove bad one. */
+	db_set_intvar(db, "last_invoices_created_index", realindex);
+	stmt = db_prepare_v2(db, SQL("DELETE FROM vars"
+				     " WHERE name = 'last_invoice_created_index'"));
+	db_exec_prepared_v2(stmt);
 	tal_free(stmt);
 }
 
@@ -1681,9 +1783,68 @@ static void migrate_invalid_last_tx_psbts(struct lightningd *ld,
 		update_stmt = db_prepare_v2(db, SQL("UPDATE channels"
 						    " SET last_tx = ?"
 						    " WHERE id = ?;"));
-		db_bind_psbt(update_stmt, 0, psbt);
-		db_bind_u64(update_stmt, 1, id);
+		db_bind_psbt(update_stmt, psbt);
+		db_bind_u64(update_stmt, id);
 		db_exec_prepared_v2(update_stmt);
+		tal_free(update_stmt);
+	}
+	tal_free(stmt);
+}
+/**
+ * We store the bolt11 string in several places with the `lightning:` prefix, so
+ * we update one by one by lowering and normalize the string in a canonical one.
+ *
+ * See also `to_canonical_invstr` in `common/bolt11.c` the definition of
+ * canonical invoice.
+ */
+static void migrate_normalize_invstr(struct lightningd *ld, struct db *db)
+{
+	struct db_stmt *stmt;
+
+	stmt = db_prepare_v2(db, SQL("SELECT bolt11, id"
+				     " FROM invoices"
+				     " WHERE bolt11 IS NOT NULL;"));
+	db_query_prepared(stmt);
+	while (db_step(stmt)) {
+		u64 id;
+		const char *invstr;
+		struct db_stmt *update_stmt;
+
+		id = db_col_u64(stmt, "id");
+		invstr = db_col_strdup(tmpctx, stmt, "bolt11");
+		invstr = to_canonical_invstr(tmpctx, invstr);
+
+		update_stmt = db_prepare_v2(db, SQL("UPDATE invoices"
+						    " SET bolt11 = ?"
+						    " WHERE id = ?;"));
+		db_bind_text(update_stmt, invstr);
+		db_bind_u64(update_stmt, id);
+		db_exec_prepared_v2(update_stmt);
+
+		tal_free(update_stmt);
+	}
+	tal_free(stmt);
+
+	stmt = db_prepare_v2(db, SQL("SELECT bolt11, id"
+				     " FROM payments"
+				     " WHERE bolt11 IS NOT NULL;"));
+	db_query_prepared(stmt);
+	while (db_step(stmt)) {
+		u64 id;
+		const char *invstr;
+		struct db_stmt *update_stmt;
+
+		id = db_col_u64(stmt, "id");
+		invstr = db_col_strdup(tmpctx, stmt, "bolt11");
+		invstr = to_canonical_invstr(tmpctx, invstr);
+
+		update_stmt = db_prepare_v2(db, SQL("UPDATE payments"
+						    " SET bolt11 = ?"
+						    " WHERE id = ?;"));
+		db_bind_text(update_stmt, invstr);
+		db_bind_u64(update_stmt, id);
+		db_exec_prepared_v2(update_stmt);
+
 		tal_free(update_stmt);
 	}
 	tal_free(stmt);

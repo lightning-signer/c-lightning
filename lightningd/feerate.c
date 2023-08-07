@@ -68,7 +68,11 @@ static struct command_result *param_feerate_unchecked(struct command *cmd,
 		return NULL;
 	}
 	if (json_tok_streq(buffer, tok, "unilateral_close")) {
-		**feerate = unilateral_feerate(cmd->ld->topology);
+		**feerate = unilateral_feerate(cmd->ld->topology, false);
+		return NULL;
+	}
+	if (json_tok_streq(buffer, tok, "unilateral_anchor_close")) {
+		**feerate = unilateral_feerate(cmd->ld->topology, true);
 		return NULL;
 	}
 
@@ -78,7 +82,7 @@ static struct command_result *param_feerate_unchecked(struct command *cmd,
 
 		if (!json_tok_streq(buffer, tok, feerate_name(i)))
 			continue;
-		if (!deprecated_apis)
+		if (!cmd->ld->deprecated_apis)
 			return command_fail_badparam(cmd, name, buffer, tok,
 						     "removed feerate by names");
 		switch (i) {

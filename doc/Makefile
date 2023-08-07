@@ -18,8 +18,10 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-bkpr-listaccountevents.7 \
 	doc/lightning-bkpr-listbalances.7 \
 	doc/lightning-bkpr-listincome.7 \
+	doc/lightning-blacklistrune.7 \
 	doc/lightning-check.7 \
 	doc/lightning-checkmessage.7 \
+	doc/lightning-checkrune.7 \
 	doc/lightning-close.7 \
 	doc/lightning-connect.7 \
 	doc/lightning-commando.7 \
@@ -28,6 +30,7 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-commando-rune.7 \
 	doc/lightning-createonion.7 \
 	doc/lightning-createinvoice.7 \
+	doc/lightning-createrune.7 \
 	doc/lightning-datastore.7 \
 	doc/lightning-decodepay.7 \
 	doc/lightning-decode.7 \
@@ -65,6 +68,7 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-listpays.7 \
 	doc/lightning-listpeers.7 \
 	doc/lightning-listpeerchannels.7 \
+	doc/lightning-showrunes.7 \
 	doc/lightning-listsendpays.7 \
 	doc/lightning-makesecret.7 \
 	doc/lightning-multifundchannel.7 \
@@ -89,6 +93,7 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-sendonionmessage.7 \
 	doc/lightning-sendpay.7 \
 	doc/lightning-setchannel.7 \
+	doc/lightning-setconfig.7 \
 	doc/lightning-setpsbtversion.7 \
 	doc/lightning-sendcustommsg.7 \
 	doc/lightning-signinvoice.7 \
@@ -99,6 +104,7 @@ MANPAGES := doc/lightning-cli.1 \
 	doc/lightning-txsend.7 \
 	doc/lightning-unreserveinputs.7 \
 	doc/lightning-utxopsbt.7 \
+	doc/lightning-wait.7 \
 	doc/lightning-waitinvoice.7 \
 	doc/lightning-waitanyinvoice.7 \
 	doc/lightning-waitblockheight.7 \
@@ -227,18 +233,19 @@ doc/index.rst: $(MANPAGES:=.md)
 	  python3 devtools/blockreplace.py doc/index.rst manpages --language=rst --indent "   " \
 	)
 
-# For CI to (very roughly!) check that we only deprecated fields, or labelled added ones
-# When running on GitHub (CI=true), we need to fetch origin/master
+# Overridden by GH CI if necessary.
+BASE_REF=master
 schema-added-check:
-	@if ! test -z $$CI; then git fetch origin master; fi; \
-	if git diff origin/master -- doc/schemas | grep -q '^+.*{' && ! git diff origin/master -- doc/schemas | grep -q '^+.*"added"'; then \
-		git diff origin/master -- doc/schemas; \
+	if git show --format=%B -s $(BASE_REF).. | grep -q '^No-schema-diff-check'; then echo $@ suppressed; exit 0; fi; \
+	if git diff $(BASE_REF) -- doc/schemas | grep -q '^+.*{' && ! git diff $(BASE_REF) -- doc/schemas | grep -q '^+.*"added"'; then \
+		git diff $(BASE_REF) -- doc/schemas; \
 		echo 'New schema fields must have "added": "vNEXTVERSION"' >&2; exit 1; \
 	fi
+
 schema-removed-check:
-	@if ! test -z $$CI; then git fetch origin master; fi; \
-	if git diff origin/master -- doc/schemas | grep -q '^-.*{' && ! git diff origin/master -- doc/schemas | grep -q '^-.*"deprecated"'; then \
-		git diff origin/master -- doc/schemas ; \
+	if git show --format=%B -s $(BASE_REF).. | grep -q '^No-schema-diff-check'; then echo $@ suppressed; exit 0; fi; \
+	if git diff $(BASE_REF) -- doc/schemas | grep -q '^-.*{' && ! git diff $(BASE_REF) -- doc/schemas | grep -q '^-.*"deprecated"' && ! git diff $(BASE_REF) -- doc/schemas | grep -q '^-.*EXPERIMENTAL_FEATURES'; then \
+		git diff $(BASE_REF) -- doc/schemas ; \
 		echo 'Schema fields must be "deprecated", with version, not removed' >&2; exit 1; \
 	fi
 

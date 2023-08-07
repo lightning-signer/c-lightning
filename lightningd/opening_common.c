@@ -47,8 +47,8 @@ new_uncommitted_channel(struct peer *peer)
 	uc->transient_billboard = NULL;
 	uc->dbid = wallet_get_channel_dbid(ld->wallet);
 
-	uc->log = new_log(uc, ld->log_book, &uc->peer->id,
-			  "chan#%"PRIu64, uc->dbid);
+	uc->log = new_logger(uc, ld->log_book, &uc->peer->id,
+			     "chan#%"PRIu64, uc->dbid);
 
 	uc->fc = NULL;
 	uc->our_config.id = 0;
@@ -96,6 +96,7 @@ void opend_channel_errmsg(struct uncommitted_channel *uc,
 			  const struct channel_id *channel_id UNUSED,
 			  const char *desc,
 			  bool warning UNUSED,
+			  bool aborted UNUSED,
 			  const u8 *err_for_them UNUSED)
 {
 	/* Close fds, if any. */

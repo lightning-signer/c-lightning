@@ -1530,6 +1530,38 @@ async fn list_pays(
 
 }
 
+async fn list_htlcs(
+    &self,
+    request: tonic::Request<pb::ListhtlcsRequest>,
+) -> Result<tonic::Response<pb::ListhtlcsResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::ListhtlcsRequest = req.into();
+    debug!("Client asked for list_htlcs");
+    trace!("list_htlcs request: {:?}", req);
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::ListHtlcs(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method ListHtlcs: {:?}", e)))?;
+    match result {
+        Response::ListHtlcs(r) => {
+           trace!("list_htlcs response: {:?}", r);
+           Ok(tonic::Response::new(r.into()))
+        },
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call ListHtlcs",
+                r
+            )
+        )),
+    }
+
+}
+
 async fn ping(
     &self,
     request: tonic::Request<pb::PingRequest>,
@@ -1715,6 +1747,70 @@ async fn stop(
             Code::Internal,
             format!(
                 "Unexpected result {:?} to method call Stop",
+                r
+            )
+        )),
+    }
+
+}
+
+async fn pre_approve_keysend(
+    &self,
+    request: tonic::Request<pb::PreapprovekeysendRequest>,
+) -> Result<tonic::Response<pb::PreapprovekeysendResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::PreapprovekeysendRequest = req.into();
+    debug!("Client asked for pre_approve_keysend");
+    trace!("pre_approve_keysend request: {:?}", req);
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::PreApproveKeysend(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method PreApproveKeysend: {:?}", e)))?;
+    match result {
+        Response::PreApproveKeysend(r) => {
+           trace!("pre_approve_keysend response: {:?}", r);
+           Ok(tonic::Response::new(r.into()))
+        },
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call PreApproveKeysend",
+                r
+            )
+        )),
+    }
+
+}
+
+async fn pre_approve_invoice(
+    &self,
+    request: tonic::Request<pb::PreapproveinvoiceRequest>,
+) -> Result<tonic::Response<pb::PreapproveinvoiceResponse>, tonic::Status> {
+    let req = request.into_inner();
+    let req: requests::PreapproveinvoiceRequest = req.into();
+    debug!("Client asked for pre_approve_invoice");
+    trace!("pre_approve_invoice request: {:?}", req);
+    let mut rpc = ClnRpc::new(&self.rpc_path)
+        .await
+        .map_err(|e| Status::new(Code::Internal, e.to_string()))?;
+    let result = rpc.call(Request::PreApproveInvoice(req))
+        .await
+        .map_err(|e| Status::new(
+           Code::Unknown,
+           format!("Error calling method PreApproveInvoice: {:?}", e)))?;
+    match result {
+        Response::PreApproveInvoice(r) => {
+           trace!("pre_approve_invoice response: {:?}", r);
+           Ok(tonic::Response::new(r.into()))
+        },
+        r => Err(Status::new(
+            Code::Internal,
+            format!(
+                "Unexpected result {:?} to method call PreApproveInvoice",
                 r
             )
         )),

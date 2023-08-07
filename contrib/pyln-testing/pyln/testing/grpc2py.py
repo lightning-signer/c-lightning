@@ -91,6 +91,7 @@ def listpeers_peers_channels_inflight2py(m):
         "feerate": m.feerate,  # PrimitiveField in generate_composite
         "total_funding_msat": amount2msat(m.total_funding_msat),  # PrimitiveField in generate_composite
         "our_funding_msat": amount2msat(m.our_funding_msat),  # PrimitiveField in generate_composite
+        "splice_amount": m.splice_amount,  # PrimitiveField in generate_composite
         "scratch_txid": hexlify(m.scratch_txid),  # PrimitiveField in generate_composite
     })
 
@@ -332,6 +333,7 @@ def createinvoice2py(m):
         "status": str(m.status),  # EnumField in generate_composite
         "description": m.description,  # PrimitiveField in generate_composite
         "expires_at": m.expires_at,  # PrimitiveField in generate_composite
+        "created_index": m.created_index,  # PrimitiveField in generate_composite
         "pay_index": m.pay_index,  # PrimitiveField in generate_composite
         "amount_received_msat": amount2msat(m.amount_received_msat),  # PrimitiveField in generate_composite
         "paid_at": m.paid_at,  # PrimitiveField in generate_composite
@@ -379,6 +381,8 @@ def delinvoice2py(m):
         "amount_msat": amount2msat(m.amount_msat),  # PrimitiveField in generate_composite
         "description": m.description,  # PrimitiveField in generate_composite
         "payment_hash": hexlify(m.payment_hash),  # PrimitiveField in generate_composite
+        "created_index": m.created_index,  # PrimitiveField in generate_composite
+        "updated_index": m.updated_index,  # PrimitiveField in generate_composite
         "status": str(m.status),  # EnumField in generate_composite
         "expires_at": m.expires_at,  # PrimitiveField in generate_composite
         "local_offer_id": hexlify(m.local_offer_id),  # PrimitiveField in generate_composite
@@ -392,6 +396,7 @@ def invoice2py(m):
         "payment_hash": hexlify(m.payment_hash),  # PrimitiveField in generate_composite
         "payment_secret": hexlify(m.payment_secret),  # PrimitiveField in generate_composite
         "expires_at": m.expires_at,  # PrimitiveField in generate_composite
+        "created_index": m.created_index,  # PrimitiveField in generate_composite
         "warning_capacity": m.warning_capacity,  # PrimitiveField in generate_composite
         "warning_offline": m.warning_offline,  # PrimitiveField in generate_composite
         "warning_deadends": m.warning_deadends,  # PrimitiveField in generate_composite
@@ -427,6 +432,8 @@ def listinvoices_invoices2py(m):
         "bolt12": m.bolt12,  # PrimitiveField in generate_composite
         "local_offer_id": hexlify(m.local_offer_id),  # PrimitiveField in generate_composite
         "invreq_payer_note": m.invreq_payer_note,  # PrimitiveField in generate_composite
+        "created_index": m.created_index,  # PrimitiveField in generate_composite
+        "updated_index": m.updated_index,  # PrimitiveField in generate_composite
         "pay_index": m.pay_index,  # PrimitiveField in generate_composite
         "amount_received_msat": amount2msat(m.amount_received_msat),  # PrimitiveField in generate_composite
         "paid_at": m.paid_at,  # PrimitiveField in generate_composite
@@ -489,8 +496,6 @@ def listtransactions_transactions_inputs2py(m):
         "txid": hexlify(m.txid),  # PrimitiveField in generate_composite
         "index": m.index,  # PrimitiveField in generate_composite
         "sequence": m.sequence,  # PrimitiveField in generate_composite
-        "type": str(m.item_type),  # EnumField in generate_composite
-        "channel": m.channel,  # PrimitiveField in generate_composite
     })
 
 
@@ -499,8 +504,6 @@ def listtransactions_transactions_outputs2py(m):
         "index": m.index,  # PrimitiveField in generate_composite
         "amount_msat": amount2msat(m.amount_msat),  # PrimitiveField in generate_composite
         "script_pub_key": hexlify(m.script_pub_key),  # PrimitiveField in generate_composite
-        "type": str(m.item_type),  # EnumField in generate_composite
-        "channel": m.channel,  # PrimitiveField in generate_composite
     })
 
 
@@ -572,6 +575,8 @@ def waitanyinvoice2py(m):
         "amount_msat": amount2msat(m.amount_msat),  # PrimitiveField in generate_composite
         "bolt11": m.bolt11,  # PrimitiveField in generate_composite
         "bolt12": m.bolt12,  # PrimitiveField in generate_composite
+        "created_index": m.created_index,  # PrimitiveField in generate_composite
+        "updated_index": m.updated_index,  # PrimitiveField in generate_composite
         "pay_index": m.pay_index,  # PrimitiveField in generate_composite
         "amount_received_msat": amount2msat(m.amount_received_msat),  # PrimitiveField in generate_composite
         "paid_at": m.paid_at,  # PrimitiveField in generate_composite
@@ -589,6 +594,8 @@ def waitinvoice2py(m):
         "amount_msat": amount2msat(m.amount_msat),  # PrimitiveField in generate_composite
         "bolt11": m.bolt11,  # PrimitiveField in generate_composite
         "bolt12": m.bolt12,  # PrimitiveField in generate_composite
+        "created_index": m.created_index,  # PrimitiveField in generate_composite
+        "updated_index": m.updated_index,  # PrimitiveField in generate_composite
         "pay_index": m.pay_index,  # PrimitiveField in generate_composite
         "amount_received_msat": amount2msat(m.amount_received_msat),  # PrimitiveField in generate_composite
         "paid_at": m.paid_at,  # PrimitiveField in generate_composite
@@ -617,6 +624,7 @@ def waitsendpay2py(m):
 
 def newaddr2py(m):
     return remove_default({
+        "p2tr": m.p2tr,  # PrimitiveField in generate_composite
         "bech32": m.bech32,  # PrimitiveField in generate_composite
         "p2sh_segwit": m.p2sh_segwit,  # PrimitiveField in generate_composite
     })
@@ -742,6 +750,7 @@ def listpeerchannels_channels_inflight2py(m):
         "funding_outnum": m.funding_outnum,  # PrimitiveField in generate_composite
         "feerate": m.feerate,  # PrimitiveField in generate_composite
         "total_funding_msat": amount2msat(m.total_funding_msat),  # PrimitiveField in generate_composite
+        "splice_amount": m.splice_amount,  # PrimitiveField in generate_composite
         "our_funding_msat": amount2msat(m.our_funding_msat),  # PrimitiveField in generate_composite
         "scratch_txid": hexlify(m.scratch_txid),  # PrimitiveField in generate_composite
     })
@@ -793,6 +802,7 @@ def listpeerchannels_channels2py(m):
         "peer_connected": m.peer_connected,  # PrimitiveField in generate_composite
         "state": str(m.state),  # EnumField in generate_composite
         "scratch_txid": hexlify(m.scratch_txid),  # PrimitiveField in generate_composite
+        "ignore_fee_limits": m.ignore_fee_limits,  # PrimitiveField in generate_composite
         "owner": m.owner,  # PrimitiveField in generate_composite
         "short_channel_id": m.short_channel_id,  # PrimitiveField in generate_composite
         "channel_id": hexlify(m.channel_id),  # PrimitiveField in generate_composite
@@ -1161,6 +1171,7 @@ def feerates_perkb2py(m):
         "opening": m.opening,  # PrimitiveField in generate_composite
         "mutual_close": m.mutual_close,  # PrimitiveField in generate_composite
         "unilateral_close": m.unilateral_close,  # PrimitiveField in generate_composite
+        "unilateral_anchor_close": m.unilateral_anchor_close,  # PrimitiveField in generate_composite
         "delayed_to_us": m.delayed_to_us,  # PrimitiveField in generate_composite
         "htlc_resolution": m.htlc_resolution,  # PrimitiveField in generate_composite
         "penalty": m.penalty,  # PrimitiveField in generate_composite
@@ -1184,6 +1195,7 @@ def feerates_perkw2py(m):
         "opening": m.opening,  # PrimitiveField in generate_composite
         "mutual_close": m.mutual_close,  # PrimitiveField in generate_composite
         "unilateral_close": m.unilateral_close,  # PrimitiveField in generate_composite
+        "unilateral_anchor_close": m.unilateral_anchor_close,  # PrimitiveField in generate_composite
         "delayed_to_us": m.delayed_to_us,  # PrimitiveField in generate_composite
         "htlc_resolution": m.htlc_resolution,  # PrimitiveField in generate_composite
         "penalty": m.penalty,  # PrimitiveField in generate_composite
@@ -1195,6 +1207,7 @@ def feerates_onchain_fee_estimates2py(m):
         "opening_channel_satoshis": m.opening_channel_satoshis,  # PrimitiveField in generate_composite
         "mutual_close_satoshis": m.mutual_close_satoshis,  # PrimitiveField in generate_composite
         "unilateral_close_satoshis": m.unilateral_close_satoshis,  # PrimitiveField in generate_composite
+        "unilateral_close_nonanchor_satoshis": m.unilateral_close_nonanchor_satoshis,  # PrimitiveField in generate_composite
         "htlc_timeout_satoshis": m.htlc_timeout_satoshis,  # PrimitiveField in generate_composite
         "htlc_success_satoshis": m.htlc_success_satoshis,  # PrimitiveField in generate_composite
     })
@@ -1266,6 +1279,8 @@ def listpays_pays2py(m):
         "bolt11": m.bolt11,  # PrimitiveField in generate_composite
         "description": m.description,  # PrimitiveField in generate_composite
         "bolt12": m.bolt12,  # PrimitiveField in generate_composite
+        "amount_msat": amount2msat(m.amount_msat),  # PrimitiveField in generate_composite
+        "amount_sent_msat": amount2msat(m.amount_sent_msat),  # PrimitiveField in generate_composite
         "preimage": hexlify(m.preimage),  # PrimitiveField in generate_composite
         "number_of_parts": m.number_of_parts,  # PrimitiveField in generate_composite
         "erroronion": hexlify(m.erroronion),  # PrimitiveField in generate_composite
@@ -1275,6 +1290,24 @@ def listpays_pays2py(m):
 def listpays2py(m):
     return remove_default({
         "pays": [listpays_pays2py(i) for i in m.pays],  # ArrayField[composite] in generate_composite
+    })
+
+
+def listhtlcs_htlcs2py(m):
+    return remove_default({
+        "short_channel_id": m.short_channel_id,  # PrimitiveField in generate_composite
+        "id": m.id,  # PrimitiveField in generate_composite
+        "expiry": m.expiry,  # PrimitiveField in generate_composite
+        "amount_msat": amount2msat(m.amount_msat),  # PrimitiveField in generate_composite
+        "direction": str(m.direction),  # EnumField in generate_composite
+        "payment_hash": hexlify(m.payment_hash),  # PrimitiveField in generate_composite
+        "state": str(m.state),  # EnumField in generate_composite
+    })
+
+
+def listhtlcs2py(m):
+    return remove_default({
+        "htlcs": [listhtlcs_htlcs2py(i) for i in m.htlcs],  # ArrayField[composite] in generate_composite
     })
 
 
@@ -1297,6 +1330,7 @@ def setchannel_channels2py(m):
         "short_channel_id": m.short_channel_id,  # PrimitiveField in generate_composite
         "fee_base_msat": amount2msat(m.fee_base_msat),  # PrimitiveField in generate_composite
         "fee_proportional_millionths": m.fee_proportional_millionths,  # PrimitiveField in generate_composite
+        "ignore_fee_limits": m.ignore_fee_limits,  # PrimitiveField in generate_composite
         "minimum_htlc_out_msat": amount2msat(m.minimum_htlc_out_msat),  # PrimitiveField in generate_composite
         "warning_htlcmin_too_low": m.warning_htlcmin_too_low,  # PrimitiveField in generate_composite
         "maximum_htlc_out_msat": amount2msat(m.maximum_htlc_out_msat),  # PrimitiveField in generate_composite
@@ -1325,5 +1359,15 @@ def signmessage2py(m):
 
 
 def stop2py(m):
+    return remove_default({
+    })
+
+
+def preapprovekeysend2py(m):
+    return remove_default({
+    })
+
+
+def preapproveinvoice2py(m):
     return remove_default({
     })

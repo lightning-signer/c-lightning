@@ -29,13 +29,12 @@ jobs:
           -e TARGET_HOST=${{ matrix.TARGET_HOST }} \
           -e VALGRIND=${{ matrix.valgrind }} \
           -e DEVELOPER=1 \
-          -e EXPERIMENTAL_FEATURES=1 \
-          -e COMPAT=0 \
           -e PYTEST_PAR=2 \
           -e PYTEST_OPTS="--timeout=300" \
           -e TEST_CMD="make check-protos" \
           -e TEST_GROUP=1 \
           -e TEST_GROUP_COUNT=1 \
+          -e TIMEOUT=120 \
           cln-ci-ubuntu
       - name: Upload Unit Test Results
         if: always()

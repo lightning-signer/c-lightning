@@ -2,11 +2,12 @@ from fixtures import *  # noqa: F401,F403
 from fixtures import TEST_NETWORK
 from pyln.client import RpcError, Millisatoshi
 from utils import (
-    only_one, wait_for, sync_blockheight, first_channel_id, calc_lease_fee, check_coin_moves, anchor_expected, EXPERIMENTAL_FEATURES
+    only_one, wait_for, sync_blockheight, first_channel_id, calc_lease_fee, check_coin_moves
 )
 
 from pathlib import Path
 from pprint import pprint
+import os
 import pytest
 import re
 import unittest
@@ -18,14 +19,13 @@ def find_next_feerate(node, peer):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 @pytest.mark.developer("requres 'dev-queryrates' + 'dev-force-features'")
 def test_queryrates(node_factory, bitcoind):
 
-    opts = {'dev-no-reconnect': None}
-
-    if not anchor_expected():
-        opts['dev-force-features'] = '+21'
+    opts = {'dev-no-reconnect': None,
+            'experimental-anchors': None}
 
     l1, l2 = node_factory.get_nodes(2, opts=opts)
 
@@ -61,6 +61,7 @@ def test_queryrates(node_factory, bitcoind):
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.developer("uses dev-disconnect")
 @pytest.mark.openchannel('v1')  # Mixed v1 + v2, v2 manually turned on
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "commit c0cc285a causes: channel stub can only return point for commitment number zero")
 def test_multifunding_v2_best_effort(node_factory, bitcoind):
     '''
     Check that best_effort flag works.
@@ -194,7 +195,7 @@ def test_v2_fail_second(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, wait_for_announce=True)
 
     # Should have one channel between them.
-    only_one(only_one(l1.rpc.listpeers(l2.info['id'])['peers'])['channels'])
+    only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])
 
     amount = 2**24 - 1
     l1.fundwallet(amount + 10000000)
@@ -209,16 +210,20 @@ def test_v2_fail_second(node_factory, bitcoind):
     psbt = l1.rpc.fundpsbt(amount, '253perkw', 250, reserve=0)['psbt']
     start = l1.rpc.openchannel_init(l2.info['id'], amount, psbt)
 
+    # They will both see a pair of channels
+    assert len(l1.rpc.listpeerchannels(l2.info['id'])['channels']) == 2
+    assert len(l2.rpc.listpeerchannels(l1.info['id'])['channels']) == 2
+
     # We can abort a channel
     l1.rpc.openchannel_abort(start['channel_id'])
 
-    peer_info = only_one(l1.rpc.listpeers(l2.info['id'])['peers'])
     # We should have deleted the 'in-progress' channel info
-    only_one(peer_info['channels'])
+    only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])
 
     # FIXME: check that tx-abort was sent
     # Should be able to reattempt without reconnecting
     start = l1.rpc.openchannel_init(l2.info['id'], amount, psbt)
+    assert len(l1.rpc.listpeerchannels(l2.info['id'])['channels']) == 2
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
@@ -377,16 +382,156 @@ def test_v2_rbf_single(node_factory, bitcoind, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "handle_sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
-@pytest.mark.developer("requres 'dev-force-features'")
+def test_v2_rbf_abort_retry(node_factory, bitcoind, chainparams):
+    l1, l2 = node_factory.get_nodes(2, opts={'wumbo': None,
+                                             'allow_warning': True})
+
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    amount = 2**24
+    chan_amount = 100000
+    bitcoind.rpc.sendmany("",
+                          {l1.rpc.newaddr()['bech32']: amount / 10**8 + 0.01,
+                           l2.rpc.newaddr()['bech32']: amount / 10**8 + 0.01})
+    bitcoind.generate_block(1)
+    # Wait for it to arrive.
+    wait_for(lambda: len(l1.rpc.listfunds()['outputs']) > 0)
+    wait_for(lambda: len(l2.rpc.listfunds()['outputs']) > 0)
+
+    l1_utxos = ['{}:{}'.format(utxo['txid'], utxo['output']) for utxo in l1.rpc.listfunds()['outputs']]
+
+    # setup l2 to dual-fund!
+    l2.rpc.call('funderupdate', {'policy': 'match',
+                                 'policy_mod': 100,
+                                 'leases_only': False})
+
+    res = l1.rpc.fundchannel(l2.info['id'], chan_amount)
+    chan_id = res['channel_id']
+    vins = bitcoind.rpc.decoderawtransaction(res['tx'])['vin']
+    prev_utxos = ["{}:{}".format(vin['txid'], vin['vout']) for vin in vins if "{}:{}".format(vin['txid'], vin['vout']) in l1_utxos]
+
+    # Check that we're waiting for lockin
+    l1.daemon.wait_for_log(' to DUALOPEND_AWAITING_LOCKIN')
+
+    # Check that feerate info is correct
+    info_1 = only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])
+    next_rate = "{}perkw".format(info_1['next_feerate'][:-5])
+
+    # Initiate an RBF
+    startweight = 42 + 172  # base weight, funding output
+    initpsbt = l1.rpc.utxopsbt(chan_amount, next_rate, startweight,
+                               prev_utxos, reservedok=True,
+                               min_witness_weight=110,
+                               excess_as_change=True)
+
+    # Do the bump
+    bump = l1.rpc.openchannel_bump(chan_id, chan_amount, initpsbt['psbt'])
+
+    # We abort the channel mid-way throught the RBF
+    l1.rpc.openchannel_abort(chan_id)
+
+    with pytest.raises(RpcError):
+        l1.rpc.openchannel_update(chan_id, bump['psbt'])
+
+    # - initiate a channel open eclair -> cln
+    # - wait for the transaction to be published
+    # - eclair initiates rbf, and cancels it by sending tx_abort before exchanging commit_sig
+    # - at that point everything looks good, cln echoes the tx_abort and stays connected
+    # - eclair initiates another RBF attempt and sends tx_init_rbf: for some unknown reason, cln answers with channel_reestablish (??) followed by an error saying "Bad reestablish message: WIRE_TX_INIT_RBF"
+
+    # attempt to initiate an RBF again
+    info_1 = only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])
+    next_rate = "{}perkw".format(int(info_1['next_feerate'][:-5]) * 2)
+
+    # Gotta unreserve the psbt and re-reserve with higher feerate
+    l1.rpc.unreserveinputs(initpsbt['psbt'])
+    initpsbt = l1.rpc.utxopsbt(chan_amount, next_rate, startweight,
+                               prev_utxos, reservedok=True,
+                               min_witness_weight=110,
+                               excess_as_change=True)
+    # Do the bump+sign
+    bump = l1.rpc.openchannel_bump(chan_id, chan_amount, initpsbt['psbt'],
+                                   funding_feerate=next_rate)
+
+    update = l1.rpc.openchannel_update(chan_id, bump['psbt'])
+    signed_psbt = l1.rpc.signpsbt(update['psbt'])['signed_psbt']
+    l1.rpc.openchannel_signed(chan_id, signed_psbt)
+
+    bitcoind.generate_block(1)
+    sync_blockheight(bitcoind, [l1])
+    l1.daemon.wait_for_log(' to CHANNELD_NORMAL')
+    assert not l1.daemon.is_in_log('WIRE_CHANNEL_REESTABLISH')
+    assert not l2.daemon.is_in_log('WIRE_CHANNEL_REESTABLISH')
+
+
+@unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@pytest.mark.openchannel('v2')
+def test_v2_rbf_abort_channel_opens(node_factory, bitcoind, chainparams):
+    l1, l2 = node_factory.get_nodes(2, opts={'wumbo': None,
+                                             'allow_warning': True})
+
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    amount = 2**24
+    chan_amount = 100000
+    bitcoind.rpc.sendmany("",
+                          {l1.rpc.newaddr()['bech32']: amount / 10**8 + 0.01,
+                           l2.rpc.newaddr()['bech32']: amount / 10**8 + 0.01})
+    bitcoind.generate_block(1)
+    # Wait for it to arrive.
+    wait_for(lambda: len(l1.rpc.listfunds()['outputs']) > 0)
+    wait_for(lambda: len(l2.rpc.listfunds()['outputs']) > 0)
+
+    l1_utxos = ['{}:{}'.format(utxo['txid'], utxo['output']) for utxo in l1.rpc.listfunds()['outputs']]
+
+    # setup l2 to dual-fund!
+    l2.rpc.call('funderupdate', {'policy': 'match',
+                                 'policy_mod': 100,
+                                 'leases_only': False})
+
+    res = l1.rpc.fundchannel(l2.info['id'], chan_amount)
+    chan_id = res['channel_id']
+    vins = bitcoind.rpc.decoderawtransaction(res['tx'])['vin']
+    prev_utxos = ["{}:{}".format(vin['txid'], vin['vout']) for vin in vins if "{}:{}".format(vin['txid'], vin['vout']) in l1_utxos]
+
+    # Check that we're waiting for lockin
+    l1.daemon.wait_for_log(' to DUALOPEND_AWAITING_LOCKIN')
+
+    # Check that feerate info is correct
+    info_1 = only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])
+    next_rate = "{}perkw".format(info_1['next_feerate'][:-5])
+
+    # Initiate an RBF
+    startweight = 42 + 172  # base weight, funding output
+    initpsbt = l1.rpc.utxopsbt(chan_amount, next_rate, startweight,
+                               prev_utxos, reservedok=True,
+                               min_witness_weight=110,
+                               excess_as_change=True)
+
+    # Do the bump
+    bump = l1.rpc.openchannel_bump(chan_id, chan_amount, initpsbt['psbt'])
+
+    # We abort the channel mid-way throught the RBF
+    l1.rpc.openchannel_abort(chan_id)
+
+    with pytest.raises(RpcError):
+        l1.rpc.openchannel_update(chan_id, bump['psbt'])
+
+    # When the original open tx is mined, we should still arrive at
+    # NORMAL channel ops
+    bitcoind.generate_block(1)
+    sync_blockheight(bitcoind, [l1])
+    l1.daemon.wait_for_log(' to CHANNELD_NORMAL')
+
+
+@unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@pytest.mark.openchannel('v2')
 def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
 
     opts = {'funder-policy': 'match', 'funder-policy-mod': 100,
             'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
+            'experimental-anchors': None,
             'may_reconnect': True}
-
-    if not anchor_expected():
-        opts['dev-force-features'] = '+21'
 
     l1, l2 = node_factory.get_nodes(2, opts=opts)
 
@@ -1200,6 +1345,7 @@ def test_funder_options(node_factory, bitcoind):
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "dual-funding not supported yet") # FIXME - should work with VLS_PERMISSIVE
 def test_funder_contribution_limits(node_factory, bitcoind):
     opts = {'experimental-dual-fund': None,
             'feerates': (5000, 5000, 5000, 5000)}
@@ -1262,21 +1408,19 @@ def test_funder_contribution_limits(node_factory, bitcoind):
 
 
 @pytest.mark.openchannel('v2')
-@pytest.mark.developer("requres 'dev-disconnect', 'dev-force-features'")
+@pytest.mark.developer("requres 'dev-disconnect'")
 def test_inflight_dbload(node_factory, bitcoind):
     """Bad db field access breaks Postgresql on startup with opening leases"""
     disconnects = ["@WIRE_COMMITMENT_SIGNED"]
 
     opts = [{'experimental-dual-fund': None, 'dev-no-reconnect': None,
-             'may_reconnect': True, 'disconnect': disconnects},
+             'may_reconnect': True, 'disconnect': disconnects,
+             'experimental-anchors': None},
             {'experimental-dual-fund': None, 'dev-no-reconnect': None,
              'may_reconnect': True, 'funder-policy': 'match',
              'funder-policy-mod': 100, 'lease-fee-base-sat': '100sat',
-             'lease-fee-basis': 100}]
-
-    if not anchor_expected():
-        for opt in opts:
-            opt['dev-force-features'] = '+21'
+             'lease-fee-basis': 100,
+             'experimental-anchors': None}]
 
     l1, l2 = node_factory.get_nodes(2, opts=opts)
 
@@ -1342,6 +1486,7 @@ def test_zeroconf_mindepth(bitcoind, node_factory):
     wait_for(lambda: only_one(l2.rpc.listpeerchannels()['channels'])['state'] == "CHANNELD_NORMAL")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_open(bitcoind, node_factory):
     """Let's open a zeroconf channel
 
@@ -1406,6 +1551,7 @@ def test_zeroconf_open(bitcoind, node_factory):
     l2.rpc.pay(inv)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd inplace and socket don't generate WIRE_HSMD_CUPDATE_SIG_REQ log messages")
 def test_zeroconf_public(bitcoind, node_factory, chainparams):
     """Test that we transition correctly from zeroconf to public
 
@@ -1509,6 +1655,7 @@ def test_zeroconf_public(bitcoind, node_factory, chainparams):
         wait_for(lambda: only_one([x for x in n.rpc.bkpr_listbalances()['accounts'] if x['account'] == channel_id])['account_resolved'])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_forward(node_factory, bitcoind):
     """Ensure that we can use zeroconf channels in forwards.
 
@@ -1574,7 +1721,6 @@ def test_buy_liquidity_ad_no_v2(node_factory, bitcoind):
 
 
 @pytest.mark.openchannel('v2')
-@pytest.mark.developer("dev-force-features required")
 def test_v2_replay_bookkeeping(node_factory, bitcoind):
     """ Test that your bookkeeping for a liquidity ad is good
         even if we replay the opening and locking tx!
@@ -1582,14 +1728,12 @@ def test_v2_replay_bookkeeping(node_factory, bitcoind):
 
     opts = [{'funder-policy': 'match', 'funder-policy-mod': 100,
              'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
-             'rescan': 10, 'funding-confirms': 6, 'may_reconnect': True},
+             'rescan': 10, 'funding-confirms': 6, 'may_reconnect': True,
+             'experimental-anchors': None},
             {'funder-policy': 'match', 'funder-policy-mod': 100,
              'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
-             'may_reconnect': True}]
-
-    if not anchor_expected():
-        for opt in opts:
-            opt['dev-force-features'] = '+21'
+             'may_reconnect': True,
+             'experimental-anchors': None}]
 
     l1, l2, = node_factory.get_nodes(2, opts=opts)
     amount = 500000
@@ -1641,21 +1785,18 @@ def test_v2_replay_bookkeeping(node_factory, bitcoind):
 
 
 @pytest.mark.openchannel('v2')
-@pytest.mark.developer("dev-force-features required")
 def test_buy_liquidity_ad_check_bookkeeping(node_factory, bitcoind):
     """ Test that your bookkeeping for a liquidity ad is good."""
 
     opts = [{'funder-policy': 'match', 'funder-policy-mod': 100,
              'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
              'rescan': 10, 'disable-plugin': 'bookkeeper',
-             'funding-confirms': 6, 'may_reconnect': True},
+             'funding-confirms': 6, 'may_reconnect': True,
+             'experimental-anchors': None},
             {'funder-policy': 'match', 'funder-policy-mod': 100,
              'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
-             'may_reconnect': True}]
-
-    if not anchor_expected():
-        for opt in opts:
-            opt['dev-force-features'] = '+21'
+             'may_reconnect': True,
+             'experimental-anchors': None}]
 
     l1, l2, = node_factory.get_nodes(2, opts=opts)
     amount = 500000
@@ -1763,6 +1904,7 @@ def test_scid_alias_private(node_factory, bitcoind):
     l1.rpc.waitsendpay(inv['payment_hash'])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_multichan_forward(node_factory):
     """The freedom to choose the forward channel bytes us when it is 0conf
 
@@ -1808,6 +1950,7 @@ def test_zeroconf_multichan_forward(node_factory):
                                .format(normal_scid, zeroconf_scid))
 
 
+@pytest.mark.developer("dev-allowdustreserve")
 def test_zeroreserve(node_factory, bitcoind):
     """Ensure we can set the reserves.
 
@@ -1887,6 +2030,7 @@ def test_zeroreserve(node_factory, bitcoind):
     assert len(decoded['vout']) == 1 if TEST_NETWORK == 'regtest' else 2
 
 
+@pytest.mark.developer("dev-allowdustreserve")
 def test_zeroreserve_mixed(node_factory, bitcoind):
     """l1 runs with zeroreserve, l2 and l3 without, should still work
 
@@ -1917,6 +2061,7 @@ def test_zeroreserve_mixed(node_factory, bitcoind):
     l3.rpc.fundchannel(l1.info['id'], 10**6)
 
 
+@pytest.mark.developer("dev-allowdustreserve")
 def test_zeroreserve_alldust(node_factory):
     """If we allow dust reserves we need larger fundings
 
@@ -2018,7 +2163,7 @@ def test_openchannel_no_confirmed_inputs_opener(node_factory, bitcoind):
     l2_opts = l1_opts.copy()
     l1_opts['require-confirmed-inputs'] = True
     l1, l2 = node_factory.get_nodes(2, opts=[l1_opts, l2_opts])
-    assert l1.rpc.listconfigs()['require-confirmed-inputs']
+    assert l1.rpc.listconfigs()['configs']['require-confirmed-inputs']['value_bool'] is True
 
     amount = 500000
     l1.fundwallet(20000000)
@@ -2059,7 +2204,7 @@ def test_openchannel_no_unconfirmed_inputs_accepter(node_factory, bitcoind):
     l2_opts = l1_opts.copy()
     l2_opts['require-confirmed-inputs'] = True
     l1, l2 = node_factory.get_nodes(2, opts=[l1_opts, l2_opts])
-    assert l2.rpc.listconfigs()['require-confirmed-inputs']
+    assert l2.rpc.listconfigs()['configs']['require-confirmed-inputs']['value_bool'] is True
 
     amount = 500000
     l1.fundwallet(20000000)
@@ -2110,7 +2255,7 @@ def test_openchannel_no_unconfirmed_inputs_accepter(node_factory, bitcoind):
     l2.stop()
     del l2.daemon.opts['require-confirmed-inputs']
     l2.start()
-    assert not l2.rpc.listconfigs()['require-confirmed-inputs']
+    assert l2.rpc.listconfigs()['configs']['require-confirmed-inputs']['value_bool'] is False
 
     # Turn the mock back on so we pretend everything l1 sends is unconf
     l2.daemon.rpcproxy.mock_rpc('gettxout', _no_utxo_response)
@@ -2133,18 +2278,18 @@ def test_openchannel_no_unconfirmed_inputs_accepter(node_factory, bitcoind):
     _verify_utxos(l1, utxo_lookups)
 
 
-@unittest.skipIf(not EXPERIMENTAL_FEATURES, "anchors not available")
-@pytest.mark.developer("dev-force-features, dev-queryrates required")
+@unittest.skip("anchors not available")
+@pytest.mark.developer("dev-queryrates required")
 @pytest.mark.openchannel('v2')
 def test_no_anchor_liquidity_ads(node_factory, bitcoind):
     """ Liquidity ads requires anchors, which are no longer a
     requirement for dual-funded channels. """
 
-    l1_opts = {'funder-policy': 'match', 'funder-policy-mod': 100,
+    l2_opts = {'funder-policy': 'match', 'funder-policy-mod': 100,
                'lease-fee-base-sat': '100sat', 'lease-fee-basis': 100,
                'may_reconnect': True, 'funder-lease-requests-only': False}
-    l2_opts = l1_opts.copy()
-    l2_opts['dev-force-features'] = ["-21"]
+    l1_opts = l2_opts.copy()
+    l1_opts['experimental-anchors'] = None
     l1, l2 = node_factory.get_nodes(2, opts=[l1_opts, l2_opts])
 
     feerate = 2000
@@ -2169,3 +2314,116 @@ def test_no_anchor_liquidity_ads(node_factory, bitcoind):
     assert chan['state'] == 'DUALOPEND_AWAITING_LOCKIN'
     assert chan['funding']['local_funds_msat'] == chan['funding']['remote_funds_msat']
     assert 'option_anchor_outputs' not in chan['features']
+
+
+@unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd has different feerates')
+@pytest.mark.parametrize("anchors", [False, True])
+def test_commitment_feerate(bitcoind, node_factory, anchors):
+    opts = {}
+    if anchors:
+        opts['experimental-anchors'] = None
+
+    l1, l2 = node_factory.get_nodes(2, opts=opts)
+
+    opening_feerate = 2000
+    if anchors:
+        # anchors use lowball fees
+        commitment_feerate = 3750
+    else:
+        commitment_feerate = opening_feerate
+
+    l1.fundwallet(10**8)
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    l1.rpc.fundchannel(l2.info['id'], 10**6,
+                       feerate=f'{opening_feerate}perkw')
+
+    wait_for(lambda: bitcoind.rpc.getrawmempool() != [])
+    tx = only_one([t for t in bitcoind.rpc.getrawmempool(True).values()])
+    feerate_perkw = int(tx['fees']['base'] * 100_000_000) / (tx['weight'] / 1000)
+    assert opening_feerate - 10 < feerate_perkw < opening_feerate + 10
+
+    bitcoind.generate_block(1)
+
+    l2.stop()
+    l1.rpc.close(l2.info['id'], unilateraltimeout=1)
+
+    # feerate for this will be the same
+    wait_for(lambda: bitcoind.rpc.getrawmempool() != [])
+    tx = only_one([t for t in bitcoind.rpc.getrawmempool(True).values()])
+    fee = int(tx['fees']['base'] * 100_000_000)
+
+    # Weight is idealized worst case, and we don't meet it!
+    if anchors:
+        # 200 is the approximate cost estimate used for anchor outputs.
+        assert tx['weight'] < 1124 - 200
+    else:
+        assert tx['weight'] < 724
+
+    if anchors:
+        # We pay for two anchors, but only produce one.
+        fee -= 330
+        weight = 1124
+    else:
+        weight = 724
+    feerate_perkw = fee / (weight / 1000)
+    assert commitment_feerate - 10 < feerate_perkw < commitment_feerate + 10
+
+
+@unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd has different tx costs')
+def test_anchor_min_emergency(bitcoind, node_factory):
+    l1, l2 = node_factory.line_graph(2, opts={'experimental-anchors': None},
+                                     fundchannel=False)
+
+    addr = l1.rpc.newaddr()['bech32']
+    bitcoind.rpc.sendtoaddress(addr, 5000000 / 10**8)
+    bitcoind.generate_block(1, wait_for_mempool=1)
+    wait_for(lambda: l1.rpc.listfunds()['outputs'] != [])
+
+    # Cost of tx itself is 3637.
+    with pytest.raises(RpcError, match=r'We would not have enough left for min-emergency-msat 25000sat'):
+        l1.rpc.fundchannel(l2.info['id'], f'{5000000 - 3637}sat')
+
+    l1.rpc.fundchannel(l2.info['id'], 'all')
+    bitcoind.generate_block(1, wait_for_mempool=1)
+
+    # Wait for l1 to see that spend.
+    wait_for(lambda: len(l1.rpc.listfunds()['outputs']) == 1)
+    # Default is 25000 sats.
+    assert only_one(l1.rpc.listfunds()['outputs'])['amount_msat'] == Millisatoshi('25000sat')
+
+    # And we can't spend it, either!
+    addr2 = l2.rpc.newaddr()['bech32']
+    with pytest.raises(RpcError, match=r'We would not have enough left for min-emergency-msat 25000sat'):
+        l1.rpc.withdraw(addr2, '500sat')
+
+    with pytest.raises(RpcError, match=r'We would not have enough left for min-emergency-msat 25000sat'):
+        l1.rpc.withdraw(addr2, 'all')
+
+    # Make sure channeld tells gossipd about channel before we close, otherwise
+    # we get spurious "bad gossip" complaints if l2 sends channel_updates.
+    l1.daemon.wait_for_log("received private channel announcement from channeld")
+
+    # Even with onchain anchor channel, it still keeps reserve (just in case!).
+    l1.rpc.close(l2.info['id'])
+    bitcoind.generate_block(1, wait_for_mempool=1)
+    sync_blockheight(bitcoind, [l1])
+
+    # This workse, but will leave the emergency funds as change.
+    l1.rpc.withdraw(addr2, 'all')
+    bitcoind.generate_block(1, wait_for_mempool=1)
+    sync_blockheight(bitcoind, [l1])
+
+    wait_for(lambda: [(o['amount_msat'], o['status']) for o in l1.rpc.listfunds()['outputs']] == [(Millisatoshi('25000sat'), 'confirmed')])
+
+    # Can't spend it!
+    with pytest.raises(RpcError, match=r'We would not have enough left for min-emergency-msat 25000sat'):
+        l1.rpc.withdraw(addr2, 'all')
+
+    # Once it's totally forgotten, we can spend that!
+    bitcoind.generate_block(99)
+    wait_for(lambda: l1.rpc.listpeerchannels()['channels'] == [])
+
+    # And it's *all* gone!
+    l1.rpc.withdraw(addr2, 'all')
+    bitcoind.generate_block(1, wait_for_mempool=1)
+    wait_for(lambda: l1.rpc.listfunds()['outputs'] == [])

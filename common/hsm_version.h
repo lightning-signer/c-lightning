@@ -13,6 +13,9 @@
  * v4: 41a730986c51b930e2d8d12b3169d24966c2004e08d424bdda310edbbde5ba70
  * v4 with check_pubkey: 48b3992745aa3c6ab6ce5cdaee9082cb7d70017f523d322015e9710bf49fd193
  * v4 with sign_any_penalty_to_us: ead7963185194a515d1f14d2c44401392575299d68ce9a13d8a12baff3cf4f35
+ * v4 with sign_anchorspend: 8a30722e38b56e82af566b9629ff18da01fcebd1e80ec67f04d8b3a2fa66d81c
+ * v4 with sign_htlc_tx_mingle: b9247e75d41ee1b3fc2f7db0bac8f4e92d544ab2f017d430ae3a000589c384e5
+ * v4 with splicing: 06f21012936f825913af289fa81af1512c9ada1cb97c611698975a8fd287edbb
  */
 #define HSM_MIN_VERSION 3
 #define HSM_MAX_VERSION 4

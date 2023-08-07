@@ -43,7 +43,7 @@ VG=VALGRIND=1 valgrind -q --error-exitcode=7
 VG_TEST_ARGS = --track-origins=yes --leak-check=full --show-reachable=yes --errors-for-leak-kinds=all
 endif
 
-ifeq ($(DEVELOPER),1)
+ifeq ($(DEBUGBUILD),1)
 DEV_CFLAGS=-DCCAN_TAKE_DEBUG=1 -DCCAN_TAL_DEBUG=1 -DCCAN_JSON_OUT_DEBUG=1
 else
 DEV_CFLAGS=
@@ -51,6 +51,10 @@ endif
 
 ifeq ($(COVERAGE),1)
 COVFLAGS = --coverage
+endif
+
+ifeq ($(CLANG_COVERAGE),1)
+COVFLAGS+=-fprofile-instr-generate -fcoverage-mapping
 endif
 
 ifeq ($(PIE),1)
@@ -68,9 +72,9 @@ PYTEST_OPTS := -v -p no:logging $(PYTEST_OPTS)
 MY_CHECK_PYTHONPATH=$${PYTHONPATH}$${PYTHONPATH:+:}$(shell pwd)/contrib/pyln-client:$(shell pwd)/contrib/pyln-testing:$(shell pwd)/contrib/pyln-proto/:$(shell pwd)/external/lnprototest:$(shell pwd)/contrib/pyln-spec/bolt1:$(shell pwd)/contrib/pyln-spec/bolt2:$(shell pwd)/contrib/pyln-spec/bolt4:$(shell pwd)/contrib/pyln-spec/bolt7
 # Collect generated python files to be excluded from lint checks
 PYTHON_GENERATED= \
-	contrib/pyln-testing/pyln/testing/primitives_pb2.py \
-	contrib/pyln-testing/pyln/testing/node_pb2_grpc.py \
-	contrib/pyln-testing/pyln/testing/node_pb2.py \
+	contrib/pyln-grpc-proto/pyln/grpc/primitives_pb2.py \
+	contrib/pyln-grpc-proto/pyln/grpc/node_pb2_grpc.py \
+	contrib/pyln-grpc-proto/pyln/grpc/node_pb2.py \
 	contrib/pyln-testing/pyln/testing/grpc2py.py
 
 # Options to pass to cppcheck. Mostly used to exclude files that are
@@ -177,6 +181,7 @@ CCAN_HEADERS :=						\
 	$(CCANDIR)/ccan/json_out/json_out.h		\
 	$(CCANDIR)/ccan/likely/likely.h			\
 	$(CCANDIR)/ccan/list/list.h			\
+	$(CCANDIR)/ccan/lqueue/lqueue.h			\
 	$(CCANDIR)/ccan/mem/mem.h			\
 	$(CCANDIR)/ccan/membuf/membuf.h			\
 	$(CCANDIR)/ccan/noerr/noerr.h			\
@@ -236,6 +241,9 @@ DEFAULT_TARGETS :=
 ifeq ("$(OS)-$(ARCH)", "Darwin-arm64")
 CPATH := /opt/homebrew/include
 LIBRARY_PATH := /opt/homebrew/lib
+LDFLAGS := -L/opt/homebrew/opt/sqlite/lib
+CPPFLAGS := -I/opt/homebrew/opt/sqlite/include
+PKG_CONFIG_PATH=/opt/homebrew/opt/sqlite/lib/pkgconfig
 else
 CPATH := /usr/local/include
 LIBRARY_PATH := /usr/local/lib
@@ -258,11 +266,11 @@ LDFLAGS += $(PIE_LDFLAGS) $(CSANFLAGS) $(COPTFLAGS)
 
 ifeq ($(STATIC),1)
 # For MacOS, Jacob Rapoport <jacob@rumblemonkey.com> changed this to:
-#  -L/usr/local/lib -Wl,-lgmp -lsqlite3 -lz -Wl,-lm -lpthread -ldl $(COVFLAGS)
+#  -L/usr/local/lib -lsqlite3 -lz -Wl,-lm -lpthread -ldl $(COVFLAGS)
 # But that doesn't static link.
-LDLIBS = -L$(CPATH) -Wl,-dn -lgmp $(SQLITE3_LDLIBS) -lz -Wl,-dy -lm -lpthread -ldl $(COVFLAGS)
+LDLIBS = -L$(CPATH) -Wl,-dn $(SQLITE3_LDLIBS) -lz -Wl,-dy -lm -lpthread -ldl $(COVFLAGS)
 else
-LDLIBS = -L$(CPATH) -lm -lgmp $(SQLITE3_LDLIBS) -lz $(COVFLAGS)
+LDLIBS = -L$(CPATH) -lm $(SQLITE3_LDLIBS) -lz $(COVFLAGS)
 endif
 
 # If we have the postgres client library we need to link against it as well
@@ -270,7 +278,7 @@ ifeq ($(HAVE_POSTGRES),1)
 LDLIBS += $(POSTGRES_LDLIBS)
 endif
 
-default: show-flags all-programs all-test-programs doc-all default-targets
+default: show-flags gen all-programs all-test-programs doc-all default-targets $(PYTHON_GENERATED)
 
 ifneq ($(SUPPRESS_GENERATION),1)
 FORCE = FORCE
@@ -290,14 +298,6 @@ config.vars:
 
 %.o: %.c
 	@$(call VERBOSE, "cc $<", $(CC) $(CFLAGS) -c -o $@ $<)
-
-# '_exp' inserted before _wiregen.[ch] to demark experimental
-# spec-derived headers, which are *not* committed into git.
-ifeq ($(EXPERIMENTAL_FEATURES),1)
-EXP := _exp
-else
-EXP :=
-endif
 
 # tools/update-mocks.sh does nasty recursive make, must not do this!
 ifeq ($(SUPPRESS_GENERATION),1)
@@ -367,20 +367,27 @@ ifneq ($(RUST),0)
 	include cln-rpc/Makefile
 	include cln-grpc/Makefile
 
-GRPC_GEN = contrib/pyln-testing/pyln/testing/node_pb2.py \
-	contrib/pyln-testing/pyln/testing/node_pb2_grpc.py \
-	contrib/pyln-testing/pyln/testing/primitives_pb2.py
+$(MSGGEN_GENALL)&: doc/schemas/*.request.json doc/schemas/*.schema.json
+	PYTHONPATH=contrib/msggen python3 contrib/msggen/msggen/__main__.py
+
+# The compiler assumes that the proto files are in the same
+# directory structure as the generated files will be. Since we
+# don't do that we need to path the files up.
+GRPC_DIR = contrib/pyln-grpc-proto/pyln
+GRPC_PATH = $(GRPC_DIR)/grpc
+
+GRPC_GEN = \
+	$(GRPC_PATH)/node_pb2.py \
+	$(GRPC_PATH)/node_pb2_grpc.py \
+	$(GRPC_PATH)/primitives_pb2.py
 
 ALL_TEST_GEN += $(GRPC_GEN)
 
-$(GRPC_GEN): cln-grpc/proto/node.proto cln-grpc/proto/primitives.proto
-	python -m grpc_tools.protoc -I cln-grpc/proto cln-grpc/proto/node.proto --python_out=contrib/pyln-testing/pyln/testing/ --grpc_python_out=contrib/pyln-testing/pyln/testing/ --experimental_allow_proto3_optional
-	python -m grpc_tools.protoc -I cln-grpc/proto cln-grpc/proto/primitives.proto --python_out=contrib/pyln-testing/pyln/testing/ --experimental_allow_proto3_optional
-	# The compiler assumes that the proto files are in the same
-	# directory structure as the generated files will be. Since we
-	# don't do that we need to path the files up.
-	find contrib/pyln-testing/pyln/testing/ -type f -name "*.py" -print0 | xargs -0 sed -i 's/^import \(.*\)_pb2 as .*__pb2/from . import \1_pb2 as \1__pb2/g'
-
+$(GRPC_GEN)&: cln-grpc/proto/node.proto cln-grpc/proto/primitives.proto
+	python -m grpc_tools.protoc -I cln-grpc/proto cln-grpc/proto/node.proto --python_out=$(GRPC_PATH)/ --grpc_python_out=$(GRPC_PATH)/ --experimental_allow_proto3_optional
+	python -m grpc_tools.protoc -I cln-grpc/proto cln-grpc/proto/primitives.proto --python_out=$(GRPC_PATH)/ --experimental_allow_proto3_optional
+	find $(GRPC_DIR)/ -type f -name "*.py" -print0 | xargs -0 sed -i'.bak' -e 's/^import \(.*\)_pb2 as .*__pb2/from pyln.grpc import \1_pb2 as \1__pb2/g'
+	find $(GRPC_DIR)/ -type f -name "*.py.bak" -delete
 endif
 
 # We make pretty much everything depend on these.
@@ -420,7 +427,7 @@ mkdocs.yml: $(MANPAGES:=.md)
 
 
 # Don't delete these intermediaries.
-.PRECIOUS: $(ALL_GEN_HEADERS) $(ALL_GEN_SOURCES)
+.PRECIOUS: $(ALL_GEN_HEADERS) $(ALL_GEN_SOURCES) $(PYTHON_GENERATED)
 
 # Every single object file.
 ALL_OBJS := $(ALL_C_SOURCES:.c=.o)
@@ -516,9 +523,6 @@ check-whitespace/%: %
 
 check-whitespace: check-whitespace/Makefile check-whitespace/tools/check-bolt.c $(ALL_NONGEN_SRCFILES:%=check-whitespace/%)
 
-check-markdown:
-	@tools/check-markdown.sh
-
 check-spelling:
 	@tools/check-spelling.sh
 
@@ -570,7 +574,10 @@ check-amount-access:
 	@! (git grep -nE "(->|\.)(milli)?satoshis" -- "*.c" "*.h" ":(exclude)common/amount.*" ":(exclude)*/test/*" | grep -v '/* Raw:')
 	@! git grep -nE "\\(struct amount_(m)?sat\\)" -- "*.c" "*.h" ":(exclude)common/amount.*" ":(exclude)*/test/*"
 
-check-source: check-makefile check-source-bolt check-whitespace check-markdown check-spelling check-python check-includes check-cppcheck check-shellcheck check-setup_locale check-tmpctx check-discouraged-functions check-amount-access
+# For those without working cppcheck
+check-source-no-cppcheck: check-makefile check-source-bolt check-whitespace check-spelling check-python check-includes check-shellcheck check-setup_locale check-tmpctx check-discouraged-functions check-amount-access
+
+check-source: check-source-no-cppcheck check-cppcheck
 
 full-check: check check-source
 
@@ -593,6 +600,8 @@ CHECK_GEN_ALL = \
 	wallet/statements_gettextgen.po \
 	.msggen.json \
 	doc/index.rst
+
+gen:  $(CHECK_GEN_ALL)
 
 check-gen-updated:  $(CHECK_GEN_ALL)
 	@echo "Checking for generated files being changed by make"
@@ -664,7 +673,7 @@ $(ALL_FUZZ_TARGETS):
 
 
 # Everything depends on the CCAN headers, and Makefile
-$(CCAN_OBJS) $(CDUMP_OBJS): $(CCAN_HEADERS) Makefile
+$(CCAN_OBJS) $(CDUMP_OBJS): $(CCAN_HEADERS) Makefile ccan_compat.h
 
 # Except for CCAN, we treat everything else as dependent on external/ bitcoin/ common/ wire/ and all generated headers, and Makefile
 $(ALL_OBJS): $(BITCOIN_HEADERS) $(COMMON_HEADERS) $(CCAN_HEADERS) $(WIRE_HEADERS) $(ALL_GEN_HEADERS) $(EXTERNAL_HEADERS) Makefile
@@ -690,6 +699,7 @@ default-targets: $(DEFAULT_TARGETS)
 
 distclean: clean
 	$(RM) ccan/config.h config.vars
+	$(RM) $(PYTHON_GENERATED)
 
 maintainer-clean: distclean
 	@echo 'This command is intended for maintainers to use; it'
@@ -727,11 +737,11 @@ pyln-release-%:
 	cd contrib/pyln-$* && $(MAKE) prod-release
 
 # These must both be enabled for update-mocks
-ifeq ($(DEVELOPER)$(EXPERIMENTAL_FEATURES),11)
+ifeq ($(DEVELOPER),1)
 update-mocks: $(ALL_TEST_PROGRAMS:%=update-mocks/%.c)
 else
 update-mocks:
-	@echo Need DEVELOPER=1 and EXPERIMENTAL_FEATURES=1 to regenerate mocks >&2; exit 1
+	@echo Need DEVELOPER=1 to regenerate mocks >&2; exit 1
 endif
 
 $(ALL_TEST_PROGRAMS:%=update-mocks/%.c): $(ALL_GEN_HEADERS) $(EXTERNAL_LIBS) libccan.a ccan/ccan/cdump/tools/cdump-enumstr config.vars
@@ -784,17 +794,18 @@ installdirs:
 
 # $(PLUGINS) is defined in plugins/Makefile.
 
-install-program: installdirs $(BIN_PROGRAMS) $(PKGLIBEXEC_PROGRAMS) $(PLUGINS)
+install-program: installdirs $(BIN_PROGRAMS) $(PKGLIBEXEC_PROGRAMS) $(PLUGINS) $(PY_PLUGINS)
 	@$(NORMAL_INSTALL)
 	$(INSTALL_PROGRAM) $(BIN_PROGRAMS) $(DESTDIR)$(bindir)
 	$(INSTALL_PROGRAM) $(PKGLIBEXEC_PROGRAMS) $(DESTDIR)$(pkglibexecdir)
 	[ -z "$(PLUGINS)" ] || $(INSTALL_PROGRAM) $(PLUGINS) $(DESTDIR)$(plugindir)
+	for PY in $(PY_PLUGINS); do DIR=`dirname $$PY`; DST=$(DESTDIR)$(plugindir)/`basename $$DIR`; $(INSTALL_PROGRAM) -d $$DIR; cp -a $$DIR $$DST ; done
 
 MAN1PAGES = $(filter %.1,$(MANPAGES))
 MAN5PAGES = $(filter %.5,$(MANPAGES))
 MAN7PAGES = $(filter %.7,$(MANPAGES))
 MAN8PAGES = $(filter %.8,$(MANPAGES))
-DOC_DATA = README.md doc/INSTALL.md doc/HACKING.md LICENSE
+DOC_DATA = README.md LICENSE
 
 install-data: installdirs $(MAN1PAGES) $(MAN5PAGES) $(MAN7PAGES) $(MAN8PAGES) $(DOC_DATA)
 	@$(NORMAL_INSTALL)
@@ -823,7 +834,7 @@ TESTBINS = \
 # version of `lightningd` leading to bogus results. We bundle up all
 # built artefacts here, and will unpack them on the tester (overlaying
 # on top of the checked out repo as if we had just built it in place).
-testpack.tar.bz2: $(BIN_PROGRAMS) $(PKGLIBEXEC_PROGRAMS) $(PLUGINS) $(MAN1PAGES) $(MAN5PAGES) $(MAN7PAGES) $(MAN8PAGES) $(DOC_DATA) config.vars $(TESTBINS) $(DEVTOOLS)
+testpack.tar.bz2: $(BIN_PROGRAMS) $(PKGLIBEXEC_PROGRAMS) $(PLUGINS) $(PY_PLUGINS) $(MAN1PAGES) $(MAN5PAGES) $(MAN7PAGES) $(MAN8PAGES) $(DOC_DATA) config.vars $(TESTBINS) $(DEVTOOLS)
 	tar -caf $@ $^
 
 uninstall:
@@ -835,6 +846,10 @@ uninstall:
 	@for f in $(PLUGINS); do \
 	  $(ECHO) rm -f $(DESTDIR)$(plugindir)/`basename $$f`; \
 	  rm -f $(DESTDIR)$(plugindir)/`basename $$f`; \
+	done
+	@for f in $(PY_PLUGINS); do \
+	  $(ECHO) rm -rf $(DESTDIR)$(plugindir)/$$(basename $$(dirname $$f)); \
+	  rm -rf $(DESTDIR)$(plugindir)/$$(basename $$(dirname $$f)); \
 	done
 	@for f in $(PKGLIBEXEC_PROGRAMS); do \
 	  $(ECHO) rm -f $(DESTDIR)$(pkglibexecdir)/`basename $$f`; \

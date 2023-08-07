@@ -48,6 +48,10 @@ struct short_channel_id *decode_short_ids(const tal_t *ctx UNNEEDED, const u8 *e
 /* Generated stub for find_peer */
 struct peer *find_peer(struct daemon *daemon UNNEEDED, const struct node_id *id UNNEEDED)
 { fprintf(stderr, "find_peer called!\n"); abort(); }
+/* Generated stub for first_random_peer */
+struct peer *first_random_peer(struct daemon *daemon UNNEEDED,
+			       struct peer_node_id_map_iter *it UNNEEDED)
+{ fprintf(stderr, "first_random_peer called!\n"); abort(); }
 /* Generated stub for fromwire_gossipd_dev_set_max_scids_encode_size */
 bool fromwire_gossipd_dev_set_max_scids_encode_size(const void *p UNNEEDED, u32 *max UNNEEDED)
 { fprintf(stderr, "fromwire_gossipd_dev_set_max_scids_encode_size called!\n"); abort(); }
@@ -77,13 +81,14 @@ struct timeabs gossip_time_now(const struct routing_state *rstate UNNEEDED)
 { fprintf(stderr, "gossip_time_now called!\n"); abort(); }
 /* Generated stub for handle_channel_update */
 u8 *handle_channel_update(struct routing_state *rstate UNNEEDED, const u8 *update TAKES UNNEEDED,
-			  struct peer *peer UNNEEDED,
+			  const struct node_id *source_peer TAKES UNNEEDED,
 			  struct short_channel_id *unknown_scid UNNEEDED,
 			  bool force UNNEEDED)
 { fprintf(stderr, "handle_channel_update called!\n"); abort(); }
 /* Generated stub for handle_node_announcement */
-u8 *handle_node_announcement(struct routing_state *rstate UNNEEDED, const u8 *node UNNEEDED,
-			     struct peer *peer UNNEEDED, bool *was_unknown UNNEEDED)
+u8 *handle_node_announcement(struct routing_state *rstate UNNEEDED, const u8 *node_ann UNNEEDED,
+			     const struct node_id *source_peer TAKES UNNEEDED,
+			     bool *was_unknown UNNEEDED)
 { fprintf(stderr, "handle_node_announcement called!\n"); abort(); }
 /* Generated stub for master_badmsg */
 void master_badmsg(u32 type_expected UNNEEDED, const u8 *msg)
@@ -94,11 +99,18 @@ struct oneshot *new_reltimer_(struct timers *timers UNNEEDED,
 			      struct timerel expire UNNEEDED,
 			      void (*cb)(void *) UNNEEDED, void *arg UNNEEDED)
 { fprintf(stderr, "new_reltimer_ called!\n"); abort(); }
+/* Generated stub for next_random_peer */
+struct peer *next_random_peer(struct daemon *daemon UNNEEDED,
+			      const struct peer *first UNNEEDED,
+			      struct peer_node_id_map_iter *it UNNEEDED)
+{ fprintf(stderr, "next_random_peer called!\n"); abort(); }
 /* Generated stub for node_has_broadcastable_channels */
 bool node_has_broadcastable_channels(const struct node *node UNNEEDED)
 { fprintf(stderr, "node_has_broadcastable_channels called!\n"); abort(); }
 /* Generated stub for peer_supplied_good_gossip */
-void peer_supplied_good_gossip(struct peer *peer UNNEEDED, size_t amount UNNEEDED)
+void peer_supplied_good_gossip(struct daemon *daemon UNNEEDED,
+			       const struct node_id *source_peer UNNEEDED,
+			       size_t amount UNNEEDED)
 { fprintf(stderr, "peer_supplied_good_gossip called!\n"); abort(); }
 /* Generated stub for queue_peer_from_store */
 void queue_peer_from_store(struct peer *peer UNNEEDED,

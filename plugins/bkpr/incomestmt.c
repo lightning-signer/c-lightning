@@ -47,12 +47,7 @@ static struct income_event *chain_to_income(const tal_t *ctx,
 	inc->currency = tal_strdup(inc, ev->currency);
 	inc->timestamp = ev->timestamp;
 	inc->outpoint = tal_dup(inc, struct bitcoin_outpoint, &ev->outpoint);
-
-	if (ev->desc)
-		inc->desc = tal_strdup(inc, ev->desc);
-	else
-		inc->desc = NULL;
-
+	inc->desc = tal_strdup_or_null(inc, ev->desc);
 	inc->txid = tal_dup_or_null(inc, struct bitcoin_txid, ev->spending_txid);
 	inc->payment_id = tal_dup_or_null(inc, struct sha256, ev->payment_id);
 
@@ -75,10 +70,7 @@ static struct income_event *channel_to_income(const tal_t *ctx,
 	inc->timestamp = ev->timestamp;
 	inc->outpoint = NULL;
 	inc->txid = NULL;
-	if (ev->desc)
-		inc->desc = tal_strdup(inc, ev->desc);
-	else
-		inc->desc = NULL;
+	inc->desc = tal_strdup_or_null(inc, ev->desc);
 	inc->payment_id = tal_dup_or_null(inc, struct sha256, ev->payment_id);
 
 	return inc;
@@ -192,7 +184,7 @@ static struct income_event *maybe_chain_income(const tal_t *ctx,
 					     " WHERE "
 					     "  e.spending_txid = ?"));
 
-		db_bind_txid(stmt, 0, &ev->outpoint.txid);
+		db_bind_txid(stmt, &ev->outpoint.txid);
 		db_query_prepared(stmt);
 		if (!db_step(stmt)) {
 			tal_free(stmt);

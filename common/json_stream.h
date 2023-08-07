@@ -17,7 +17,7 @@
 
 struct command;
 struct io_conn;
-struct log;
+struct logger;
 struct json_escape;
 struct pubkey;
 struct bip340sig;
@@ -53,7 +53,7 @@ struct json_stream {
 	struct json_filter *filter;
 
 	/* Where to log I/O */
-	struct log *log;
+	struct logger *log;
 };
 
 
@@ -64,7 +64,7 @@ struct json_stream {
  * @log: where to log the IO
  */
 struct json_stream *new_json_stream(const tal_t *ctx, struct command *writer,
-				    struct log *log);
+				    struct logger *log);
 
 /**
  * Duplicate an existing stream.
@@ -80,7 +80,7 @@ struct json_stream *new_json_stream(const tal_t *ctx, struct command *writer,
  */
 struct json_stream *json_stream_dup(const tal_t *ctx,
 				    struct json_stream *original,
-				    struct log *log);
+				    struct logger *log);
 
 /* Attach a filter.  Usually this works at the result level: you don't
  * want to filter out id, etc! */
@@ -96,9 +96,6 @@ const char *json_stream_detach_filter(const tal_t *ctx, struct json_stream *js);
  * @writer: object responsible for writing to this stream.
  */
 void json_stream_close(struct json_stream *js, struct command *writer);
-
-/* For low-level JSON stream access: */
-void json_stream_log_suppress(struct json_stream *js, const char *cmd_name);
 
 /* '"fieldname" : [ ' or '[ ' if fieldname is NULL */
 void json_array_start(struct json_stream *js, const char *fieldname);

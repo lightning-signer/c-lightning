@@ -28,8 +28,6 @@ msgdata,openingd_init,dev_temporary_channel_id,?byte,32
 # reserves? This is explicitly required by the spec for safety
 # reasons, but some implementations and users keep asking for it.
 msgdata,openingd_init,allowdustreserve,bool,
-# Core LN prior to 23.05 didn't like this bit set!
-msgdata,openingd_init,can_set_scid_alias_channel_type,bool,
 
 # Openingd->master: they offered channel, should we continue?
 msgtype,openingd_got_offer,6005
@@ -84,6 +82,7 @@ msgdata,openingd_funder_start,len_upfront,u16,
 msgdata,openingd_funder_start,upfront_shutdown_script,u8,len_upfront
 msgdata,openingd_funder_start,upfront_shutdown_wallet_index,?u32,
 msgdata,openingd_funder_start,feerate_per_kw,u32,
+msgdata,openingd_funder_start,anchor_feerate_per_kw,u32,
 msgdata,openingd_funder_start,temporary_channel_id,channel_id,
 msgdata,openingd_funder_start,channel_flags,u8,
 msgdata,openingd_funder_start,reserve,?amount_sat,

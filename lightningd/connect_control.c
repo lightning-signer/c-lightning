@@ -199,14 +199,27 @@ static struct command_result *json_connect(struct command *cmd,
 	if (id_addr.host) {
 		u16 port = id_addr.port ? *id_addr.port : chainparams_get_ln_port(chainparams);
 		addr = tal(cmd, struct wireaddr_internal);
-		if (!parse_wireaddr_internal(id_addr.host, addr, port, false,
-					     !cmd->ld->always_use_proxy
-					     && !cmd->ld->pure_tor_setup,
-					     true,
-					     &err_msg)) {
+		err_msg = parse_wireaddr_internal(tmpctx, id_addr.host, port,
+						  !cmd->ld->always_use_proxy
+						  && !cmd->ld->pure_tor_setup, addr);
+		if (err_msg) {
 			return command_fail(cmd, LIGHTNINGD,
 					    "Host %s:%u not valid: %s",
 					    id_addr.host, port, err_msg);
+		}
+		/* Check they didn't specify some weird type! */
+		switch (addr->itype) {
+		case ADDR_INTERNAL_SOCKNAME:
+		case ADDR_INTERNAL_WIREADDR:
+		/* Can happen if we're disable DNS */
+		case ADDR_INTERNAL_FORPROXY:
+			break;
+		case ADDR_INTERNAL_ALLPROTO:
+		case ADDR_INTERNAL_AUTOTOR:
+		case ADDR_INTERNAL_STATICTOR:
+			return command_fail(cmd, LIGHTNINGD,
+					    "Host %s:%u not a simple type",
+					    id_addr.host, port);
 		}
 	} else {
 		addr = NULL;
@@ -667,9 +680,12 @@ int connectd_init(struct lightningd *ld)
 		wireaddrs = tal_arrz(tmpctx, struct wireaddr_internal, 1);
 		listen_announce = tal_arr(tmpctx, enum addr_listen_announce, 1);
 		wireaddrs->itype = ADDR_INTERNAL_ALLPROTO;
-		wireaddrs->u.port = ld->portnum;
+		wireaddrs->u.allproto.is_websocket = false;
+		wireaddrs->u.allproto.port = ld->portnum;
 		*listen_announce = ADDR_LISTEN_AND_ANNOUNCE;
-	}
+	} else
+		/* Make it clear that autolisten is not active! */
+		ld->autolisten = false;
 
 	msg = towire_connectd_init(
 	    tmpctx, chainparams,
@@ -683,7 +699,7 @@ int connectd_init(struct lightningd *ld)
 	    ld->config.connection_timeout_secs,
 	    websocket_helper_path,
 	    ld->websocket_port,
-	    !deprecated_apis,
+	    !ld->deprecated_apis,
 	    IFDEV(ld->dev_fast_gossip, false),
 	    IFDEV(ld->dev_disconnect_fd >= 0, false),
 	    IFDEV(ld->dev_no_ping_timer, false));

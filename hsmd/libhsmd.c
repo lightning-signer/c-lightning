@@ -128,6 +128,9 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_SIGN_ANY_DELAYED_PAYMENT_TO_US:
 	case WIRE_HSMD_SIGN_ANY_REMOTE_HTLC_TO_US:
 	case WIRE_HSMD_SIGN_ANY_LOCAL_HTLC_TX:
+	case WIRE_HSMD_SIGN_ANCHORSPEND:
+	case WIRE_HSMD_SIGN_HTLC_TX_MINGLE:
+	case WIRE_HSMD_SIGN_SPLICE_TX:
 		return (client->capabilities & HSM_CAP_MASTER) != 0;
 
 	/*~ These are messages sent by the HSM so we should never receive them. */
@@ -161,6 +164,8 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_PREAPPROVE_KEYSEND_REPLY:
 	case WIRE_HSMD_DERIVE_SECRET_REPLY:
 	case WIRE_HSMD_CHECK_PUBKEY_REPLY:
+	case WIRE_HSMD_SIGN_ANCHORSPEND_REPLY:
+	case WIRE_HSMD_SIGN_HTLC_TX_MINGLE_REPLY:
 		break;
 	}
 	return false;
@@ -485,10 +490,10 @@ static void sign_our_inputs(struct utxo **utxos, struct wally_psbt *psbt)
 			 * requires the HSM to find the pubkey, and we
 			 * skip doing that until now as a bit of a reduction
 			 * of complexity in the calling code */
-			psbt_input_add_pubkey(psbt, j, &pubkey);
+			psbt_input_add_pubkey(psbt, j, &pubkey, utxo->scriptPubkey && is_p2tr(utxo->scriptPubkey, NULL));
 
 			/* It's actually a P2WSH in this case. */
-			if (utxo->close_info && utxo->close_info->option_anchor_outputs) {
+			if (utxo->close_info && utxo->close_info->option_anchors) {
 				const u8 *wscript
 					= bitcoin_wscript_to_remote_anchored(tmpctx,
 									     &pubkey,
@@ -503,6 +508,8 @@ static void sign_our_inputs(struct utxo **utxos, struct wally_psbt *psbt)
 					    sizeof(privkey.secret.data),
 					    EC_FLAG_GRIND_R) != WALLY_OK) {
 				tal_wally_end(psbt);
+				/* Converting to v0 for log consumption */
+				psbt_set_version(psbt, 0);
 				hsmd_status_failed(STATUS_FAIL_INTERNAL_ERROR,
 				    "Received wally_err attempting to "
 				    "sign utxo with key %s. PSBT: %s",
@@ -1156,6 +1163,40 @@ static u8 *handle_sign_mutual_close_tx(struct hsmd_client *c, const u8 *msg_in)
 	return towire_hsmd_sign_tx_reply(NULL, &sig);
 }
 
+/* This is used by channeld to sign the final splice tx. */
+static u8 *handle_sign_splice_tx(struct hsmd_client *c, const u8 *msg_in)
+{
+	struct secret channel_seed;
+	struct bitcoin_tx *tx;
+	struct pubkey remote_funding_pubkey, local_funding_pubkey;
+	struct bitcoin_signature sig;
+	struct secrets secrets;
+	unsigned int input_index;
+	const u8 *funding_wscript;
+
+	if (!fromwire_hsmd_sign_splice_tx(tmpctx, msg_in,
+					  &tx,
+					  &remote_funding_pubkey,
+					  &input_index))
+		return hsmd_status_malformed_request(c, msg_in);
+
+	tx->chainparams = c->chainparams;
+	get_channel_seed(&c->id, c->dbid, &channel_seed);
+	derive_basepoints(&channel_seed,
+			  &local_funding_pubkey, NULL, &secrets, NULL);
+
+	funding_wscript = bitcoin_redeem_2of2(tmpctx,
+					      &local_funding_pubkey,
+					      &remote_funding_pubkey);
+
+	sign_tx_input(tx, input_index, NULL, funding_wscript,
+		      &secrets.funding_privkey,
+		      &local_funding_pubkey,
+		      SIGHASH_ALL, &sig);
+
+	return towire_hsmd_sign_tx_reply(NULL, &sig);
+}
+
 /*~ Originally, onchaind would ask for hsmd to sign txs directly, and then
  * tell lightningd to broadcast it.  With "bring-your-own-fees" HTLCs, this
  * changed, since we need to find a UTXO to attach to the transaction,
@@ -1459,6 +1500,67 @@ static u8 *handle_sign_any_penalty_to_us(struct hsmd_client *c, const u8 *msg_in
 
 	return do_sign_penalty_to_us(c, msg_in, input_num, &peer_id, dbid,
 				     &revocation_secret, tx, wscript);
+}
+
+/*~ Called from lightningd */
+static u8 *handle_sign_anchorspend(struct hsmd_client *c, const u8 *msg_in)
+{
+	struct node_id peer_id;
+	u64 dbid;
+	struct utxo **utxos;
+	struct wally_psbt *psbt;
+	struct secret seed;
+	struct pubkey local_funding_pubkey;
+	struct secrets secrets;
+	int ret;
+
+	/* FIXME: Check output goes to us. */
+	if (!fromwire_hsmd_sign_anchorspend(tmpctx, msg_in,
+					    &peer_id, &dbid, &utxos, &psbt))
+		return hsmd_status_malformed_request(c, msg_in);
+
+	/* Sign all the UTXOs */
+	sign_our_inputs(utxos, psbt);
+
+	get_channel_seed(&peer_id, dbid, &seed);
+	derive_basepoints(&seed, &local_funding_pubkey, NULL, &secrets, NULL);
+
+	tal_wally_start();
+	ret = wally_psbt_sign(psbt, secrets.funding_privkey.secret.data,
+			      sizeof(secrets.funding_privkey.secret.data),
+			      EC_FLAG_GRIND_R);
+	tal_wally_end(psbt);
+	if (ret != WALLY_OK) {
+		hsmd_status_failed(STATUS_FAIL_INTERNAL_ERROR,
+				   "Received wally_err attempting to "
+				    "sign anchor key %s. PSBT: %s",
+				    type_to_string(tmpctx, struct pubkey,
+						   &local_funding_pubkey),
+				    type_to_string(tmpctx, struct wally_psbt,
+						   psbt));
+	}
+
+	return towire_hsmd_sign_anchorspend_reply(NULL, psbt);
+}
+
+/*~ Called from lightningd */
+static u8 *handle_sign_htlc_tx_mingle(struct hsmd_client *c, const u8 *msg_in)
+{
+	struct node_id peer_id;
+	u64 dbid;
+	struct utxo **utxos;
+	struct wally_psbt *psbt;
+
+	/* FIXME: Check output goes to us. */
+	if (!fromwire_hsmd_sign_htlc_tx_mingle(tmpctx, msg_in,
+					       &peer_id, &dbid, &utxos, &psbt))
+		return hsmd_status_malformed_request(c, msg_in);
+
+	/* Sign all the UTXOs (htlc_inout input is already signed with
+	 * SIGHASH_SINGLE|SIGHASH_ANYONECANPAY) */
+	sign_our_inputs(utxos, psbt);
+
+	return towire_hsmd_sign_htlc_tx_mingle_reply(NULL, psbt);
 }
 
 /*~ This is another lightningd-only interface; signing a commit transaction.
@@ -1834,6 +1936,8 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 		return handle_sign_withdrawal_tx(client, msg);
 	case WIRE_HSMD_SIGN_MUTUAL_CLOSE_TX:
 		return handle_sign_mutual_close_tx(client, msg);
+	case WIRE_HSMD_SIGN_SPLICE_TX:
+		return handle_sign_splice_tx(client, msg);
 	case WIRE_HSMD_SIGN_LOCAL_HTLC_TX:
 		return handle_sign_local_htlc_tx(client, msg);
 	case WIRE_HSMD_SIGN_REMOTE_HTLC_TX:
@@ -1864,6 +1968,10 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 		return handle_sign_any_local_htlc_tx(client, msg);
 	case WIRE_HSMD_SIGN_ANY_PENALTY_TO_US:
 		return handle_sign_any_penalty_to_us(client, msg);
+	case WIRE_HSMD_SIGN_ANCHORSPEND:
+		return handle_sign_anchorspend(client, msg);
+	case WIRE_HSMD_SIGN_HTLC_TX_MINGLE:
+		return handle_sign_htlc_tx_mingle(client, msg);
 
 	case WIRE_HSMD_DEV_MEMLEAK:
 	case WIRE_HSMD_ECDH_RESP:
@@ -1894,6 +2002,8 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 	case WIRE_HSMD_PREAPPROVE_INVOICE_REPLY:
 	case WIRE_HSMD_PREAPPROVE_KEYSEND_REPLY:
 	case WIRE_HSMD_CHECK_PUBKEY_REPLY:
+	case WIRE_HSMD_SIGN_ANCHORSPEND_REPLY:
+	case WIRE_HSMD_SIGN_HTLC_TX_MINGLE_REPLY:
 		break;
 	}
 	return hsmd_status_bad_request(client, msg, "Unknown request");
@@ -1907,7 +2017,13 @@ u8 *hsmd_init(struct secret hsm_secret,
 	u32 salt = 0;
 	struct ext_key master_extkey, child_extkey;
 	struct node_id node_id;
-	static const u32 capabilities[] = { WIRE_HSMD_CHECK_PUBKEY, WIRE_HSMD_SIGN_ANY_DELAYED_PAYMENT_TO_US };
+	static const u32 capabilities[] = {
+		WIRE_HSMD_CHECK_PUBKEY,
+		WIRE_HSMD_SIGN_ANY_DELAYED_PAYMENT_TO_US,
+		WIRE_HSMD_SIGN_ANCHORSPEND,
+		WIRE_HSMD_SIGN_HTLC_TX_MINGLE,
+		WIRE_HSMD_SIGN_SPLICE_TX,
+	};
 
 	/*~ Don't swap this. */
 	sodium_mlock(secretstuff.hsm_secret.data,

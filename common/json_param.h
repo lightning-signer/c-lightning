@@ -181,6 +181,12 @@ struct command_result *param_string(struct command *cmd, const char *name,
 				    const char * buffer, const jsmntok_t *tok,
 				    const char **str);
 
+/* Extract an invoice string from a generic string, strip the `lightning:`
+ * prefix from it if needed. */
+struct command_result *param_invstring(struct command *cmd, const char *name,
+				    const char * buffer, const jsmntok_t *tok,
+				    const char **str);
+
 /* Extract a label. It is either an escaped string or a number. */
 struct command_result *param_label(struct command *cmd, const char *name,
 				   const char * buffer, const jsmntok_t *tok,
@@ -205,6 +211,11 @@ struct command_result *param_u32(struct command *cmd, const char *name,
 struct command_result *param_u64(struct command *cmd, const char *name,
 				 const char *buffer, const jsmntok_t *tok,
 				 uint64_t **num);
+
+/* Extract number from this (may be a string, or a number literal) */
+struct command_result *param_s64(struct command *cmd, const char *name,
+				 const char *buffer, const jsmntok_t *tok,
+				 int64_t **num);
 
 /* Extract msatoshi amount from this string */
 struct command_result *param_msat(struct command *cmd, const char *name,

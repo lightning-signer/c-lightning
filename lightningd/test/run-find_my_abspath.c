@@ -84,7 +84,7 @@ bool fromwire_status_fail(const tal_t *ctx UNNEEDED, const void *p UNNEEDED, enu
 bool fromwire_status_peer_billboard(const tal_t *ctx UNNEEDED, const void *p UNNEEDED, bool *perm UNNEEDED, wirestring **happenings UNNEEDED)
 { fprintf(stderr, "fromwire_status_peer_billboard called!\n"); abort(); }
 /* Generated stub for fromwire_status_peer_error */
-bool fromwire_status_peer_error(const tal_t *ctx UNNEEDED, const void *p UNNEEDED, struct channel_id *channel UNNEEDED, wirestring **desc UNNEEDED, bool *warning UNNEEDED, u8 **error_for_them UNNEEDED)
+bool fromwire_status_peer_error(const tal_t *ctx UNNEEDED, const void *p UNNEEDED, struct channel_id *channel UNNEEDED, wirestring **desc UNNEEDED, bool *warning UNNEEDED, bool *abort_do_restart UNNEEDED, u8 **error_for_them UNNEEDED)
 { fprintf(stderr, "fromwire_status_peer_error called!\n"); abort(); }
 /* Generated stub for fromwire_status_version */
 bool fromwire_status_version(const tal_t *ctx UNNEEDED, const void *p UNNEEDED, wirestring **version UNNEEDED)
@@ -99,7 +99,7 @@ void gossip_notify_new_block(struct lightningd *ld UNNEEDED, u32 blockheight UNN
 void handle_early_opts(struct lightningd *ld UNNEEDED, int argc UNNEEDED, char *argv[])
 { fprintf(stderr, "handle_early_opts called!\n"); abort(); }
 /* Generated stub for handle_opts */
-void handle_opts(struct lightningd *ld UNNEEDED, int argc UNNEEDED, char *argv[])
+void handle_opts(struct lightningd *ld UNNEEDED)
 { fprintf(stderr, "handle_opts called!\n"); abort(); }
 /* Generated stub for hash_htlc_key */
 size_t hash_htlc_key(const struct htlc_key *htlc_key UNNEEDED)
@@ -114,6 +114,14 @@ void htlcs_notify_new_block(struct lightningd *ld UNNEEDED, u32 height UNNEEDED)
 void htlcs_resubmit(struct lightningd *ld UNNEEDED,
 		    struct htlc_in_map *unconnected_htlcs_in STEALS UNNEEDED)
 { fprintf(stderr, "htlcs_resubmit called!\n"); abort(); }
+/* Generated stub for invoices_start_expiration */
+void invoices_start_expiration(struct lightningd *ld UNNEEDED)
+{ fprintf(stderr, "invoices_start_expiration called!\n"); abort(); }
+/* Generated stub for json_add_string */
+void json_add_string(struct json_stream *js UNNEEDED,
+		     const char *fieldname UNNEEDED,
+		     const char *str TAKES UNNEEDED)
+{ fprintf(stderr, "json_add_string called!\n"); abort(); }
 /* Generated stub for jsonrpc_listen */
 void jsonrpc_listen(struct jsonrpc *rpc UNNEEDED, struct lightningd *ld UNNEEDED)
 { fprintf(stderr, "jsonrpc_listen called!\n"); abort(); }
@@ -130,7 +138,7 @@ void jsonrpc_stop_listening(struct jsonrpc *jsonrpc UNNEEDED)
 struct htlc_in_map *load_channels_from_wallet(struct lightningd *ld UNNEEDED)
 { fprintf(stderr, "load_channels_from_wallet called!\n"); abort(); }
 /* Generated stub for log_ */
-void log_(struct log *log UNNEEDED, enum log_level level UNNEEDED,
+void log_(struct logger *logger UNNEEDED, enum log_level level UNNEEDED,
 	  const struct node_id *node_id UNNEEDED,
 	  bool call_notifier UNNEEDED,
 	  const char *fmt UNNEEDED, ...)
@@ -142,34 +150,40 @@ void log_backtrace_exit(void)
 /* Generated stub for log_backtrace_print */
 void log_backtrace_print(const char *fmt UNNEEDED, ...)
 { fprintf(stderr, "log_backtrace_print called!\n"); abort(); }
+/* Generated stub for log_has_io_logging */
+bool log_has_io_logging(const struct logger *log UNNEEDED)
+{ fprintf(stderr, "log_has_io_logging called!\n"); abort(); }
 /* Generated stub for log_prefix */
-const char *log_prefix(const struct log *log UNNEEDED)
+const char *log_prefix(const struct logger *logger UNNEEDED)
 { fprintf(stderr, "log_prefix called!\n"); abort(); }
-/* Generated stub for log_print_level */
-enum log_level log_print_level(struct log *log UNNEEDED, const struct node_id *node_id UNNEEDED)
-{ fprintf(stderr, "log_print_level called!\n"); abort(); }
 /* Generated stub for log_status_msg */
-bool log_status_msg(struct log *log UNNEEDED,
+bool log_status_msg(struct logger *log UNNEEDED,
  		    const struct node_id *node_id UNNEEDED,
 		    const u8 *msg UNNEEDED)
 { fprintf(stderr, "log_status_msg called!\n"); abort(); }
-/* Generated stub for new_log */
-struct log *new_log(const tal_t *ctx UNNEEDED, struct log_book *record UNNEEDED,
-		    const struct node_id *default_node_id UNNEEDED,
-		    const char *fmt UNNEEDED, ...)
-{ fprintf(stderr, "new_log called!\n"); abort(); }
 /* Generated stub for new_log_book */
 struct log_book *new_log_book(struct lightningd *ld UNNEEDED, size_t max_mem UNNEEDED)
 { fprintf(stderr, "new_log_book called!\n"); abort(); }
+/* Generated stub for new_logger */
+struct logger *new_logger(const tal_t *ctx UNNEEDED, struct log_book *record UNNEEDED,
+			  const struct node_id *default_node_id UNNEEDED,
+			  const char *fmt UNNEEDED, ...)
+{ fprintf(stderr, "new_logger called!\n"); abort(); }
 /* Generated stub for new_peer_fd_arr */
 struct peer_fd *new_peer_fd_arr(const tal_t *ctx UNNEEDED, const int *fd UNNEEDED)
 { fprintf(stderr, "new_peer_fd_arr called!\n"); abort(); }
 /* Generated stub for new_topology */
-struct chain_topology *new_topology(struct lightningd *ld UNNEEDED, struct log *log UNNEEDED)
+struct chain_topology *new_topology(struct lightningd *ld UNNEEDED, struct logger *log UNNEEDED)
 { fprintf(stderr, "new_topology called!\n"); abort(); }
 /* Generated stub for onchaind_replay_channels */
 void onchaind_replay_channels(struct lightningd *ld UNNEEDED)
 { fprintf(stderr, "onchaind_replay_channels called!\n"); abort(); }
+/* Generated stub for plugin_hook_call_ */
+bool plugin_hook_call_(struct lightningd *ld UNNEEDED,
+		       const struct plugin_hook *hook UNNEEDED,
+		       const char *cmd_id TAKES UNNEEDED,
+		       tal_t *cb_arg STEALS UNNEEDED)
+{ fprintf(stderr, "plugin_hook_call_ called!\n"); abort(); }
 /* Generated stub for plugins_config */
 bool plugins_config(struct plugins *plugins UNNEEDED)
 { fprintf(stderr, "plugins_config called!\n"); abort(); }
@@ -187,6 +201,12 @@ void plugins_set_builtin_plugins_dir(struct plugins *plugins UNNEEDED,
 /* Generated stub for resend_closing_transactions */
 void resend_closing_transactions(struct lightningd *ld UNNEEDED)
 { fprintf(stderr, "resend_closing_transactions called!\n"); abort(); }
+/* Generated stub for runes_early_init */
+struct runes *runes_early_init(struct lightningd *ld UNNEEDED)
+{ fprintf(stderr, "runes_early_init called!\n"); abort(); }
+/* Generated stub for runes_finish_init */
+void runes_finish_init(struct runes *runes UNNEEDED)
+{ fprintf(stderr, "runes_finish_init called!\n"); abort(); }
 /* Generated stub for setup_color_and_alias */
 void setup_color_and_alias(struct lightningd *ld UNNEEDED)
 { fprintf(stderr, "setup_color_and_alias called!\n"); abort(); }
@@ -215,6 +235,12 @@ void towire_channel_id(u8 **pptr UNNEEDED, const struct channel_id *channel_id U
 /* Generated stub for towire_node_id */
 void towire_node_id(u8 **pptr UNNEEDED, const struct node_id *id UNNEEDED)
 { fprintf(stderr, "towire_node_id called!\n"); abort(); }
+/* Generated stub for trace_span_end */
+void trace_span_end(const void *key UNNEEDED)
+{ fprintf(stderr, "trace_span_end called!\n"); abort(); }
+/* Generated stub for trace_span_start */
+void trace_span_start(const char *name UNNEEDED, const void *key UNNEEDED)
+{ fprintf(stderr, "trace_span_start called!\n"); abort(); }
 /* Generated stub for txfilter_add_derkey */
 void txfilter_add_derkey(struct txfilter *filter UNNEEDED,
 			 const u8 derkey[PUBKEY_CMPR_LEN])
@@ -240,7 +266,7 @@ bool wallet_sanity_check(struct wallet *w UNNEEDED)
 { fprintf(stderr, "wallet_sanity_check called!\n"); abort(); }
 /* AUTOGENERATED MOCKS END */
 
-struct log *crashlog;
+struct logger *crashlog;
 
 #undef main
 int main(int argc UNUSED, char *argv[])

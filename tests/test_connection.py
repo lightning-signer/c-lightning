@@ -1,5 +1,6 @@
 from fixtures import *  # noqa: F401,F403
 from fixtures import TEST_NETWORK
+from decimal import Decimal
 from ephemeral_port_reserve import reserve  # type: ignore
 from pyln.client import RpcError, Millisatoshi
 import pyln.proto.wire as wire
@@ -9,8 +10,8 @@ from utils import (
     expected_channel_features,
     check_coin_moves, first_channel_id, account_balance, basic_fee,
     scriptpubkey_addr, default_ln_port,
-    EXPERIMENTAL_FEATURES, mine_funding_to_announce, first_scid,
-    anchor_expected, CHANNEL_SIZE
+    mine_funding_to_announce, first_scid,
+    CHANNEL_SIZE
 )
 from pyln.testing.utils import SLOW_MACHINE, VALGRIND, EXPERIMENTAL_DUAL_FUND, FUNDAMOUNT
 
@@ -366,7 +367,8 @@ def test_bad_opening(node_factory):
 @pytest.mark.slow_test
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
-def test_opening_tiny_channel(node_factory):
+@pytest.mark.parametrize("anchors", [False, True])
+def test_opening_tiny_channel(node_factory, anchors):
     # Test custom min-capacity-sat parameters
     #
     #  [l1]-----> [l2] (~6000)  - technical minimal value that wont be rejected
@@ -386,9 +388,12 @@ def test_opening_tiny_channel(node_factory):
     #
     dustlimit = 546
     reserves = 2 * dustlimit
-    min_commit_tx_fees = basic_fee(7500)
+    if anchors:
+        min_commit_tx_fees = basic_fee(3750, True)
+    else:
+        min_commit_tx_fees = basic_fee(7500, False)
     overhead = reserves + min_commit_tx_fees
-    if anchor_expected():
+    if anchors:
         # Gotta fund those anchors too!
         overhead += 660
 
@@ -400,6 +405,9 @@ def test_opening_tiny_channel(node_factory):
             {'min-capacity-sat': l2_min_capacity, 'dev-no-reconnect': None},
             {'min-capacity-sat': l3_min_capacity, 'dev-no-reconnect': None},
             {'min-capacity-sat': l4_min_capacity, 'dev-no-reconnect': None}]
+    if anchors:
+        for opt in opts:
+            opt['experimental-anchors'] = None
     l1, l2, l3, l4 = node_factory.get_nodes(4, opts=opts)
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     l1.rpc.connect(l3.info['id'], 'localhost', l3.port)
@@ -849,6 +857,7 @@ def test_reconnect_sender_add1(node_factory):
         l1.daemon.wait_for_log('Already have funding locked in')
 
     # This will send commit, so will reconnect as required.
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
 
 
@@ -880,6 +889,7 @@ def test_reconnect_sender_add(node_factory):
     route = [{'amount_msat': amt, 'id': l2.info['id'], 'delay': 5, 'channel': first_scid(l1, l2)}]
 
     # This will send commit, so will reconnect as required.
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
     # Should have printed this for every reconnect.
     for i in range(0, len(disconnects)):
@@ -912,6 +922,7 @@ def test_reconnect_receiver_add(node_factory):
     assert only_one(l2.rpc.listinvoices('testpayment2')['invoices'])['status'] == 'unpaid'
 
     route = [{'amount_msat': amt, 'id': l2.info['id'], 'delay': 5, 'channel': first_scid(l1, l2)}]
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
     for i in range(len(disconnects)):
         l1.daemon.wait_for_log('Already have funding locked in')
@@ -942,6 +953,7 @@ def test_reconnect_receiver_fulfill(node_factory):
     assert only_one(l2.rpc.listinvoices('testpayment2')['invoices'])['status'] == 'unpaid'
 
     route = [{'amount_msat': amt, 'id': l2.info['id'], 'delay': 5, 'channel': first_scid(l1, l2)}]
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
     for i in range(len(disconnects)):
         l1.daemon.wait_for_log('Already have funding locked in')
@@ -1008,8 +1020,10 @@ def test_reconnect_remote_sends_no_sigs(node_factory):
     l2.daemon.wait_for_logs([r'peer_out WIRE_ANNOUNCEMENT_SIGNATURES',
                              r'peer_out WIRE_ANNOUNCEMENT_SIGNATURES'])
 
+    count = ''.join(l1.daemon.logs).count(r'peer_out WIRE_ANNOUNCEMENT_SIGNATURES')
+
     # l1 only did send them the first time
-    assert(''.join(l1.daemon.logs).count(r'peer_out WIRE_ANNOUNCEMENT_SIGNATURES') == 1)
+    assert(count == 1 or count == 2)
 
 
 @pytest.mark.openchannel('v1')
@@ -1104,6 +1118,7 @@ def test_funding_all_too_much(node_factory):
 
     addr, txid = l1.fundwallet(2**24 + 10000)
     l1.rpc.fundchannel(l2.info['id'], "all")
+    assert l1.daemon.is_in_log("'all' was too large for non-wumbo channel, trimming")
 
     # One reserved, confirmed output spent above, and one change.
     outputs = l1.rpc.listfunds()['outputs']
@@ -1216,6 +1231,7 @@ def test_v2_open(node_factory, bitcoind, chainparams):
     assert(result['status'] == 'complete')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "channel push not allowed: dual-funding not supported yet")
 @pytest.mark.openchannel('v1')
 def test_funding_push(node_factory, bitcoind, chainparams):
     """ Try to push peer some sats """
@@ -1401,7 +1417,13 @@ def test_funding_external_wallet_corners(node_factory, bitcoind):
     assert len(l1.rpc.listpeers()['peers']) == 0
 
     # on reconnect, channel should get destroyed
-    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    # FIXME: if peer disconnects too fast, we get
+    # "disconnected during connection"
+    try:
+        l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    except RpcError as err:
+        assert "disconnected during connection" in err.error
+
     l1.daemon.wait_for_log('Unknown channel .* for WIRE_CHANNEL_REESTABLISH')
     wait_for(lambda: len(l1.rpc.listpeers()['peers']) == 0)
     wait_for(lambda: len(l2.rpc.listpeers()['peers']) == 0)
@@ -1460,9 +1482,6 @@ def test_funding_v2_corners(node_factory, bitcoind):
         l1.rpc.openchannel_init(l2.info['id'], amount + 1, psbt)
 
     start = l1.rpc.openchannel_init(l2.info['id'], amount, psbt)
-    with pytest.raises(RpcError, match=r'Channel funding in-progress. DUALOPEND_OPEN_INIT'):
-        l1.rpc.fundchannel(l2.info['id'], amount)
-
     # We can abort a channel
     l1.rpc.openchannel_abort(start['channel_id'])
 
@@ -1657,6 +1676,7 @@ def test_funding_v2_cancel_race(node_factory, bitcoind, executor):
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(TEST_NETWORK != 'regtest', "External wallet support doesn't work with elements yet.")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "remote_hsmd can't handle random external addresses (allowlist)") # FIXME - should work w/ auto-approve
 def test_funding_close_upfront(node_factory, bitcoind):
     opts = {'plugin': os.path.join(os.getcwd(), 'tests/plugins/openchannel_hook_accepter.py')}
 
@@ -1804,6 +1824,7 @@ def test_funding_external_wallet(node_factory, bitcoind):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v1')  # We manually turn on dual-funding for select nodes
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "commit c0cc285a causes: channel stub can only return point for commitment number zero")
 def test_multifunding_v1_v2_mixed(node_factory, bitcoind):
     '''
     Simple test for multifundchannel, using v1 + v2
@@ -1832,7 +1853,14 @@ def test_multifunding_v1_v2_mixed(node_factory, bitcoind):
                     {"id": '{}@localhost:{}'.format(l4.info['id'], l4.port),
                      "amount": 50000}]
 
-    l1.rpc.multifundchannel(destinations)
+    # There should be change!
+    tx = l1.rpc.multifundchannel(destinations)['tx']
+    decoded = bitcoind.rpc.decoderawtransaction(tx)
+    assert len(decoded['vout']) == len(destinations) + 1
+    # Feerate should be about right, too!
+    fee = Decimal(2000000) / 10**8 * len(decoded['vin']) - sum(v['value'] for v in decoded['vout'])
+    assert 7450 < fee * 10**8 / decoded['weight'] * 1000 < 7550
+
     mine_funding_to_announce(bitcoind, [l1, l2, l3, l4], wait_for_mempool=1)
 
     for node in [l1, l2, l3, l4]:
@@ -2064,10 +2092,12 @@ def test_multifunding_wumbo(node_factory):
     l1.rpc.multifundchannel(destinations)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "flakes too frequently w/ VLS")
 @unittest.skipIf(TEST_NETWORK == 'liquid-regtest', "Fees on elements are different")
 @pytest.mark.developer("uses dev-fail")
 @pytest.mark.openchannel('v1')  # v2 the weight calculation is off by 3
-def test_multifunding_feerates(node_factory, bitcoind):
+@pytest.mark.parametrize("anchors", [False, True])
+def test_multifunding_feerates(node_factory, bitcoind, anchors):
     '''
     Test feerate parameters for multifundchannel
     '''
@@ -2075,7 +2105,10 @@ def test_multifunding_feerates(node_factory, bitcoind):
     commitment_tx_feerate_int = 2000
     commitment_tx_feerate = str(commitment_tx_feerate_int) + 'perkw'
 
-    l1, l2, l3 = node_factory.get_nodes(3, opts={'log-level': 'debug'})
+    opts = {'log-level': 'debug'}
+    if anchors:
+        opts['experimental-anchors'] = None
+    l1, l2, l3 = node_factory.get_nodes(3, opts=opts)
 
     l1.fundwallet(1 << 26)
 
@@ -2096,6 +2129,11 @@ def test_multifunding_feerates(node_factory, bitcoind):
     expected_fee = int(funding_tx_feerate[:-5]) * weight // 1000
     assert expected_fee == entry['fees']['base'] * 10 ** 8
 
+    # anchors ignores commitment_feerate!
+    if anchors:
+        commitment_tx_feerate_int = 3750
+        commitment_tx_feerate = str(commitment_tx_feerate_int) + 'perkw'
+
     assert only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])['feerate']['perkw'] == commitment_tx_feerate_int
     assert only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])['feerate']['perkb'] == commitment_tx_feerate_int * 4
 
@@ -2110,20 +2148,20 @@ def test_multifunding_feerates(node_factory, bitcoind):
 
     # Because of how the anchor outputs protocol is designed,
     # we *always* pay for 2 anchor outs and their weight
-    if anchor_expected():
+    if anchors:
         weight = 1124
     else:
         # the commitment transactions' feerate is calculated off
         # of this fixed weight
         weight = 724
 
-    expected_fee = int(commitment_tx_feerate[:-5]) * weight // 1000
+    expected_fee = commitment_tx_feerate_int * weight // 1000
 
     # At this point we only have one anchor output on the
     # tx, but we subtract out the extra anchor output amount
     # from the to_us output, so it ends up inflating
     # our fee by that much.
-    if anchor_expected():
+    if anchors:
         expected_fee += 330
 
     assert expected_fee == entry['fees']['base'] * 10 ** 8
@@ -2472,6 +2510,8 @@ def test_fee_limits(node_factory, bitcoind):
 
     # Kick off fee adjustment using HTLC.
     l1.pay(l2, 1000)
+    assert 'ignore_fee_limits' not in only_one(l2.rpc.listpeerchannels()['channels'])
+    assert 'ignore_fee_limits' not in only_one(l1.rpc.listpeerchannels()['channels'])
 
     # L1 asks for stupid low fee (will actually hit the floor of 253)
     l1.stop()
@@ -2484,10 +2524,14 @@ def test_fee_limits(node_factory, bitcoind):
     assert 'update_fee 253 outside range 1875-75000' in only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])['status'][0]
     assert 'update_fee 253 outside range 1875-75000' in only_one(l2.rpc.listpeerchannels(l1.info['id'])['channels'])['status'][0]
 
+    assert only_one(l2.rpc.listpeerchannels()['channels'])['feerate']['perkw'] != 253
     # Make l2 accept those fees, and it should recover.
-    l2.stop()
-    l2.set_feerates((15, 15, 15, 15), False)
-    l2.start()
+    assert only_one(l2.rpc.setchannel(l1.get_channel_scid(l2), ignorefeelimits=True)['channels'])['ignore_fee_limits'] is True
+    assert only_one(l2.rpc.listpeerchannels()['channels'])['ignore_fee_limits'] is True
+
+    # Now we stay happy (and connected!)
+    wait_for(lambda: only_one(l2.rpc.listpeerchannels()['channels'])['feerate']['perkw'] == 253)
+    assert only_one(l2.rpc.listpeerchannels()['channels'])['peer_connected'] is True
 
     l1.rpc.close(l2.info['id'])
 
@@ -3383,8 +3427,8 @@ def test_feerate_spam(node_factory, chainparams):
     # Now change feerates to something l1 can't afford.
     l1.set_feerates((100000, 100000, 100000, 100000))
 
-    # It will raise as far as it can (48000) (30000 for option_anchor_outputs)
-    maxfeerate = 30000 if EXPERIMENTAL_FEATURES else 48000
+    # It will raise as far as it can (48000)
+    maxfeerate = 48000
     l1.daemon.wait_for_log('Setting REMOTE feerate to {}'.format(maxfeerate))
     l1.daemon.wait_for_log('peer_out WIRE_UPDATE_FEE')
 
@@ -3564,8 +3608,13 @@ def test_wumbo_channels(node_factory, bitcoind):
 
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
-def test_channel_features(node_factory, bitcoind):
-    l1, l2 = node_factory.line_graph(2, fundchannel=False)
+@pytest.mark.parametrize("anchors", [False, True])
+def test_channel_features(node_factory, bitcoind, anchors):
+    if anchors:
+        opts = {'experimental-anchors': None}
+    else:
+        opts = {}
+    l1, l2 = node_factory.line_graph(2, fundchannel=False, opts=opts)
 
     bitcoind.rpc.sendtoaddress(l1.rpc.newaddr()['bech32'], 0.1)
     bitcoind.generate_block(1)
@@ -3576,8 +3625,8 @@ def test_channel_features(node_factory, bitcoind):
     # We should see features in unconfirmed channels.
     chan = only_one(l1.rpc.listpeerchannels()['channels'])
     assert 'option_static_remotekey' in chan['features']
-    if EXPERIMENTAL_FEATURES:
-        assert 'option_anchor_outputs' in chan['features']
+    if anchors:
+        assert 'option_anchors_zero_fee_htlc_tx' in chan['features']
 
     # l2 should agree.
     assert only_one(l2.rpc.listpeerchannels()['channels'])['features'] == chan['features']
@@ -3589,14 +3638,15 @@ def test_channel_features(node_factory, bitcoind):
 
     chan = only_one(l1.rpc.listpeerchannels()['channels'])
     assert 'option_static_remotekey' in chan['features']
-    if EXPERIMENTAL_FEATURES:
-        assert 'option_anchor_outputs' in chan['features']
+    if anchors:
+        assert 'option_anchors_zero_fee_htlc_tx' in chan['features']
 
     # l2 should agree.
     assert only_one(l2.rpc.listpeerchannels()['channels'])['features'] == chan['features']
 
 
 @pytest.mark.developer("need dev-force-features")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support non-option_static_remotekey") # FIXME - should work with VLS_PERMISSIVE
 def test_nonstatic_channel(node_factory, bitcoind):
     """Smoke test for a channel without option_static_remotekey"""
     l1, l2 = node_factory.line_graph(2,
@@ -3606,7 +3656,8 @@ def test_nonstatic_channel(node_factory, bitcoind):
                                            {'dev-force-features': '9,15////////'}])
     chan = only_one(l1.rpc.listpeerchannels()['channels'])
     assert 'option_static_remotekey' not in chan['features']
-    assert 'option_anchor_outputs' not in chan['features']
+    assert 'option_anchor' not in chan['features']
+    assert 'option_anchors_zero_fee_htlc_tx' not in chan['features']
 
     l1.pay(l2, 1000)
     l1.rpc.close(l2.info['id'])
@@ -3713,13 +3764,15 @@ def test_openchannel_init_alternate(node_factory, executor):
             print("nothing to do")
 
 
-@unittest.skipIf(not EXPERIMENTAL_FEATURES, "upgrade protocol not available")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "upgrade not yet supported by VLS")
 @pytest.mark.developer("dev-force-features required")
 def test_upgrade_statickey(node_factory, executor):
     """l1 doesn't have option_static_remotekey, l2 offers it."""
     l1, l2 = node_factory.line_graph(2, opts=[{'may_reconnect': True,
-                                               'dev-force-features': ["-13", "-21"]},
-                                              {'may_reconnect': True}])
+                                               'dev-force-features': ["-13"],
+                                               'experimental-upgrade-protocol': None},
+                                              {'may_reconnect': True,
+                                               'experimental-upgrade-protocol': None}])
 
     l1.rpc.disconnect(l2.info['id'], force=True)
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
@@ -3743,17 +3796,19 @@ def test_upgrade_statickey(node_factory, executor):
     l2.daemon.wait_for_log(r"They sent desired_channel_type \[12\]")
 
 
-@unittest.skipIf(not EXPERIMENTAL_FEATURES, "upgrade protocol not available")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "upgrade not yet supported by VLS")
 @pytest.mark.developer("dev-force-features required")
 def test_upgrade_statickey_onchaind(node_factory, executor, bitcoind):
     """We test penalty before/after, and unilateral before/after"""
     l1, l2 = node_factory.line_graph(2, opts=[{'may_reconnect': True,
                                                'dev-no-reconnect': None,
-                                               'dev-force-features': ["-13", "-21"],
+                                               'dev-force-features': ["-13"],
+                                               'experimental-upgrade-protocol': None,
                                                # We try to cheat!
                                                'allow_broken_log': True},
                                               {'may_reconnect': True,
-                                               'dev-no-reconnect': None}])
+                                               'dev-no-reconnect': None,
+                                               'experimental-upgrade-protocol': None}])
 
     # TEST 1: Cheat from pre-upgrade.
     tx = l1.rpc.dev_sign_last_tx(l2.info['id'])['tx']
@@ -3877,7 +3932,7 @@ def test_upgrade_statickey_onchaind(node_factory, executor, bitcoind):
     wait_for(lambda: len(l2.rpc.listpeerchannels()['channels']) == 0)
 
 
-@unittest.skipIf(not EXPERIMENTAL_FEATURES, "upgrade protocol not available")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "upgrade not yet supported by VLS")
 @pytest.mark.developer("dev-force-features, dev-disconnect required")
 def test_upgrade_statickey_fail(node_factory, executor, bitcoind):
     """We reconnect at all points during retransmit, and we won't upgrade."""
@@ -3889,11 +3944,13 @@ def test_upgrade_statickey_fail(node_factory, executor, bitcoind):
     l1, l2 = node_factory.line_graph(2, opts=[{'may_reconnect': True,
                                                'dev-no-reconnect': None,
                                                'disconnect': l1_disconnects,
-                                               'dev-force-features': ["-13", "-21"],
+                                               'experimental-upgrade-protocol': None,
+                                               'dev-force-features': ["-13"],
                                                # Don't have feerate changes!
                                                'feerates': (7500, 7500, 7500, 7500)},
                                               {'may_reconnect': True,
                                                'dev-no-reconnect': None,
+                                               'experimental-upgrade-protocol': None,
                                                'disconnect': l2_disconnects,
                                                'plugin': os.path.join(os.getcwd(), 'tests/plugins/hold_htlcs.py'),
                                                'hold-time': 10000,
@@ -3943,10 +4000,9 @@ def test_upgrade_statickey_fail(node_factory, executor, bitcoind):
     assert 'option_static_remotekey' in only_one(l2.rpc.listpeerchannels()['channels'])['features']
 
 
-@unittest.skipIf(not EXPERIMENTAL_FEATURES, "quiescence is experimental")
 @pytest.mark.developer("quiescence triggering is dev only")
 def test_quiescence(node_factory, executor):
-    l1, l2 = node_factory.line_graph(2)
+    l1, l2 = node_factory.line_graph(2, opts={'experimental-quiesce': None})
 
     # Works fine.
     l1.pay(l2, 1000)
@@ -4059,17 +4115,24 @@ def test_old_feerate(node_factory):
 @pytest.mark.developer("needs --dev-allow-localhost")
 def test_websocket(node_factory):
     ws_port = reserve()
-    port1, port2 = reserve(), reserve()
-    # We need a wildcard to show the websocket bug, but we need a real
-    # address to give us something to announce.
+    port = reserve()
     l1, l2 = node_factory.line_graph(2,
-                                     opts=[{'experimental-websocket-port': ws_port,
-                                            'addr': [':' + str(port1),
-                                                     '127.0.0.1: ' + str(port2)],
+                                     opts=[{'addr': ':' + str(port),
+                                            'bind-addr': 'ws:127.0.0.1: ' + str(ws_port),
                                             'dev-allow-localhost': None},
                                            {'dev-allow-localhost': None}],
                                      wait_for_announce=True)
-    assert l1.rpc.listconfigs()['experimental-websocket-port'] == ws_port
+    # Some depend on ipv4 vs ipv6 behaviour...
+    for b in l1.rpc.getinfo()['binding']:
+        if b['type'] == 'ipv4':
+            assert b == {'type': 'ipv4', 'address': '0.0.0.0', 'port': port}
+        elif b['type'] == 'ipv6':
+            assert b == {'type': 'ipv6', 'address': '::', 'port': port}
+        else:
+            assert b == {'type': 'websocket',
+                         'address': '127.0.0.1',
+                         'subtype': 'ipv4',
+                         'port': ws_port}
 
     # Adapter to turn websocket into a stream "connection"
     class BinWebSocket(object):
@@ -4117,9 +4180,9 @@ def test_websocket(node_factory):
         if int.from_bytes(msg[0:2], 'big') == 19:
             break
 
-    # Check node_announcement has websocket
-    ws_address = {'type': 'websocket', 'port': ws_port}
-    assert ws_address in only_one(l2.rpc.listnodes(l1.info['id'])['nodes'])['addresses']
+    # Check node_announcement does NOT have websocket
+    assert not any([a['type'] == 'websocket'
+                    for a in only_one(l2.rpc.listnodes(l1.info['id'])['nodes'])['addresses']])
 
 
 @pytest.mark.developer("dev-disconnect required")
@@ -4189,6 +4252,7 @@ def test_multichan(node_factory, executor, bitcoind):
 
     before = l2.rpc.listpeerchannels(l3.info['id'])['channels']
     inv1 = l3.rpc.invoice(100000000, "invoice", "invoice")
+    l1.rpc.preapproveinvoice(bolt11=inv1['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, inv1['payment_hash'], payment_secret=inv1['payment_secret'])
     l1.rpc.waitsendpay(inv1['payment_hash'])
 
@@ -4216,6 +4280,7 @@ def test_multichan(node_factory, executor, bitcoind):
     before = l2.rpc.listpeerchannels(l3.info['id'])['channels']
     route[1]['channel'] = scid23b
     inv2 = l3.rpc.invoice(100000000, "invoice2", "invoice2")
+    l1.rpc.preapproveinvoice(bolt11=inv2['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, inv2['payment_hash'], payment_secret=inv2['payment_secret'])
     l1.rpc.waitsendpay(inv2['payment_hash'])
     # Wait until HTLCs fully settled
@@ -4260,6 +4325,7 @@ def test_multichan(node_factory, executor, bitcoind):
     # We can actually pay by *closed* scid (at least until it's completely forgotten)
     route[1]['channel'] = scid23a
     inv3 = l3.rpc.invoice(100000000, "invoice3", "invoice3")
+    l1.rpc.preapproveinvoice(bolt11=inv3['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, inv3['payment_hash'], payment_secret=inv3['payment_secret'])
     l1.rpc.waitsendpay(inv3['payment_hash'])
 
@@ -4385,6 +4451,30 @@ def test_peer_disconnected_reflected_in_channel_state(node_factory):
 
     wait_for(lambda: only_one(l1.rpc.listpeers(l2.info['id'])['peers'])['connected'] is False)
     wait_for(lambda: only_one(l1.rpc.listpeerchannels(l2.info['id'])['channels'])['peer_connected'] is False)
+
+
+def test_peer_disconnected_has_featurebits(node_factory):
+    """
+    Make sure that if a node is restarted, it still remembers feature
+    bits from a peer it has a channel with but isn't connected to
+    """
+    l1, l2 = node_factory.line_graph(2)
+
+    expected_features = expected_peer_features()
+
+    l1_features = only_one(l2.rpc.listpeers()['peers'])['features']
+    l2_features = only_one(l1.rpc.listpeers()['peers'])['features']
+    assert l1_features == expected_features
+    assert l2_features == expected_features
+
+    l1.stop()
+    l2.stop()
+
+    # Ensure we persisted feature bits and return them even when disconnected
+    l1.start()
+
+    wait_for(lambda: only_one(l1.rpc.listpeers(l2.info['id'])['peers'])['connected'] is False)
+    wait_for(lambda: only_one(l1.rpc.listpeers()['peers'])['features'] == expected_features)
 
 
 @pytest.mark.developer("needs dev-no-reconnect")

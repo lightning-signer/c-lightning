@@ -17,7 +17,7 @@ struct bitcoin_block;
 
 struct bitcoind {
 	/* Where to do logging. */
-	struct log *log;
+	struct logger *log;
 
 	/* Main lightningd structure */
 	struct lightningd *ld;
@@ -56,7 +56,7 @@ struct filteredblock {
 
 struct bitcoind *new_bitcoind(const tal_t *ctx,
 			      struct lightningd *ld,
-			      struct log *log);
+			      struct logger *log);
 
 void bitcoind_estimate_fees(struct bitcoind *bitcoind,
 			    void (*cb)(struct lightningd *ld,
@@ -95,6 +95,7 @@ void bitcoind_getfilteredblock_(struct bitcoind *bitcoind, u32 height,
 
 void bitcoind_getchaininfo_(struct bitcoind *bitcoind,
 			    const bool first_call,
+			    const u32 height,
 			    void (*cb)(struct bitcoind *bitcoind,
 				       const char *chain,
 				       u32 headercount,
@@ -102,8 +103,8 @@ void bitcoind_getchaininfo_(struct bitcoind *bitcoind,
 				       const bool ibd,
 				       const bool first_call, void *),
 			    void *cb_arg);
-#define bitcoind_getchaininfo(bitcoind_, first_call_, cb, arg)		   \
-	bitcoind_getchaininfo_((bitcoind_), (first_call_),		   \
+#define bitcoind_getchaininfo(bitcoind_, first_call_, height_, cb, arg)		   \
+	bitcoind_getchaininfo_((bitcoind_), (first_call_), (height_),      \
 			      typesafe_cb_preargs(void, void *,		   \
 						  (cb), (arg),		   \
 						  struct bitcoind *,	   \

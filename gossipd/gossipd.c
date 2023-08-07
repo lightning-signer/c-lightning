@@ -37,6 +37,16 @@
 #include <gossipd/seeker.h>
 #include <sodium/crypto_aead_chacha20poly1305.h>
 
+const struct node_id *peer_node_id(const struct peer *peer)
+{
+	return &peer->id;
+}
+
+bool peer_node_id_eq(const struct peer *peer, const struct node_id *node_id)
+{
+	return node_id_eq(&peer->id, node_id);
+}
+
 /*~ A channel consists of a `struct half_chan` for each direction, each of
  * which has a `flags` word from the `channel_update`; bit 1 is
  * ROUTING_FLAGS_DISABLED in the `channel_update`.  But we also keep a local
@@ -83,31 +93,38 @@ static void destroy_peer(struct peer *peer)
 {
 	struct node *node;
 
-	/* Remove it from the peers list */
-	list_del_from(&peer->daemon->peers, &peer->list);
+	/* Remove it from the peers table */
+	peer_node_id_map_del(peer->daemon->peers, peer);;
 
 	/* If we have a channel with this peer, disable it. */
 	node = get_node(peer->daemon->rstate, &peer->id);
 	if (node)
 		peer_disable_channels(peer->daemon, node);
+
+	seeker_peer_gone(peer->daemon->seeker, peer);
 }
 
 /* Search for a peer. */
 struct peer *find_peer(struct daemon *daemon, const struct node_id *id)
 {
-	struct peer *peer;
-
-	list_for_each(&daemon->peers, peer, list)
-		if (node_id_eq(&peer->id, id))
-			return peer;
-	return NULL;
+	return peer_node_id_map_get(daemon->peers, id);
 }
 
 /* Increase a peer's gossip_counter, if peer not NULL */
-void peer_supplied_good_gossip(struct peer *peer, size_t amount)
+void peer_supplied_good_gossip(struct daemon *daemon,
+			       const struct node_id *source_peer,
+			       size_t amount)
 {
-	if (peer)
-		peer->gossip_counter += amount;
+	struct peer *peer;
+
+	if (!source_peer)
+		return;
+
+	peer = find_peer(daemon, source_peer);
+	if (!peer)
+		return;
+
+	peer->gossip_counter += amount;
 }
 
 /* Queue a gossip message for the peer: connectd simply forwards it to
@@ -227,7 +244,7 @@ static bool get_node_announcement_by_id(const tal_t *ctx,
  * queue.  We'll send a request to lightningd to look it up, and continue
  * processing in `handle_txout_reply`. */
 static const u8 *handle_channel_announcement_msg(struct daemon *daemon,
-						 struct peer *peer,
+						 const struct node_id *source_peer,
 						 const u8 *msg)
 {
 	const struct short_channel_id *scid;
@@ -238,7 +255,7 @@ static const u8 *handle_channel_announcement_msg(struct daemon *daemon,
 	 * which case, it frees and NULLs that ptr) */
 	err = handle_channel_announcement(daemon->rstate, msg,
 					  daemon->current_blockheight,
-					  &scid, peer);
+					  &scid, source_peer);
 	if (err)
 		return err;
 	else if (scid) {
@@ -264,7 +281,7 @@ static u8 *handle_channel_update_msg(struct peer *peer, const u8 *msg)
 	u8 *err;
 
 	unknown_scid.u64 = 0;
-	err = handle_channel_update(peer->daemon->rstate, msg, peer,
+	err = handle_channel_update(peer->daemon->rstate, msg, &peer->id,
 				    &unknown_scid, false);
 	if (err)
 		return err;
@@ -287,7 +304,7 @@ static u8 *handle_node_announce(struct peer *peer, const u8 *msg)
 	bool was_unknown = false;
 	u8 *err;
 
-	err = handle_node_announcement(peer->daemon->rstate, msg, peer,
+	err = handle_node_announcement(peer->daemon->rstate, msg, &peer->id,
 				       &was_unknown);
 	if (was_unknown)
 		query_unknown_node(peer->daemon->seeker, peer);
@@ -299,25 +316,17 @@ static void handle_local_channel_announcement(struct daemon *daemon, const u8 *m
 	u8 *cannouncement;
 	const u8 *err;
 	struct node_id id;
-	struct peer *peer;
 
 	if (!fromwire_gossipd_local_channel_announcement(msg, msg,
 							 &id,
 							 &cannouncement))
 		master_badmsg(WIRE_GOSSIPD_LOCAL_CHANNEL_ANNOUNCEMENT, msg);
 
-	/* We treat it OK even if peer has disconnected since (unlikely though!) */
-	peer = find_peer(daemon, &id);
-	if (!peer)
-		status_debug("Unknown peer %s for local_channel_announcement",
-			     type_to_string(tmpctx, struct node_id, &id));
-
-	err = handle_channel_announcement_msg(daemon, peer, cannouncement);
+	err = handle_channel_announcement_msg(daemon, &id, cannouncement);
 	if (err) {
-		status_broken("peer %s invalid local_channel_announcement %s (%s)",
-			      type_to_string(tmpctx, struct node_id, &id),
-			      tal_hex(tmpctx, msg),
-			      tal_hex(tmpctx, err));
+		status_peer_broken(&id, "invalid local_channel_announcement %s (%s)",
+				   tal_hex(tmpctx, msg),
+				   tal_hex(tmpctx, err));
 	}
 }
 
@@ -397,7 +406,6 @@ static void handle_discovered_ip(struct daemon *daemon, const u8 *msg)
 	case ADDR_TYPE_TOR_V2_REMOVED:
 	case ADDR_TYPE_TOR_V3:
 	case ADDR_TYPE_DNS:
-	case ADDR_TYPE_WEBSOCKET:
 		break;
 	}
 	return;
@@ -431,29 +439,33 @@ static void dump_our_gossip(struct daemon *daemon, struct peer *peer)
 		return;
 
 	for (chan = first_chan(me, &i); chan; chan = next_chan(me, &i)) {
-		int dir = half_chan_idx(me, chan);
-
+		/* Don't leak private channels, unless it's with you! */
 		if (!is_chan_public(chan)) {
-			/* Don't leak private channels, unless it's with you! */
-			if (!node_id_eq(&chan->nodes[!dir]->id, &peer->id))
-				continue;
-			/* There's no announce for this, of course! */
-			/* Private channel updates are wrapped in the store. */
-			else {
-				if (!is_halfchan_defined(&chan->half[dir]))
-					continue;
+			int dir = half_chan_idx(me, chan);
+
+			if (node_id_eq(&chan->nodes[!dir]->id, &peer->id)
+			    && is_halfchan_defined(&chan->half[dir])) {
+				/* There's no announce for this, of course! */
+				/* Private channel updates are wrapped in the store. */
 				queue_priv_update(peer, &chan->half[dir].bcast);
-				continue;
 			}
-		} else {
-			/* Send announce */
-			queue_peer_from_store(peer, &chan->bcast);
+			continue;
 		}
 
-		/* Send update if we have one */
-		if (is_halfchan_defined(&chan->half[dir]))
-			queue_peer_from_store(peer, &chan->half[dir].bcast);
+		/* Send channel_announce */
+		queue_peer_from_store(peer, &chan->bcast);
+
+		/* Send both channel_updates (if they exist): both help people
+		 * use our channel, so we care! */
+		for (int dir = 0; dir < 2; dir++) {
+			if (is_halfchan_defined(&chan->half[dir]))
+				queue_peer_from_store(peer, &chan->half[dir].bcast);
+		}
 	}
+
+	/* If we have one, we should send our own node_announcement */
+	if (me->bcast.index)
+		queue_peer_from_store(peer, &me->bcast);
 }
 
 /*~ This is where connectd tells us about a new peer we might want to
@@ -487,8 +499,8 @@ static void connectd_new_peer(struct daemon *daemon, const u8 *msg)
 	peer->range_replies = NULL;
 	peer->query_channel_range_cb = NULL;
 
-	/* We keep a list so we can find peer by id */
-	list_add_tail(&peer->daemon->peers, &peer->list);
+	/* We keep a htable so we can find peer by id */
+	peer_node_id_map_add(daemon->peers, peer);
 	tal_add_destructor(peer, destroy_peer);
 
 	node = get_node(daemon->rstate, &peer->id);
@@ -569,7 +581,7 @@ static void handle_recv_gossip(struct daemon *daemon, const u8 *outermsg)
 	/* These are messages relayed from peer */
 	switch ((enum peer_wire)fromwire_peektype(msg)) {
 	case WIRE_CHANNEL_ANNOUNCEMENT:
-		err = handle_channel_announcement_msg(peer->daemon, peer, msg);
+		err = handle_channel_announcement_msg(peer->daemon, &id, msg);
 		goto handled_msg;
 	case WIRE_CHANNEL_UPDATE:
 		err = handle_channel_update_msg(peer, msg);
@@ -628,9 +640,10 @@ static void handle_recv_gossip(struct daemon *daemon, const u8 *outermsg)
 	case WIRE_ONION_MESSAGE:
 	case WIRE_PEER_STORAGE:
 	case WIRE_YOUR_PEER_STORAGE:
-#if EXPERIMENTAL_FEATURES
 	case WIRE_STFU:
-#endif
+	case WIRE_SPLICE:
+	case WIRE_SPLICE_ACK:
+	case WIRE_SPLICE_LOCKED:
 		break;
 	}
 
@@ -741,6 +754,42 @@ static void gossip_refresh_network(struct daemon *daemon)
 	route_prune(daemon->rstate);
 }
 
+static void tell_master_local_cupdates(struct daemon *daemon)
+{
+	struct chan_map_iter i;
+	struct chan *c;
+	struct node *me;
+
+	me = get_node(daemon->rstate, &daemon->id);
+	if (!me)
+		return;
+
+	for (c = first_chan(me, &i); c; c = next_chan(me, &i)) {
+		struct half_chan *hc;
+		int direction;
+		const u8 *cupdate;
+
+		/* We don't provide update_channel for unannounced channels */
+		if (!is_chan_public(c))
+			continue;
+
+		if (!local_direction(daemon->rstate, c, &direction))
+			continue;
+
+		hc = &c->half[direction];
+		if (!is_halfchan_defined(hc))
+			continue;
+
+		cupdate = gossip_store_get(tmpctx,
+					   daemon->rstate->gs,
+					   hc->bcast.index);
+		daemon_conn_send(daemon->master,
+				 take(towire_gossipd_init_cupdate(NULL,
+								  &c->scid,
+								  cupdate)));
+	}
+}
+
 /* Disables all channels connected to our node. */
 static void gossip_disable_local_channels(struct daemon *daemon)
 {
@@ -757,26 +806,26 @@ static void gossip_disable_local_channels(struct daemon *daemon)
 		local_disable_chan(daemon, c, half_chan_idx(local_node, c));
 }
 
-struct peer *random_peer(struct daemon *daemon,
-			 bool (*check_peer)(const struct peer *peer))
+struct peer *first_random_peer(struct daemon *daemon,
+			       struct peer_node_id_map_iter *it)
 {
-	u64 target = UINT64_MAX;
-	struct peer *best = NULL, *i;
+	return peer_node_id_map_pick(daemon->peers, pseudorand_u64(), it);
+}
 
-	/* Reservoir sampling */
-	list_for_each(&daemon->peers, i, list) {
-		u64 r;
+struct peer *next_random_peer(struct daemon *daemon,
+			      const struct peer *first,
+			      struct peer_node_id_map_iter *it)
+{
+	struct peer *p;
 
-		if (!check_peer(i))
-			continue;
+	p = peer_node_id_map_next(daemon->peers, it);
+	if (!p)
+		p = peer_node_id_map_first(daemon->peers, it);
 
-		r = pseudorand_u64();
-		if (r <= target) {
-			best = i;
-			target = r;
-		}
-	}
-	return best;
+	/* Full circle? */
+	if (p == first)
+		return NULL;
+	return p;
 }
 
 /* This is called when lightningd or connectd closes its connection to
@@ -810,9 +859,7 @@ static void gossip_init(struct daemon *daemon, const u8 *msg)
 	}
 
 	daemon->rstate = new_routing_state(daemon,
-					   &daemon->id,
-					   &daemon->peers,
-					   &daemon->timers,
+					   daemon,
 					   take(dev_gossip_time),
 					   dev_fast_gossip,
 					   dev_fast_gossip_prune);
@@ -846,6 +893,10 @@ static void gossip_init(struct daemon *daemon, const u8 *msg)
 					   connectd_req,
 					   maybe_send_query_responses, daemon);
 	tal_add_destructor(daemon->connectd, master_or_connectd_gone);
+
+	/* Tell it about all our local (public) channel_update messages,
+	 * so it doesn't unnecessarily regenerate them. */
+	tell_master_local_cupdates(daemon);
 
 	/* OK, we are ready. */
 	daemon_conn_send(daemon->master,
@@ -890,6 +941,7 @@ static void dev_gossip_memleak(struct daemon *daemon, const u8 *msg)
 	memleak_ptr(memtable, msg);
 	/* Now delete daemon and those which it has pointers to. */
 	memleak_scan_obj(memtable, daemon);
+	memleak_scan_htable(memtable, &daemon->peers->raw);
 
 	found_leak = dump_memleak(memtable, memleak_status_broken);
 	daemon_conn_send(daemon->master,
@@ -1138,6 +1190,7 @@ static struct io_plan *recv_req(struct io_conn *conn,
 #endif /* !DEVELOPER */
 
 	/* We send these, we don't receive them */
+	case WIRE_GOSSIPD_INIT_CUPDATE:
 	case WIRE_GOSSIPD_INIT_REPLY:
 	case WIRE_GOSSIPD_GET_TXOUT:
 	case WIRE_GOSSIPD_DEV_MEMLEAK_REPLY:
@@ -1166,7 +1219,8 @@ int main(int argc, char *argv[])
 	subdaemon_setup(argc, argv);
 
 	daemon = tal(NULL, struct daemon);
-	list_head_init(&daemon->peers);
+	daemon->peers = tal(daemon, struct peer_node_id_map);
+	peer_node_id_map_init(daemon->peers);
 	daemon->deferred_txouts = tal_arr(daemon, struct short_channel_id, 0);
 	daemon->node_announce_timer = NULL;
 	daemon->node_announce_regen_timer = NULL;

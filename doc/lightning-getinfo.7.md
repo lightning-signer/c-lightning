@@ -41,7 +41,7 @@ On success, an object is returned, containing:
 - **network** (string): represents the type of network on the node are working (e.g: `bitcoin`, `testnet`, or `regtest`)
 - **fees\_collected\_msat** (msat): Total routing fees collected by this node
 - **address** (array of objects): The addresses we announce to the world:
-  - **type** (string): Type of connection (one of "dns", "ipv4", "ipv6", "torv2", "torv3", "websocket")
+  - **type** (string): Type of connection (until 23.08, `websocket` was also allowed) (one of "dns", "ipv4", "ipv6", "torv2", "torv3")
   - **port** (u16): port number
 
   If **type** is "dns", "ipv4", "ipv6", "torv2" or "torv3":
@@ -53,10 +53,17 @@ On success, an object is returned, containing:
   - **channel** (hex): negotiated channel features we (as channel initiator) publish in the channel\_announcement message
   - **invoice** (hex): features in our BOLT11 invoices
 - **binding** (array of objects, optional): The addresses we are listening on:
-  - **type** (string): Type of connection (one of "local socket", "ipv4", "ipv6", "torv2", "torv3")
+  - **type** (string): Type of connection (one of "local socket", "websocket", "ipv4", "ipv6", "torv2", "torv3")
   - **address** (string, optional): address in expected format for **type**
   - **port** (u16, optional): port number
-  - **socket** (string, optional): socket filename (only if **type** is "local socket")
+
+  If **type** is "local socket":
+
+    - **socket** (string): socket filename
+
+  If **type** is "websocket":
+
+    - **subtype** (string): type of address
 
 The following warnings may also be returned:
 
@@ -132,4 +139,4 @@ RESOURCES
 
 Main web site: <https://github.com/ElementsProject/lightning>
 
-[comment]: # ( SHA256STAMP:ac7ea19a5294ebb8d8e0acaa3e813849ce1b1f7f8ef2f3e52a9ca22e5e5d82fc)
+[comment]: # ( SHA256STAMP:0e6f06ba4f0f0264614d93d4eb7abc38eeb13c9619f7bd4e21203cdaba363a02)

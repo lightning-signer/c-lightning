@@ -63,6 +63,19 @@ u8 *scriptpubkey_p2wpkh_derkey(const tal_t *ctx, const u8 der[33]);
 u8 *scriptpubkey_witness_raw(const tal_t *ctx, u8 version,
 			     const u8 *wprog, size_t wprog_size);
 
+/* Create an output script for a "raw"(perhaps already tweaked) taproot output pubkey */
+u8 *scriptpubkey_raw_p2tr(const tal_t *ctx, const struct pubkey *output_pubkey);
+
+/* Same as above, but compressed key is DER-encoded. */
+u8 *scriptpubkey_raw_p2tr_derkey(const tal_t *ctx, const u8 output_der[33]);
+
+/* Create an output script for an internal taproot pubkey. Results in different script than
+ * scriptpubkey_raw_p2tr! TODO support merkle root tweaking */
+u8 *scriptpubkey_p2tr(const tal_t *ctx, const struct pubkey *inner_pubkey);
+
+/* Same as above, but compressed key is DER-encoded. TODO support merkle root tweaking */
+u8 *scriptpubkey_p2tr_derkey(const tal_t *ctx, const u8 inner_der[33]);
+
 /* To-remotekey with csv max(lease_expiry - blockheight, 1) delay. */
 u8 *bitcoin_wscript_to_remote_anchored(const tal_t *ctx,
 				       const struct pubkey *remote_key,
@@ -98,7 +111,8 @@ u8 *bitcoin_wscript_htlc_offer(const tal_t *ctx,
 			       const struct pubkey *remotehtlckey,
 			       const struct sha256 *payment_hash,
 			       const struct pubkey *revocationkey,
-			       bool option_anchor_outputs);
+			       bool option_anchor_outputs,
+			       bool option_anchors_zero_fee_htlc_tx);
 u8 **bitcoin_witness_htlc_timeout_tx(const tal_t *ctx,
 				     const struct bitcoin_signature *localsig,
 				     const struct bitcoin_signature *remotesig,
@@ -109,7 +123,8 @@ u8 *bitcoin_wscript_htlc_receive(const tal_t *ctx,
 				 const struct pubkey *remotekey,
 				 const struct sha256 *payment_hash,
 				 const struct pubkey *revocationkey,
-				 bool option_anchor_outputs);
+				 bool option_anchor_outputs,
+				 bool option_anchors_zero_fee_htlc_tx);
 u8 **bitcoin_witness_htlc_success_tx(const tal_t *ctx,
 				     const struct bitcoin_signature *localsig,
 				     const struct bitcoin_signature *remotesig,
@@ -122,14 +137,16 @@ u8 *bitcoin_wscript_htlc_offer_ripemd160(const tal_t *ctx,
 					 const struct pubkey *remotehtlckey,
 					 const struct ripemd160 *payment_ripemd,
 					 const struct pubkey *revocationkey,
-					 bool option_anchor_outputs);
+					 bool option_anchor_outputs,
+					 bool option_anchors_zero_fee_htlc_tx);
 u8 *bitcoin_wscript_htlc_receive_ripemd(const tal_t *ctx,
 					const struct abs_locktime *htlc_abstimeout,
 					const struct pubkey *localkey,
 					const struct pubkey *remotekey,
 					const struct ripemd160 *payment_ripemd,
 					const struct pubkey *revocationkey,
-					bool option_anchor_outputs);
+					bool option_anchor_outputs,
+					bool option_anchors_zero_fee_htlc_tx);
 
 /* BOLT #3 HTLC-success/HTLC-timeout output */
 u8 *bitcoin_wscript_htlc_tx(const tal_t *ctx,
@@ -153,11 +170,20 @@ bool is_p2wsh(const u8 *script, struct sha256 *addr);
 /* Is this (version 0) pay to witness pubkey hash? (extract addr if not NULL) */
 bool is_p2wpkh(const u8 *script, struct bitcoin_address *addr);
 
-/* Is this one of the four above script types? */
+/* Is this a taproot output? (extract xonly_pubkey bytes if not NULL) */
+bool is_p2tr(const u8 *script, u8 xonly_pubkey[32]);
+
+/* Is this one of the above script types? */
 bool is_known_scripttype(const u8 *script);
+
+/* Is this a witness script type? */
+bool is_known_segwit_scripttype(const u8 *script);
 
 /* Is this a to-remote witness script (used for option_anchor_outputs)? */
 bool is_to_remote_anchored_witness_script(const u8 *script, size_t script_len);
+
+/* Is this an anchor witness script? */
+bool is_anchor_witness_script(const u8 *script, size_t script_len);
 
 /* Are these two scripts equal? */
 bool scripteq(const u8 *s1, const u8 *s2);
@@ -176,5 +202,8 @@ void script_push_bytes(u8 **scriptp, const void *mem, size_t len);
 
 /* OP_0 + PUSH(32-byte-hash) */
 #define BITCOIN_SCRIPTPUBKEY_P2WSH_LEN (1 + 1 + 32)
+
+/* OP_1 + PUSH(32-byte-key) */
+#define BITCOIN_SCRIPTPUBKEY_P2TR_LEN (1 + 1 + 32)
 
 #endif /* LIGHTNING_BITCOIN_SCRIPT_H */

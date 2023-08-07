@@ -500,6 +500,11 @@ bool command_usage_only(const struct command *cmd)
 	return cmd->usage_only;
 }
 
+bool command_deprecated_apis(const struct command *cmd)
+{
+	return deprecated_apis;
+}
+
 /* FIXME: would be good to support this! */
 bool command_check_only(const struct command *cmd)
 {
@@ -915,6 +920,7 @@ handle_getmanifest(struct command *getmanifest_cmd,
 		json_add_string(params, "type", p->opts[i].type);
 		json_add_string(params, "description", p->opts[i].description);
 		json_add_bool(params, "deprecated", p->opts[i].deprecated);
+		json_add_bool(params, "dynamic", p->opts[i].dynamic);
 		json_object_end(params);
 	}
 	json_array_end(params);
@@ -1136,6 +1142,15 @@ static struct feature_set *json_to_feature_set(struct plugin *plugin,
 	return fset;
 }
 
+static struct plugin_option *find_opt(struct plugin *plugin, const char *name)
+{
+	for (size_t i = 0; i < tal_count(plugin->opts); i++) {
+		if (streq(plugin->opts[i].name, name))
+			return &plugin->opts[i];
+	}
+	return NULL;
+}
+
 static struct command_result *handle_init(struct command *cmd,
 					  const char *buf,
 					  const jsmntok_t *params)
@@ -1197,19 +1212,17 @@ static struct command_result *handle_init(struct command *cmd,
 
 	opttok = json_get_member(buf, params, "options");
 	json_for_each_obj(i, t, opttok) {
-		char *opt = json_strdup(NULL, buf, t);
-		for (size_t optnum = 0; optnum < tal_count(p->opts); optnum++) {
-			char *problem;
-			if (!streq(p->opts[optnum].name, opt))
-				continue;
-			problem = p->opts[optnum].handle(json_strdup(opt, buf, t+1),
-							 p->opts[optnum].arg);
-			if (problem)
-				plugin_err(p, "option '%s': %s",
-					   p->opts[optnum].name, problem);
-			break;
-		}
-		tal_free(opt);
+		const char *name, *problem;
+		struct plugin_option *popt;
+
+		name = json_strdup(tmpctx, buf, t);
+		popt = find_opt(p, name);
+		if (!popt)
+			plugin_err(p, "lightningd specified unknown option '%s'?", name);
+
+		problem = popt->handle(p, json_strdup(tmpctx, buf, t+1), popt->arg);
+		if (problem)
+			plugin_err(p, "option '%s': %s", popt->name, problem);
 	}
 
 	if (p->init) {
@@ -1225,7 +1238,7 @@ static struct command_result *handle_init(struct command *cmd,
 	return command_success(cmd, json_out_obj(cmd, NULL, NULL));
 }
 
-char *u64_option(const char *arg, u64 *i)
+char *u64_option(struct plugin *plugin, const char *arg, u64 *i)
 {
 	char *endp;
 
@@ -1233,13 +1246,13 @@ char *u64_option(const char *arg, u64 *i)
 	errno = 0;
 	*i = strtol(arg, &endp, 0);
 	if (*endp || !arg[0])
-		return tal_fmt(NULL, "'%s' is not a number", arg);
+		return tal_fmt(tmpctx, "'%s' is not a number", arg);
 	if (errno)
-		return tal_fmt(NULL, "'%s' is out of range", arg);
+		return tal_fmt(tmpctx, "'%s' is out of range", arg);
 	return NULL;
 }
 
-char *u32_option(const char *arg, u32 *i)
+char *u32_option(struct plugin *plugin, const char *arg, u32 *i)
 {
 	char *endp;
 	u64 n;
@@ -1247,18 +1260,18 @@ char *u32_option(const char *arg, u32 *i)
 	errno = 0;
 	n = strtoul(arg, &endp, 0);
 	if (*endp || !arg[0])
-		return tal_fmt(NULL, "'%s' is not a number", arg);
+		return tal_fmt(tmpctx, "'%s' is not a number", arg);
 	if (errno)
-		return tal_fmt(NULL, "'%s' is out of range", arg);
+		return tal_fmt(tmpctx, "'%s' is out of range", arg);
 
 	*i = n;
 	if (*i != n)
-		return tal_fmt(NULL, "'%s' is too large (overflow)", arg);
+		return tal_fmt(tmpctx, "'%s' is too large (overflow)", arg);
 
 	return NULL;
 }
 
-char *u16_option(const char *arg, u16 *i)
+char *u16_option(struct plugin *plugin, const char *arg, u16 *i)
 {
 	char *endp;
 	u64 n;
@@ -1266,39 +1279,39 @@ char *u16_option(const char *arg, u16 *i)
 	errno = 0;
 	n = strtoul(arg, &endp, 0);
 	if (*endp || !arg[0])
-		return tal_fmt(NULL, "'%s' is not a number", arg);
+		return tal_fmt(tmpctx, "'%s' is not a number", arg);
 	if (errno)
-		return tal_fmt(NULL, "'%s' is out of range", arg);
+		return tal_fmt(tmpctx, "'%s' is out of range", arg);
 
 	*i = n;
 	if (*i != n)
-		return tal_fmt(NULL, "'%s' is too large (overflow)", arg);
+		return tal_fmt(tmpctx, "'%s' is too large (overflow)", arg);
 
 	return NULL;
 }
 
-char *bool_option(const char *arg, bool *i)
+char *bool_option(struct plugin *plugin, const char *arg, bool *i)
 {
 	if (!streq(arg, "true") && !streq(arg, "false"))
-		return tal_fmt(NULL, "'%s' is not a bool, must be \"true\" or \"false\"", arg);
+		return tal_fmt(tmpctx, "'%s' is not a bool, must be \"true\" or \"false\"", arg);
 
 	*i = streq(arg, "true");
 	return NULL;
 }
 
-char *flag_option(const char *arg, bool *i)
+char *flag_option(struct plugin *plugin, const char *arg, bool *i)
 {
 	/* We only get called if the flag was provided, so *i should be false
 	 * by default */
 	assert(*i == false);
 	if (!streq(arg, "true"))
-		return tal_fmt(NULL, "Invalid argument '%s' passed to a flag", arg);
+		return tal_fmt(tmpctx, "Invalid argument '%s' passed to a flag", arg);
 
 	*i = true;
 	return NULL;
 }
 
-char *charp_option(const char *arg, char **p)
+char *charp_option(struct plugin *plugin, const char *arg, char **p)
 {
 	*p = tal_strdup(NULL, arg);
 	return NULL;
@@ -1349,8 +1362,8 @@ struct plugin_timer *plugin_timer_(struct plugin *p, struct timerel t,
 	return timer;
 }
 
-static void plugin_logv(struct plugin *p, enum log_level l,
-			const char *fmt, va_list ap)
+void plugin_logv(struct plugin *p, enum log_level l,
+		 const char *fmt, va_list ap)
 {
 	struct json_stream *js = new_json_stream(NULL, NULL, NULL);
 
@@ -1594,7 +1607,8 @@ static void ld_command_handle(struct plugin *plugin,
 #endif
 		for (size_t i = 0; i < plugin->num_notif_subs; i++) {
 			if (streq(cmd->methodname,
-				  plugin->notif_subs[i].name)) {
+				  plugin->notif_subs[i].name)
+			    || streq(plugin->notif_subs[i].name, "*")) {
 				plugin->notif_subs[i].handle(cmd,
 							     plugin->buffer,
 							     paramstok);
@@ -1636,6 +1650,41 @@ static void ld_command_handle(struct plugin *plugin,
 						   paramstok);
 			return;
 		}
+	}
+
+	/* Dynamic parameters */
+	if (streq(cmd->methodname, "setconfig")) {
+		const jsmntok_t *valtok;
+		const char *config, *val, *problem;
+		struct plugin_option *popt;
+		struct command_result *ret;
+		config = json_strdup(tmpctx, plugin->buffer,
+				     json_get_member(plugin->buffer, paramstok, "config"));
+		popt = find_opt(plugin, config);
+		if (!popt) {
+			plugin_err(plugin,
+				   "lightningd setconfig unknown option '%s'?",
+				   config);
+		}
+		if (!popt->dynamic) {
+			plugin_err(plugin,
+				   "lightningd setconfig non-dynamic option '%s'?",
+				   config);
+		}
+		valtok = json_get_member(plugin->buffer, paramstok, "val");
+		if (valtok)
+			val = json_strdup(tmpctx, plugin->buffer, valtok);
+		else
+			val = "true";
+
+		problem = popt->handle(plugin, val, popt->arg);
+		if (problem)
+			ret = command_fail(cmd, JSONRPC2_INVALID_PARAMS,
+					   "%s", problem);
+		else
+			ret = command_finished(cmd, jsonrpc_stream_success(cmd));
+		assert(ret == &complete);
+		return;
 	}
 
 	plugin_err(plugin, "Unknown command '%s'", cmd->methodname);
@@ -1839,9 +1888,10 @@ static struct plugin *new_plugin(const tal_t *ctx,
 		o.name = optname;
 		o.type = va_arg(ap, const char *);
 		o.description = va_arg(ap, const char *);
-		o.handle = va_arg(ap, char *(*)(const char *str, void *arg));
+		o.handle = va_arg(ap, char *(*)(struct plugin *, const char *str, void *arg));
 		o.arg = va_arg(ap, void *);
 		o.deprecated = va_arg(ap, int); /* bool gets promoted! */
+		o.dynamic = va_arg(ap, int); /* bool gets promoted! */
 		tal_arr_expand(&p->opts, o);
 	}
 

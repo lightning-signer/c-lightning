@@ -179,9 +179,9 @@ static char *args_string(const tal_t *ctx, const char **args)
 	return ret;
 }
 
-static char *bcli_args(struct bitcoin_cli *bcli)
+static char *bcli_args(const tal_t *ctx, struct bitcoin_cli *bcli)
 {
-    return args_string(bcli, bcli->args);
+    return args_string(ctx, bcli->args);
 }
 
 /* Only set as destructor once bcli is in current. */
@@ -197,6 +197,7 @@ static void retry_bcli(void *cb_arg)
 	tal_del_destructor(bcli, destroy_bcli);
 
 	list_add_tail(&bitcoind->pending[bcli->prio], &bcli->list);
+	tal_free(bcli->output);
 	next_bcli(bcli->prio);
 }
 
@@ -216,7 +217,7 @@ static void bcli_failure(struct bitcoin_cli *bcli,
 		           "we have been retrying command for "
 		           "--bitcoin-retry-timeout=%"PRIu64" seconds; "
 		           "bitcoind setup or our --bitcoin-* configs broken?",
-		           bcli_args(bcli),
+		           bcli_args(tmpctx, bcli),
 		           exitstatus,
 		           bitcoind->error_count,
 		           (int)bcli->output_bytes,
@@ -224,7 +225,7 @@ static void bcli_failure(struct bitcoin_cli *bcli,
 		           bitcoind->retry_timeout);
 
 	plugin_log(bcli->cmd->plugin, LOG_UNUSUAL, "%s exited with status %u",
-		   bcli_args(bcli), exitstatus);
+		   bcli_args(tmpctx, bcli), exitstatus);
 	bitcoind->error_count++;
 
 	/* Retry in 1 second */
@@ -242,19 +243,19 @@ static void bcli_finished(struct io_conn *conn UNUSED, struct bitcoin_cli *bcli)
 	if (msec > 10000)
 		plugin_log(bcli->cmd->plugin, LOG_UNUSUAL,
 		           "bitcoin-cli: finished %s (%"PRIu64" ms)",
-		           bcli_args(bcli), msec);
+		           bcli_args(tmpctx, bcli), msec);
 
 	assert(bitcoind->num_requests[prio] > 0);
 
 	/* FIXME: If we waited for SIGCHILD, this could never hang! */
 	while ((ret = waitpid(bcli->pid, &status, 0)) < 0 && errno == EINTR);
 	if (ret != bcli->pid)
-		plugin_err(bcli->cmd->plugin, "%s %s", bcli_args(bcli),
+		plugin_err(bcli->cmd->plugin, "%s %s", bcli_args(tmpctx, bcli),
 		           ret == 0 ? "not exited?" : strerror(errno));
 
 	if (!WIFEXITED(status))
 		plugin_err(bcli->cmd->plugin, "%s died with signal %i",
-		           bcli_args(bcli),
+		           bcli_args(tmpctx, bcli),
 		           WTERMSIG(status));
 
 	/* Implicit nonzero_exit_ok == false */
@@ -380,7 +381,7 @@ static struct command_result *command_err_bcli_badjson(struct bitcoin_cli *bcli,
 						       const char *errmsg)
 {
 	char *err = tal_fmt(bcli, "%s: bad JSON: %s (%.*s)",
-			    bcli_args(bcli), errmsg,
+			    bcli_args(tmpctx, bcli), errmsg,
 			    (int)bcli->output_bytes, bcli->output);
 	return command_done_err(bcli->cmd, BCLI_ERROR, err, NULL);
 }
@@ -537,7 +538,7 @@ static struct command_result *process_sendrawtransaction(struct bitcoin_cli *bcl
 	if (bcli->exitstatus)
 		plugin_log(bcli->cmd->plugin, LOG_DBG,
 			   "sendrawtx exit %i (%s) %.*s",
-			   *bcli->exitstatus, bcli_args(bcli),
+			   *bcli->exitstatus, bcli_args(tmpctx, bcli),
 			   *bcli->exitstatus ?
 				(u32)bcli->output_bytes-1 : 0,
 				bcli->output);
@@ -656,7 +657,15 @@ static struct command_result *getchaininfo(struct command *cmd,
                                            const char *buf UNUSED,
                                            const jsmntok_t *toks UNUSED)
 {
-	if (!param(cmd, buf, toks, NULL))
+	/* FIXME(vincenzopalazzo): Inside the JSON request,
+         * we have the current height known from Core Lightning. Therefore,
+         * we can attempt to prevent a crash if the 'getchaininfo' function returns
+         * a lower height than the one we already know, by waiting for a short period.
+         * However, I currently don't have a better idea on how to handle this situation. */
+	u32 *height UNUSED;
+	if (!param(cmd, buf, toks,
+		   p_req("last_height", param_number, &height),
+		   NULL))
 		return command_param_failed();
 
 	start_bitcoin_cli(NULL, cmd, process_getblockchaininfo, false,
@@ -675,6 +684,14 @@ static void json_add_feerate(struct json_stream *result, const char *fieldname,
 			     const struct estimatefees_stash *stash,
 			     uint64_t value)
 {
+	/* Anthony Towns reported signet had a 900kbtc fee block, and then
+	 * CLN got upset scanning feerate.  It expects a u32. */
+	if (value > 0xFFFFFFFF) {
+		plugin_log(cmd->plugin, LOG_UNUSUAL,
+			   "Feerate %"PRIu64" is ridiculous: trimming to 32 bites",
+			   value);
+		value = 0xFFFFFFFF;
+	}
 	/* 0 is special, it means "unknown" */
 	if (value && value < stash->perkb_floor) {
 		plugin_log(cmd->plugin, LOG_DBG,
@@ -1117,7 +1134,7 @@ int main(int argc, char *argv[])
 				  "bitcoind RPC host to connect to",
 				  charp_option, &bitcoind->rpcconnect),
 		    plugin_option("bitcoin-rpcport",
-				  "string",
+				  "int",
 				  "bitcoind RPC host's port",
 				  charp_option, &bitcoind->rpcport),
 		    plugin_option("bitcoin-retry-timeout",

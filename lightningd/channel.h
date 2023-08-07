@@ -25,6 +25,9 @@ struct funding_info {
 
 	/* Our original funds, in funding amount */
 	struct amount_sat our_funds;
+
+	/* Relative splicing balance change */
+	s64 splice_amnt;
 };
 
 struct channel_inflight {
@@ -57,6 +60,9 @@ struct channel_inflight {
 
 	/* Amount requested to lease for this open */
 	struct amount_sat lease_amt;
+
+	/* Did I initate this splice attempt? */
+	bool i_am_initiator;
 };
 
 struct open_attempt {
@@ -110,7 +116,7 @@ struct channel {
 	struct subd *owner;
 
 	/* History */
-	struct log *log;
+	struct logger *log;
 	struct billboard billboard;
 
 	/* Channel flags from opening message. */
@@ -269,6 +275,9 @@ struct channel {
 	/* `Channel-shell` of this channel
 	 * (Minimum information required to backup this channel). */
 	struct scb_chan *scb;
+
+	/* Do we allow the peer to set any fee it wants? */
+	bool ignore_fee_limits;
 };
 
 bool channel_is_connected(const struct channel *channel);
@@ -286,7 +295,7 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 			    enum channel_state state,
 			    enum side opener,
 			    /* NULL or stolen */
-			    struct log *log STEALS,
+			    struct logger *log STEALS,
 			    const char *transient_billboard TAKES,
 			    u8 channel_flags,
 			    bool req_confirmed_ins_local,
@@ -345,11 +354,11 @@ struct channel *new_channel(struct peer *peer, u64 dbid,
 			    u32 lease_chan_max_msat,
 			    u16 lease_chan_max_ppt,
 			    struct amount_msat htlc_minimum_msat,
-			    struct amount_msat htlc_maximum_msat);
+			    struct amount_msat htlc_maximum_msat,
+			    bool ignore_fee_limits);
 
 /* new_inflight - Create a new channel_inflight for a channel */
-struct channel_inflight *
-new_inflight(struct channel *channel,
+struct channel_inflight *new_inflight(struct channel *channel,
 	     const struct bitcoin_outpoint *funding_outpoint,
 	     u32 funding_feerate,
 	     struct amount_sat funding_sat,
@@ -363,7 +372,9 @@ new_inflight(struct channel *channel,
 	     const u16 lease_chan_max_ppt,
 	     const u32 lease_blockheight_start,
 	     const struct amount_msat lease_fee,
-	     const struct amount_sat lease_amt);
+	     const struct amount_sat lease_amt,
+	     s64 splice_amnt,
+	     bool i_am_initiator);
 
 /* Given a txid, find an inflight channel stub. Returns NULL if none found */
 struct channel_inflight *channel_inflight_find(struct channel *channel,
@@ -380,6 +391,15 @@ void delete_channel(struct channel *channel STEALS);
 
 const char *channel_state_name(const struct channel *channel);
 const char *channel_state_str(enum channel_state state);
+
+/* Is the channel in NORMAL or AWAITING_SPLICE state? */
+bool channel_state_normalish(const struct channel *channel);
+
+/* Is the channel in AWAITING_*? */
+bool channel_state_awaitish(const struct channel *channel);
+
+/* Is the channel in one of the CLOSING or CLOSED like states? */
+bool channel_state_closish(enum channel_state channel_state);
 
 void channel_set_owner(struct channel *channel, struct subd *owner);
 
@@ -441,18 +461,22 @@ struct channel *find_channel_by_alias(const struct peer *peer,
 				      const struct short_channel_id *alias,
 				      enum side side);
 
+/* Do we have any channel with option_anchors_zero_fee_htlc_tx?  (i.e. we
+ * might need to CPFP the fee if it force closes!) */
+bool have_anchor_channel(struct lightningd *ld);
+
 void channel_set_last_tx(struct channel *channel,
 			 struct bitcoin_tx *tx,
 			 const struct bitcoin_signature *sig);
 
 static inline bool channel_can_add_htlc(const struct channel *channel)
 {
-	return channel->state == CHANNELD_NORMAL;
+	return channel_state_normalish(channel);
 }
 
 static inline bool channel_fees_can_change(const struct channel *channel)
 {
-	return channel->state == CHANNELD_NORMAL
+	return channel_state_normalish(channel)
 		|| channel->state == CHANNELD_SHUTTING_DOWN;
 }
 
@@ -509,8 +533,7 @@ static inline bool channel_has(const struct channel *channel, int f)
  * don't have a scid yet, e.g., for `zeroconf` channels, so we resort
  * to referencing it by the local alias, which we have in that case.
  */
-const struct short_channel_id *
-channel_scid_or_local_alias(const struct channel *chan);
+const struct short_channel_id *channel_scid_or_local_alias(const struct channel *chan);
 
 void get_channel_basepoints(struct lightningd *ld,
 			    const struct node_id *peer_id,

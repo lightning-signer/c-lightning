@@ -1,4 +1,5 @@
 #include "config.h"
+#include <assert.h>
 #include <bitcoin/address.h>
 #include <bitcoin/script.h>
 #include <ccan/array_size/array_size.h>
@@ -411,6 +412,17 @@ static const char *decode_f(struct bolt11 *b11,
 					       "f: witness v0 bad length %zu",
 					       tal_count(f));
 		}
+		if (version == 1 && tal_count(f) != 32) {
+			return tal_fmt(b11,
+				       "f: witness v1 bad length %zu",
+				       tal_count(f));
+		}
+		if (tal_count(f) > 40) {
+			return tal_fmt(b11,
+				       "f: witness v%"PRIu64" bad length %zu",
+				       version,
+				       tal_count(f));
+		}
 		fallback = scriptpubkey_witness_raw(b11, version,
 						    f, tal_count(f));
 	} else {
@@ -678,6 +690,24 @@ static bool bech32_decode_alloc(const tal_t *ctx,
 	return true;
 }
 
+static bool has_lightning_prefix(const char *invstring)
+{
+	/* BOLT #11:
+	 *
+	 * If a URI scheme is desired, the current recommendation is to either
+	 * use 'lightning:' as a prefix before the BOLT-11 encoding */
+	return (strstarts(invstring, "lightning:") ||
+		strstarts(invstring, "LIGHTNING:"));
+}
+
+const char *to_canonical_invstr(const tal_t *ctx,
+				const char *invstring)
+{
+	if (has_lightning_prefix(invstring))
+		invstring += strlen("lightning:");
+	return str_lowering(ctx, invstring);
+}
+
 /* Extracts signature but does not check it. */
 struct bolt11 *bolt11_decode_nosig(const tal_t *ctx, const char *str,
 				   const struct feature_set *our_features,
@@ -701,14 +731,7 @@ struct bolt11 *bolt11_decode_nosig(const tal_t *ctx, const char *str,
 	memset(have_field, 0, sizeof(have_field));
 	b11->routes = tal_arr(b11, struct route_info *, 0);
 
-	/* BOLT #11:
-	 *
-	 * If a URI scheme is desired, the current recommendation is to either
-	 * use 'lightning:' as a prefix before the BOLT-11 encoding
-	 */
-	if (strstarts(str, "lightning:") || strstarts(str, "LIGHTNING:"))
-		str += strlen("lightning:");
-
+	assert(!has_lightning_prefix(str));
 	if (strlen(str) < 8)
 		return decode_fail(b11, fail, "Bad bech32 string");
 
@@ -892,6 +915,17 @@ struct bolt11 *bolt11_decode_nosig(const tal_t *ctx, const char *str,
 			return decode_fail(b11, fail,
 					   "h: does not match description");
 	}
+
+	/* BOLT #11:
+	 * A writer:
+	 *...
+	 * - MUST include either exactly one `d` or exactly one `h` field.
+	 */
+	/* FIXME: It doesn't actually say the reader must check though! */
+	if (!have_field[bech32_charset_rev['d']]
+	    && !have_field[bech32_charset_rev['h']])
+		return decode_fail(b11, fail,
+				   "must have either 'd' or 'h' field");
 
 	hash_u5_done(&hu5, hash);
 	*sig = tal_dup_arr(ctx, u5, data, data_len, 0);
@@ -1106,12 +1140,12 @@ static void encode_f(u5 **data, const u8 *fallback)
 		push_fallback_addr(data, 0, &pkh, sizeof(pkh));
 	} else if (is_p2wsh(fallback, &wsh)) {
 		push_fallback_addr(data, 0, &wsh, sizeof(wsh));
-	} else if (tal_count(fallback)
+	} else if (tal_count(fallback) > 1
 		   && fallback[0] >= 0x50
 		   && fallback[0] < (0x50+16)) {
 		/* Other (future) witness versions: turn OP_N into N */
-		push_fallback_addr(data, fallback[0] - 0x50, fallback + 1,
-				   tal_count(fallback) - 1);
+		push_fallback_addr(data, fallback[0] - 0x50, fallback + 2,
+				   tal_count(fallback) - 2);
 	} else {
 		/* Copy raw. */
 		push_field(data, 'f',

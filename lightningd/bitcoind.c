@@ -15,6 +15,7 @@
 #include <common/configdir.h>
 #include <common/json_parse.h>
 #include <common/memleak.h>
+#include <common/trace.h>
 #include <db/exec.h>
 #include <lightningd/bitcoind.h>
 #include <lightningd/chaintopology.h>
@@ -113,9 +114,9 @@ static void bitcoin_plugin_error(struct bitcoind *bitcoind, const char *buf,
 	reason = tal_vfmt(NULL, fmt, ap);
 	va_end(ap);
 
-	p = strmap_get(&bitcoind->pluginsmap, method);
+	p = strmap_getn(&bitcoind->pluginsmap, method, strcspn(method, "."));
 	fatal("%s error: bad response to %s (%s), response was %.*s",
-	      p->cmd, method, reason,
+	      p ? p->cmd : "UNKNOWN CALL", method, reason,
 	      toks->end - toks->start, buf + toks->start);
 }
 
@@ -309,7 +310,7 @@ static void estimatefees_callback(const char *buf, const jsmntok_t *toks,
 								"feerates"),
 						&floor);
 	} else {
-		if (!deprecated_apis)
+		if (!call->bitcoind->ld->deprecated_apis)
 			bitcoin_plugin_error(call->bitcoind, buf, resulttok,
 					     "estimatefees",
 					     "missing fee_floor field");
@@ -464,6 +465,8 @@ getrawblockbyheight_callback(const char *buf, const jsmntok_t *toks,
 	const char *block_str, *err;
 	struct bitcoin_blkid blkid;
 	struct bitcoin_block *blk;
+	trace_span_resume(call);
+	trace_span_end(call);
 
 	/* If block hash is `null`, this means not found! Call the callback
 	 * with NULL values. */
@@ -514,6 +517,9 @@ void bitcoind_getrawblockbyheight_(struct bitcoind *bitcoind,
 	call->cb = cb;
 	call->cb_arg = cb_arg;
 
+	trace_span_start("plugin/bitcoind", call);
+	trace_span_tag(call, "method", "getrawblockbyheight");
+	trace_span_suspend(call);
 	req = jsonrpc_request_start(bitcoind, "getrawblockbyheight", NULL, true,
 				    bitcoind->log,
 				    NULL,  getrawblockbyheight_callback,
@@ -578,6 +584,7 @@ static void getchaininfo_callback(const char *buf, const jsmntok_t *toks,
 
 void bitcoind_getchaininfo_(struct bitcoind *bitcoind,
 			    const bool first_call,
+			    const u32 height,
 			    void (*cb)(struct bitcoind *bitcoind,
 				       const char *chain,
 				       u32 headercount,
@@ -598,6 +605,7 @@ void bitcoind_getchaininfo_(struct bitcoind *bitcoind,
 	req = jsonrpc_request_start(bitcoind, "getchaininfo", NULL, true,
 				    bitcoind->log,
 				    NULL, getchaininfo_callback, call);
+	json_add_u32(req->stream, "last_height", height);
 	jsonrpc_request_end(req);
 	bitcoin_plugin_send(bitcoind, req);
 }
@@ -851,7 +859,7 @@ static void destroy_bitcoind(struct bitcoind *bitcoind)
 
 struct bitcoind *new_bitcoind(const tal_t *ctx,
 			      struct lightningd *ld,
-			      struct log *log)
+			      struct logger *log)
 {
 	struct bitcoind *bitcoind = tal(ctx, struct bitcoind);
 

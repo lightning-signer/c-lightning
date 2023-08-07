@@ -10,7 +10,6 @@ from collections import OrderedDict
 from decimal import Decimal
 from pyln.client import LightningRpc
 from pyln.client import Millisatoshi
-from pyln.testing import grpc
 
 import ephemeral_port_reserve  # type: ignore
 import json
@@ -80,7 +79,9 @@ TEST_DEBUG = env("TEST_DEBUG", "0") == "1"
 SLOW_MACHINE = env("SLOW_MACHINE", "0") == "1"
 DEPRECATED_APIS = env("DEPRECATED_APIS", "0") == "1"
 TIMEOUT = int(env("TIMEOUT", 180 if SLOW_MACHINE else 60))
+SUBDAEMON = env("SUBDAEMON", "")
 EXPERIMENTAL_DUAL_FUND = env("EXPERIMENTAL_DUAL_FUND", "0") == "1"
+EXPERIMENTAL_SPLICING = env("EXPERIMENTAL_SPLICING", "0") == "1"
 
 
 def wait_for(success, timeout=TIMEOUT):
@@ -384,6 +385,45 @@ class SimpleBitcoinProxy:
         return f
 
 
+class LssD(TailableProc):
+    def __init__(self, directory, rpcport=None):
+        lss_dir = os.path.join(directory, 'lss')
+        TailableProc.__init__(self, lss_dir, verbose=False)
+
+        if rpcport is None:
+            self.reserved_rpcport = reserve_unused_port()
+            rpcport = self.reserved_rpcport
+        else:
+            self.reserved_rpcport = None
+
+        self.rpcport = rpcport
+        self.prefix = 'lss'
+
+        if not os.path.exists(lss_dir):
+            os.makedirs(lss_dir)
+
+        self.cmd_line = [
+            'lssd',
+            '--datadir={}'.format(lss_dir),
+            '--port={}'.format(rpcport),
+        ]
+
+    def __del__(self):
+        if self.reserved_rpcport is not None:
+            drop_unused_port(self.reserved_rpcport)
+
+    def start(self):
+        self.env['RUST_LOG'] = 'debug'
+        TailableProc.start(self)
+        self.wait_for_log("ready on", timeout=TIMEOUT)
+
+        logging.info("LssD started")
+
+    def stop(self):
+        logging.info("Stopping LssD")
+        return TailableProc.stop(self)
+
+
 class BitcoinD(TailableProc):
 
     def __init__(self, bitcoin_dir="/tmp/bitcoind-test", rpcport=None):
@@ -579,11 +619,49 @@ class ElementsD(BitcoinD):
         return info['unconfidential']
 
 
+class ValidatingLightningSignerD(TailableProc):
+    def __init__(self, vlsd_dir, vlsd_port, node_id, network):
+        TailableProc.__init__(self, vlsd_dir, verbose=True)
+        self.executable = env("REMOTE_SIGNER_CMD", 'vlsd2')
+        os.environ['ALLOWLIST'] = env(
+            'REMOTE_SIGNER_ALLOWLIST',
+            'contrib/remote_hsmd/TESTING_ALLOWLIST')
+        self.opts = [
+            '--network={}'.format(network),
+            '--datadir={}'.format(vlsd_dir),
+            '--connect=http://localhost:{}'.format(vlsd_port),
+            '--integration-test',
+        ]
+        self.prefix = 'vlsd2-%d' % (node_id)
+        self.vlsd_port = vlsd_port
+
+    @property
+    def cmd_line(self):
+        return [self.executable] + self.opts
+
+    def start(self, stdin=None, stdout_redir=True, stderr_redir=True,
+              wait_for_initialized=True):
+        TailableProc.start(self, stdin, stdout_redir, stderr_redir)
+        # We need to always wait for initialization
+        self.wait_for_log("vlsd2 git_desc")
+        logging.info("vlsd2 started")
+
+    def stop(self, timeout=10):
+        logging.info("stopping vlsd2")
+        rc = TailableProc.stop(self, timeout)
+        logging.info("vlsd2 stopped")
+        self.logs_catchup()
+        return rc
+
+    def __del__(self):
+        self.logs_catchup()
+
 class LightningD(TailableProc):
     def __init__(
             self,
             lightning_dir,
             bitcoindproxy,
+            lssd_port,
             port=9735,
             random_hsm=False,
             node_id=0,
@@ -596,9 +674,16 @@ class LightningD(TailableProc):
         self.port = port
         self.cmd_prefix = []
         self.disconnect_file = None
+        self.lightning_dir = lightning_dir
+        self.use_vlsd = False
+        self.vlsd_dir = os.path.join(lightning_dir, "vlsd")
+        self.vlsd_port = None
+        self.vlsd = None
+        self.node_id = node_id
 
         self.rpcproxy = bitcoindproxy
         self.env['CLN_PLUGIN_LOG'] = "cln_plugin=trace,cln_rpc=trace,cln_grpc=trace,debug"
+        self.lssd_port = lssd_port
 
         self.opts = LIGHTNINGD_CONFIG.copy()
         opts = {
@@ -618,11 +703,37 @@ class LightningD(TailableProc):
         if grpc_port is not None:
             opts['grpc-port'] = grpc_port
 
+        if SUBDAEMON:
+            assert node_id > 0
+            subdaemons = SUBDAEMON.split(',')
+            # VLS_SERIAL_SELECT "swaps" the selected item with the first item
+            select = env("VLS_SERIAL_SELECT", '1')
+            if node_id == int(select):
+                ndx = 1
+            elif node_id == 1:
+                ndx = int(select)
+            else:
+                ndx = node_id
+            if ndx > len(subdaemons):
+                # use the last element if not as many specifiers as nodes
+                opts['subdaemon'] = subdaemons[-1]
+            else:
+                # use the matching specifier
+                opts['subdaemon'] = subdaemons[ndx - 1]
+
+            print(f"starting node {node_id} with subdaemon {opts['subdaemon']}")
+            if SUBDAEMON == 'hsmd:remote_hsmd_socket':
+                self.use_vlsd = True
+                
         for k, v in opts.items():
             self.opts[k] = v
 
         if not os.path.exists(os.path.join(lightning_dir, TEST_NETWORK)):
             os.makedirs(os.path.join(lightning_dir, TEST_NETWORK))
+
+        if self.use_vlsd:
+            if not os.path.exists(self.vlsd_dir):
+                os.makedirs(self.vlsd_dir)
 
         # Last 32-bytes of final part of dir -> seed.
         seed = (bytes(re.search('([^/]+)/*$', lightning_dir).group(1), encoding='utf-8') + bytes(32))[:32]
@@ -640,6 +751,10 @@ class LightningD(TailableProc):
         self.early_opts = []
 
     def cleanup(self):
+        if self.use_vlsd:
+            # Make sure the remotesigner is shutdown
+            self.vlsd.stop()
+
         # To force blackhole to exit, disconnect file must be truncated!
         if self.disconnect_file:
             with open(self.disconnect_file, "w") as f:
@@ -660,12 +775,65 @@ class LightningD(TailableProc):
 
         return self.cmd_prefix + [self.executable] + self.early_opts + opts
 
+    def __del__(self):
+        if self.vlsd_port is not None:
+            drop_unused_port(self.vlsd_port)
+
     def start(self, stdin=None, wait_for_initialized=True, stderr_redir=False):
-        self.opts['bitcoin-rpcport'] = self.rpcproxy.rpcport
-        TailableProc.start(self, stdin, stdout_redir=False, stderr_redir=stderr_redir)
-        if wait_for_initialized:
-            self.wait_for_log("Server started with public key")
-        logging.info("LightningD started")
+        try:
+            self.env['VLS_LSS'] = f"http://localhost:{self.lssd_port}"
+            self.env['RUST_LOG'] = 'debug'
+            # Some of the remote hsmd proxies need a bitcoind RPC connection
+            self.env['BITCOIND_RPC_URL'] = 'http://{}:{}@localhost:{}'.format(
+                BITCOIND_CONFIG['rpcuser'],
+                BITCOIND_CONFIG['rpcpassword'],
+                BITCOIND_CONFIG['rpcport'])
+
+            # The remote hsmd proxies need to know which network we are using
+            if 'network' in self.opts:
+                self.env['VLS_NETWORK'] = self.opts['network']
+
+            self.opts['bitcoin-rpcport'] = self.rpcproxy.rpcport
+
+            if self.use_vlsd:
+                self.vlsd_port = reserve_unused_port()
+                # We can't do this in the constructor because we need a new port on each restart.
+                self.env['VLS_PORT'] = str(self.vlsd_port)
+                # Kill any previous vlsd (we may have been restarted)
+                if self.vlsd is not None:
+                    logging.info("killing prior vlsd")
+                    self.vlsd.kill()
+
+            TailableProc.start(self, stdin, stdout_redir=False, stderr_redir=stderr_redir)
+
+            if self.use_vlsd:
+                # Start the remote signer first
+                self.vlsd = ValidatingLightningSignerD(
+                    self.vlsd_dir, self.vlsd_port, self.node_id, self.opts['network'])
+                self.vlsd.start(
+                    stdin, stdout_redir=True, stderr_redir=True,
+                    wait_for_initialized=wait_for_initialized)
+
+            if wait_for_initialized:
+                self.wait_for_log("Server started with public key")
+            logging.info("LightningD started")
+        except Exception:
+            if self.use_vlsd:
+                # LightningD didn't start, stop the remotesigner
+                self.vlsd.stop()
+            raise
+
+    def stop(self, timeout=10):
+        if self.use_vlsd:
+            # Stop the remote signer first
+            self.vlsd.stop(timeout)
+        return TailableProc.stop(self, timeout)
+
+    def kill(self):
+        if self.use_vlsd:
+            # Kill the remote signer first
+            self.vlsd.kill()
+        TailableProc.kill(self)
 
     def wait(self, timeout=TIMEOUT):
         """Wait for the daemon to stop for up to timeout seconds
@@ -732,7 +900,7 @@ class PrettyPrintingLightningRpc(LightningRpc):
 
 
 class LightningNode(object):
-    def __init__(self, node_id, lightning_dir, bitcoind, executor, valgrind, may_fail=False,
+    def __init__(self, node_id, lightning_dir, bitcoind, lssd, executor, valgrind, may_fail=False,
                  may_reconnect=False,
                  allow_broken_log=False,
                  allow_warning=False,
@@ -742,6 +910,7 @@ class LightningNode(object):
                  valgrind_plugins=True,
                  **kwargs):
         self.bitcoin = bitcoind
+        self.lssd = lssd
         self.executor = executor
         self.may_fail = may_fail
         self.may_reconnect = may_reconnect
@@ -761,6 +930,7 @@ class LightningNode(object):
 
         self.daemon = LightningD(
             lightning_dir, bitcoindproxy=bitcoind.get_proxy(),
+            lssd_port=lssd.rpcport,
             port=port, random_hsm=random_hsm, node_id=node_id,
             grpc_port=self.grpc_port,
         )
@@ -788,6 +958,8 @@ class LightningNode(object):
                 self.daemon.opts["dev-no-reconnect"] = None
         if EXPERIMENTAL_DUAL_FUND:
             self.daemon.opts["experimental-dual-fund"] = None
+        if EXPERIMENTAL_SPLICING:
+            self.daemon.opts["experimental-splicing"] = None
 
         if options is not None:
             self.daemon.opts.update(options)
@@ -820,6 +992,7 @@ class LightningNode(object):
             self._create_jsonrpc_rpc(jsonschemas)
 
     def _create_grpc_rpc(self):
+        from pyln.testing import grpc
         self.grpc_port = reserve_unused_port()
         d = self.lightning_dir / TEST_NETWORK
         d.mkdir(parents=True, exist_ok=True)
@@ -881,8 +1054,8 @@ class LightningNode(object):
             creds,
             options=(('grpc.ssl_target_name_override', 'cln'),)
         )
-        from pyln.testing import node_pb2_grpc as nodegrpc
-        return nodegrpc.NodeStub(channel)
+        from pyln import grpc as clnpb
+        return clnpb.NodeStub(channel)
 
     def connect(self, remote_node):
         self.rpc.connect(remote_node.info['id'], '127.0.0.1', remote_node.port)
@@ -1185,6 +1358,9 @@ class LightningNode(object):
             'channel': scid
         }
 
+        # let the signer know this payment is coming
+        self.rpc.preapproveinvoice(bolt11=inv['bolt11'])
+
         # sendpay is async now
         self.rpc.sendpay([routestep], rhash, payment_secret=psecret, bolt11=inv['bolt11'])
         # wait for sendpay to comply
@@ -1281,7 +1457,8 @@ class LightningNode(object):
         # Hack so we can mutate the txid: pass it in a list
         def rbf_or_txid_broadcast(txids):
             # RBF onchain txid d4b597505b543a4b8b42ab4d481fd7a533febb7e7df150ca70689e6d046612f7 (fee 6564sat) with txid 979878b8f855d3895d1cd29bd75a60b21492c4842e38099186a8e649bee02c7c (fee 8205sat)
-            line = self.daemon.is_in_log("RBF onchain txid {}".format(txids[-1]))
+            # We can have noop RBFs: ignore those (increases are logged INFO level)
+            line = self.daemon.is_in_log(" INFO    .*RBF (onchain|HTLC) txid {}".format(txids[-1]))
             if line is not None:
                 newtxid = re.search(r'with txid ([0-9a-fA-F]*)', line).group(1)
                 txids.append(newtxid)
@@ -1348,10 +1525,17 @@ class LightningNode(object):
 
     def config(self, config_name):
         try:
-            opt = self.rpc.listconfigs(config_name)
-            return opt[config_name]
+            config = self.rpc.listconfigs(config_name)
         except RpcError:
             return None
+
+        config = config['configs'][config_name]
+        for valfield in ('set',
+                         'value_str', 'value_bool', 'value_int',
+                         'values_str', 'values_bool', 'values_int'):
+            if valfield in config:
+                return config[valfield]
+        raise ValueError("Unknown value in config {}".format(config))
 
     def dev_pay(self, bolt11, amount_msat=None, label=None, riskfactor=None,
                 maxfeepercent=None, retry_for=None,
@@ -1427,7 +1611,7 @@ def flock(directory: Path):
 class NodeFactory(object):
     """A factory to setup and start `lightningd` daemons.
     """
-    def __init__(self, request, testname, bitcoind, executor, directory,
+    def __init__(self, request, testname, bitcoind, lssd, executor, directory,
                  db_provider, node_cls, jsonschemas):
         if request.node.get_closest_marker("slow_test") and SLOW_MACHINE:
             self.valgrind = False
@@ -1439,6 +1623,7 @@ class NodeFactory(object):
         self.reserved_ports = []
         self.executor = executor
         self.bitcoind = bitcoind
+        self.lssd = lssd
         self.directory = directory
         self.lock = threading.Lock()
         self.db_provider = db_provider
@@ -1524,7 +1709,7 @@ class NodeFactory(object):
         db = self.db_provider.get_db(os.path.join(lightning_dir, TEST_NETWORK), self.testname, node_id)
         db.provider = self.db_provider
         node = self.node_cls(
-            node_id, lightning_dir, self.bitcoind, self.executor, self.valgrind, db=db,
+            node_id, lightning_dir, self.bitcoind, self.lssd, self.executor, self.valgrind, db=db,
             port=port, options=options, may_fail=may_fail or expect_fail,
             jsonschemas=self.jsonschemas,
             **kwargs

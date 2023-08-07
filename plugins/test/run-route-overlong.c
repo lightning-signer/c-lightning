@@ -160,6 +160,9 @@ bool json_to_u32(const char *buffer UNNEEDED, const jsmntok_t *tok UNNEEDED, u32
 /* Generated stub for json_to_u64 */
 bool json_to_u64(const char *buffer UNNEEDED, const jsmntok_t *tok UNNEEDED, u64 *num UNNEEDED)
 { fprintf(stderr, "json_to_u64 called!\n"); abort(); }
+/* Generated stub for json_to_s64 */
+bool json_to_s64(const char *buffer UNNEEDED, const jsmntok_t *tok UNNEEDED, s64 *num UNNEEDED)
+{ fprintf(stderr, "json_to_s64 called!\n"); abort(); }
 /* Generated stub for json_tok_bin_from_hex */
 u8 *json_tok_bin_from_hex(const tal_t *ctx UNNEEDED, const char *buffer UNNEEDED, const jsmntok_t *tok UNNEEDED)
 { fprintf(stderr, "json_tok_bin_from_hex called!\n"); abort(); }
@@ -255,7 +258,11 @@ static void update_connection(int store_fd,
 			      bool disable)
 {
 	secp256k1_ecdsa_signature dummy_sig;
+	u8 flags = node_id_idx(from, to);
 	u8 *msg;
+
+	if (disable)
+		flags |= ROUTING_FLAGS_DISABLED;
 
 	/* So valgrind doesn't complain */
 	memset(&dummy_sig, 0, sizeof(dummy_sig));
@@ -265,8 +272,7 @@ static void update_connection(int store_fd,
 				    &chainparams->genesis_blockhash,
 				    scid, 0,
 				    ROUTING_OPT_HTLC_MAX_MSAT,
-				    node_id_idx(from, to)
-				    + (disable ? ROUTING_FLAGS_DISABLED : 0),
+				    flags,
 				    delay,
 				    min,
 				    base_fee,

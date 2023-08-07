@@ -695,6 +695,8 @@ listfunds_success(struct command *cmd,
 					     committed_funds,
 					     avail_utxos);
 		json_add_bool(req->js, "reservedok", true);
+		/* We don't re-reserve any UTXOS :) */
+		json_add_num(req->js, "reserve", 0);
 	} else {
 		req = jsonrpc_request_start(cmd->plugin, cmd,
 					    "fundpsbt",
@@ -1055,7 +1057,7 @@ static struct command_result *json_disconnect(struct command *cmd,
 	const char *err;
 
 	err = json_scan(tmpctx, buf, params,
-			"{id:%}",
+			"{disconnect:{id:%}}",
 			JSON_SCAN(json_to_node_id, &id));
 	if (err)
 		plugin_err(cmd->plugin,
@@ -1202,7 +1204,7 @@ param_funder_opt(struct command *cmd, const char *name,
 	opt_str = tal_strndup(cmd, buffer + tok->start,
 			      tok->end - tok->start);
 
-	err = funding_option(opt_str, *opt);
+	err = funding_option(cmd->plugin, opt_str, *opt);
 	if (err)
 		return command_fail_badparam(cmd, name, buffer, tok, err);
 
@@ -1222,7 +1224,7 @@ param_policy_mod(struct command *cmd, const char *name,
 	arg_str = tal_strndup(cmd, buffer + tok->start,
 			      tok->end - tok->start);
 
-	err = u64_option(arg_str, *mod);
+	err = u64_option(cmd->plugin, arg_str, *mod);
 	if (err) {
 		tal_free(err);
 		if (!parse_amount_sat(&sats, arg_str, strlen(arg_str)))
@@ -1518,41 +1520,42 @@ const struct plugin_notification notifs[] = {
 	},
 };
 
-static char *option_channel_base(const char *arg, struct funder_policy *policy)
+static char *option_channel_base(struct plugin *plugin, const char *arg, struct funder_policy *policy)
 {
 	struct amount_msat amt;
 
 	if (!parse_amount_msat(&amt, arg, strlen(arg)))
-		return tal_fmt(NULL, "Unable to parse amount '%s'", arg);
+		return tal_fmt(tmpctx, "Unable to parse amount '%s'", arg);
 
 	if (!policy->rates)
 		policy->rates = default_lease_rates(policy);
 
 	if (!assign_overflow_u32(&policy->rates->channel_fee_max_base_msat,
 				amt.millisatoshis)) /* Raw: conversion */
-		return tal_fmt(NULL, "channel_fee_max_base_msat overflowed");
+		return tal_fmt(tmpctx, "channel_fee_max_base_msat overflowed");
 
 	return NULL;
 }
 
 static char *
-option_channel_fee_proportional_thousandths_max(const char *arg,
+option_channel_fee_proportional_thousandths_max(struct plugin *plugin,
+						const char *arg,
 						struct funder_policy *policy)
 {
 	if (!policy->rates)
 		policy->rates = default_lease_rates(policy);
-	return u16_option(arg, &policy->rates->channel_fee_max_proportional_thousandths);
+	return u16_option(plugin, arg, &policy->rates->channel_fee_max_proportional_thousandths);
 }
 
-static char *amount_option(const char *arg, struct amount_sat *amt)
+static char *amount_option(struct plugin *plugin, const char *arg, struct amount_sat *amt)
 {
 	if (!parse_amount_sat(amt, arg, strlen(arg)))
-		return tal_fmt(NULL, "Unable to parse amount '%s'", arg);
+		return tal_fmt(tmpctx, "Unable to parse amount '%s'", arg);
 
 	return NULL;
 }
 
-static char *option_lease_fee_base(const char *arg,
+static char *option_lease_fee_base(struct plugin *plugin, const char *arg,
 				   struct funder_policy *policy)
 {
 	struct amount_sat amt;
@@ -1560,43 +1563,44 @@ static char *option_lease_fee_base(const char *arg,
 	if (!policy->rates)
 		policy->rates = default_lease_rates(policy);
 
-	err = amount_option(arg, &amt);
+	err = amount_option(plugin, arg, &amt);
 	if (err)
 		return err;
 
 	if (!assign_overflow_u32(&policy->rates->lease_fee_base_sat,
 				 amt.satoshis)) /* Raw: conversion */
-		return tal_fmt(NULL, "lease_fee_base_sat overflowed");
+		return tal_fmt(tmpctx, "lease_fee_base_sat overflowed");
 
 	return NULL;
 }
 
-static char *option_lease_fee_basis(const char *arg,
+static char *option_lease_fee_basis(struct plugin *plugin, const char *arg,
 				    struct funder_policy *policy)
 {
 	if (!policy->rates)
 		policy->rates = default_lease_rates(policy);
-	return u16_option(arg, &policy->rates->lease_fee_basis);
+	return u16_option(plugin, arg, &policy->rates->lease_fee_basis);
 }
 
-static char *option_lease_weight_max(const char *arg,
+static char *option_lease_weight_max(struct plugin *plugin, const char *arg,
 				     struct funder_policy *policy)
 {
 	if (!policy->rates)
 		policy->rates = default_lease_rates(policy);
-	return u16_option(arg, &policy->rates->funding_weight);
+	return u16_option(plugin, arg, &policy->rates->funding_weight);
 }
 
-static char *amount_sat_or_u64_option(const char *arg, u64 *amt)
+static char *amount_sat_or_u64_option(struct plugin *plugin,
+				      const char *arg, u64 *amt)
 {
 	struct amount_sat sats;
 	char *err;
 
-	err = u64_option(arg, amt);
+	err = u64_option(plugin, arg, amt);
 	if (err) {
 		tal_free(err);
 		if (!parse_amount_sat(&sats, arg, strlen(arg)))
-			return tal_fmt(NULL,
+			return tal_fmt(tmpctx,
 				       "Unable to parse option '%s'",
 				       arg);
 

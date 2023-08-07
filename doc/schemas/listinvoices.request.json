@@ -27,6 +27,25 @@
     "offer_id": {
       "type": "string",
       "description": ""
+    },
+    "index": {
+      "type": "string",
+      "added": "v23.08",
+      "enum": [
+        "created",
+        "updated"
+      ],
+      "description": ""
+    },
+    "start": {
+      "type": "u64",
+      "added": "v23.08",
+      "description": ""
+    },
+    "limit": {
+      "type": "u32",
+      "added": "v23.08",
+      "description": ""
     }
   }
 }

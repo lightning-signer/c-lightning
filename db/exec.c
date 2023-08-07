@@ -62,16 +62,16 @@ void db_set_intvar(struct db *db, const char *varname, s64 val)
 {
 	size_t changes;
 	struct db_stmt *stmt = db_prepare_v2(db, SQL("UPDATE vars SET intval=? WHERE name=?;"));
-	db_bind_int(stmt, 0, val);
-	db_bind_text(stmt, 1, varname);
+	db_bind_int(stmt, val);
+	db_bind_text(stmt, varname);
 	db_exec_prepared_v2(stmt);
 	changes = db_count_changes(stmt);
 	tal_free(stmt);
 
 	if (changes == 0) {
 		stmt = db_prepare_v2(db, SQL("INSERT INTO vars (name, intval) VALUES (?, ?);"));
-		db_bind_text(stmt, 0, varname);
-		db_bind_int(stmt, 1, val);
+		db_bind_text(stmt, varname);
+		db_bind_int(stmt, val);
 		db_exec_prepared_v2(stmt);
 		tal_free(stmt);
 	}
@@ -82,7 +82,7 @@ s64 db_get_intvar(struct db *db, const char *varname, s64 defval)
 	s64 res = defval;
 	struct db_stmt *stmt = db_prepare_v2(
 	    db, SQL("SELECT intval FROM vars WHERE name= ? LIMIT 1"));
-	db_bind_text(stmt, 0, varname);
+	db_bind_text(stmt, varname);
 	if (db_query_prepared_canfail(stmt) && db_step(stmt))
 		res = db_col_int(stmt, "intval");
 
@@ -110,10 +110,10 @@ static void db_data_version_incr(struct db *db)
 		       "SET intval = intval + 1 "
 		       "WHERE name = 'data_version'"
 		       " AND intval = ?"));
-       db_bind_int(stmt, 0, db->data_version);
+       db_bind_int(stmt, db->data_version);
        db_exec_prepared_v2(stmt);
        if (db_count_changes(stmt) != 1)
-	       db_fatal("Optimistic lock on the database failed. There"
+	       db_fatal(stmt->db, "Optimistic lock on the database failed. There"
 			" may be a concurrent access to the database."
 			" Aborting since concurrent access is unsafe.");
        tal_free(stmt);
@@ -124,7 +124,7 @@ void db_begin_transaction_(struct db *db, const char *location)
 {
 	bool ok;
 	if (db->in_transaction)
-		db_fatal("Already in transaction from %s", db->in_transaction);
+		db_fatal(db, "Already in transaction from %s", db->in_transaction);
 
 	/* No writes yet. */
 	db->dirty = false;
@@ -132,7 +132,7 @@ void db_begin_transaction_(struct db *db, const char *location)
 	db_prepare_for_changes(db);
 	ok = db->config->begin_tx_fn(db);
 	if (!ok)
-		db_fatal("Failed to start DB transaction: %s", db->error);
+		db_fatal(db, "Failed to start DB transaction: %s", db->error);
 
 	db->in_transaction = location;
 }
@@ -156,7 +156,7 @@ void db_commit_transaction(struct db *db)
 	ok = db->config->commit_tx_fn(db);
 
 	if (!ok)
-		db_fatal("Failed to commit DB transaction: %s", db->error);
+		db_fatal(db, "Failed to commit DB transaction: %s", db->error);
 
 	db->in_transaction = NULL;
 	db->dirty = false;

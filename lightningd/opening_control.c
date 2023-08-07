@@ -76,6 +76,12 @@ void json_add_uncommitted_channel(struct json_stream *response,
 			       uc->peer->their_features,
 			       OPT_ANCHOR_OUTPUTS))
 		json_add_string(response, NULL, "option_anchor_outputs");
+
+	if (feature_negotiated(uc->peer->ld->our_features,
+			       uc->peer->their_features,
+			       OPT_ANCHORS_ZERO_FEE_HTLC_TX))
+		json_add_string(response, NULL, "option_anchors_zero_fee_htlc_tx");
+
 	json_array_end(response);
 	json_object_end(response);
 }
@@ -225,7 +231,8 @@ wallet_commit_channel(struct lightningd *ld,
 						     &lease_start_blockheight)),
 			      0, NULL, 0, 0, /* No leases on v1s */
 			      ld->config.htlc_minimum_msat,
-			      ld->config.htlc_maximum_msat);
+			      ld->config.htlc_maximum_msat,
+			      ld->config.ignore_fee_limits);
 
 	/* Now we finally put it in the database. */
 	wallet_channel_insert(ld->wallet, channel);
@@ -919,6 +926,7 @@ bool peer_start_openingd(struct peer *peer, struct peer_fd *peer_fd)
 	struct amount_msat min_effective_htlc_capacity;
 	struct uncommitted_channel *uc;
 	const u8 *msg;
+	u32 minrate, maxrate;
 
 	assert(peer->uncommitted_channel);
 	uc = peer->uncommitted_channel;
@@ -950,6 +958,13 @@ bool peer_start_openingd(struct peer *peer, struct peer_fd *peer_fd)
 		       &max_to_self_delay,
 		       &min_effective_htlc_capacity);
 
+	if (peer->ld->config.ignore_fee_limits) {
+		minrate = 1;
+		maxrate = 0xFFFFFFFF;
+	} else {
+		minrate = feerate_min(peer->ld, NULL);
+		maxrate = feerate_max(peer->ld, NULL);
+	}
 
 	msg = towire_openingd_init(NULL,
 				   chainparams,
@@ -961,11 +976,9 @@ bool peer_start_openingd(struct peer *peer, struct peer_fd *peer_fd)
 				   &uc->local_basepoints,
 				   &uc->local_funding_pubkey,
 				   uc->minimum_depth,
-				   feerate_min(peer->ld, NULL),
-				   feerate_max(peer->ld, NULL),
+				   minrate, maxrate,
 				   IFDEV(peer->ld->dev_force_tmp_channel_id, NULL),
-				   peer->ld->config.allowdustreserve,
-				   !deprecated_apis);
+				   peer->ld->config.allowdustreserve);
 	subd_send_msg(uc->open_daemon, take(msg));
 	return true;
 }
@@ -1277,6 +1290,7 @@ static struct command_result *json_fundchannel_start(struct command *cmd,
 			fc->our_upfront_shutdown_script,
 			upfront_shutdown_script_wallet_index,
 			*feerate_per_kw,
+			unilateral_feerate(cmd->ld->topology, true),
 			&tmp_channel_id,
 			fc->channel_flags,
 			fc->uc->reserve);
@@ -1309,7 +1323,7 @@ static struct channel *stub_chan(struct command *cmd,
 				 struct node_id nodeid,
 				 struct channel_id cid,
 				 struct bitcoin_outpoint funding,
-				 struct wireaddr_internal addr,
+				 struct wireaddr addr,
 				 struct amount_sat funding_sats,
 				 struct channel_type *type)
 {
@@ -1342,10 +1356,16 @@ static struct channel *stub_chan(struct command *cmd,
 			return NULL;
 		}
 	} else {
+		struct wireaddr_internal wint;
+
+		wint.itype = ADDR_INTERNAL_WIREADDR;
+		wint.u.wireaddr.is_websocket = false;
+		wint.u.wireaddr.wireaddr = addr;
 		peer = new_peer(cmd->ld,
 				0,
 				&nodeid,
-				&addr,
+				&wint,
+				NULL,
 				false);
 	}
 
@@ -1452,7 +1472,8 @@ static struct channel *stub_chan(struct command *cmd,
 						    &blockht)),
 			      0, NULL, 0, 0, /* No leases on v1s */
 			      ld->config.htlc_minimum_msat,
-			      ld->config.htlc_maximum_msat);
+			      ld->config.htlc_maximum_msat,
+			      false);
 
 	return channel;
 }

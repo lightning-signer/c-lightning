@@ -61,7 +61,7 @@ bool cupdate_different(struct gossip_store *gs UNNEEDED,
 { fprintf(stderr, "cupdate_different called!\n"); abort(); }
 /* Generated stub for gossip_store_add */
 u64 gossip_store_add(struct gossip_store *gs UNNEEDED, const u8 *gossip_msg UNNEEDED,
-		     u32 timestamp UNNEEDED, bool zombie UNNEEDED, bool spam UNNEEDED,
+		     u32 timestamp UNNEEDED, bool zombie UNNEEDED, bool spam UNNEEDED, bool dying UNNEEDED,
 		     const u8 *addendum UNNEEDED)
 { fprintf(stderr, "gossip_store_add called!\n"); abort(); }
 /* Generated stub for gossip_store_add_private_update */
@@ -86,9 +86,13 @@ const u8 *gossip_store_get_private_update(const tal_t *ctx UNNEEDED,
 void gossip_store_mark_channel_deleted(struct gossip_store *gs UNNEEDED,
 				       const struct short_channel_id *scid UNNEEDED)
 { fprintf(stderr, "gossip_store_mark_channel_deleted called!\n"); abort(); }
+/* Generated stub for gossip_store_mark_dying */
+void gossip_store_mark_dying(struct gossip_store *gs UNNEEDED,
+			     const struct broadcastable *bcast UNNEEDED,
+			     int type UNNEEDED)
+{ fprintf(stderr, "gossip_store_mark_dying called!\n"); abort(); }
 /* Generated stub for gossip_store_new */
-struct gossip_store *gossip_store_new(struct routing_state *rstate UNNEEDED,
-				      struct list_head *peers UNNEEDED)
+struct gossip_store *gossip_store_new(struct routing_state *rstate UNNEEDED)
 { fprintf(stderr, "gossip_store_new called!\n"); abort(); }
 /* Generated stub for memleak_add_helper_ */
 void memleak_add_helper_(const tal_t *p UNNEEDED, void (*cb)(struct htable *memtable UNNEEDED,
@@ -115,7 +119,9 @@ struct oneshot *new_reltimer_(struct timers *timers UNNEEDED,
 void *notleak_(void *ptr UNNEEDED, bool plus_children UNNEEDED)
 { fprintf(stderr, "notleak_ called!\n"); abort(); }
 /* Generated stub for peer_supplied_good_gossip */
-void peer_supplied_good_gossip(struct peer *peer UNNEEDED, size_t amount UNNEEDED)
+void peer_supplied_good_gossip(struct daemon *daemon UNNEEDED,
+			       const struct node_id *source_peer UNNEEDED,
+			       size_t amount UNNEEDED)
 { fprintf(stderr, "peer_supplied_good_gossip called!\n"); abort(); }
 /* Generated stub for status_failed */
 void status_failed(enum status_failreason code UNNEEDED,

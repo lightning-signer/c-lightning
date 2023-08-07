@@ -243,8 +243,14 @@ static void add_htlcs(struct bitcoin_tx ***txs,
 		      enum side side)
 {
 	struct bitcoin_outpoint outpoint;
-	u32 feerate_per_kw = channel_feerate(channel, side);
+	u32 htlc_feerate_per_kw;
 	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
+
+	if (channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX))
+		htlc_feerate_per_kw = 0;
+	else
+		htlc_feerate_per_kw = channel_feerate(channel, side);
 
 	/* Get txid of commitment transaction */
 	bitcoin_txid((*txs)[0], &outpoint.txid);
@@ -261,27 +267,31 @@ static void add_htlcs(struct bitcoin_tx ***txs,
 		if (htlc_owner(htlc) == side) {
 			ripemd160(&ripemd, htlc->rhash.u.u8, sizeof(htlc->rhash.u.u8));
 			wscript = htlc_offered_wscript(tmpctx, &ripemd, keyset,
-						       option_anchor_outputs);
+						       option_anchor_outputs,
+						       option_anchors_zero_fee_htlc_tx);
 			tx = htlc_timeout_tx(*txs, chainparams, &outpoint,
 					     wscript,
 					     htlc->amount,
 					     htlc->expiry.locktime,
 					     channel->config[!side].to_self_delay,
-					     feerate_per_kw,
+					     htlc_feerate_per_kw,
 					     keyset,
-					     option_anchor_outputs);
+					     option_anchor_outputs,
+					     option_anchors_zero_fee_htlc_tx);
 		} else {
 			ripemd160(&ripemd, htlc->rhash.u.u8, sizeof(htlc->rhash.u.u8));
 			wscript = htlc_received_wscript(tmpctx, &ripemd,
 							&htlc->expiry, keyset,
-							option_anchor_outputs);
+							option_anchor_outputs,
+							option_anchors_zero_fee_htlc_tx);
 			tx = htlc_success_tx(*txs, chainparams, &outpoint,
 					     wscript,
 					     htlc->amount,
 					     channel->config[!side].to_self_delay,
-					     feerate_per_kw,
+					     htlc_feerate_per_kw,
 					     keyset,
-					     option_anchor_outputs);
+					     option_anchor_outputs,
+					     option_anchors_zero_fee_htlc_tx);
 		}
 
 		/* Append to array. */
@@ -299,9 +309,29 @@ struct bitcoin_tx **channel_txs(const tal_t *ctx,
 				u64 commitment_number,
 				enum side side)
 {
+	return channel_splice_txs(ctx, &channel->funding, channel->funding_sats,
+				  htlcmap, direct_outputs, funding_wscript,
+				  channel, per_commitment_point,
+				  commitment_number, side, 0, 0);
+}
+
+struct bitcoin_tx **channel_splice_txs(const tal_t *ctx,
+				       const struct bitcoin_outpoint *funding,
+				       struct amount_sat funding_sats,
+				       const struct htlc ***htlcmap,
+				       struct wally_tx_output *direct_outputs[NUM_SIDES],
+				       const u8 **funding_wscript,
+				       const struct channel *channel,
+				       const struct pubkey *per_commitment_point,
+				       u64 commitment_number,
+				       enum side side,
+				       s64 splice_amnt,
+				       s64 remote_splice_amnt)
+{
 	struct bitcoin_tx **txs;
 	const struct htlc **committed;
 	struct keyset keyset;
+	struct amount_msat side_pay, other_side_pay;
 
 	if (!derive_keyset(per_commitment_point,
 			   &channel->basepoints[side],
@@ -319,10 +349,25 @@ struct bitcoin_tx **channel_txs(const tal_t *ctx,
 					      &channel->funding_pubkey[side],
 					      &channel->funding_pubkey[!side]);
 
+	side_pay = channel->view[side].owed[side];
+	other_side_pay = channel->view[side].owed[!side];
+
+	if (side == LOCAL) {
+		if (!amount_msat_add_sat_s64(&side_pay, side_pay, splice_amnt))
+			return NULL;
+		if (!amount_msat_add_sat_s64(&other_side_pay, other_side_pay, remote_splice_amnt))
+			return NULL;
+	} else if (side == REMOTE) {
+		if (!amount_msat_add_sat_s64(&side_pay, side_pay, remote_splice_amnt))
+			return NULL;
+		if (!amount_msat_add_sat_s64(&other_side_pay, other_side_pay, splice_amnt))
+			return NULL;
+	}
+
 	txs = tal_arr(ctx, struct bitcoin_tx *, 1);
 	txs[0] = commit_tx(
-	    ctx, &channel->funding,
-	    channel->funding_sats,
+	    txs, funding,
+	    funding_sats,
 	    &channel->funding_pubkey[side],
 	    &channel->funding_pubkey[!side],
 	    channel->opener,
@@ -330,17 +375,18 @@ struct bitcoin_tx **channel_txs(const tal_t *ctx,
 	    channel->lease_expiry,
 	    channel_blockheight(channel, side),
 	    &keyset, channel_feerate(channel, side),
-	    channel->config[side].dust_limit, channel->view[side].owed[side],
-	    channel->view[side].owed[!side], committed, htlcmap, direct_outputs,
+	    channel->config[side].dust_limit, side_pay,
+	    other_side_pay, committed, htlcmap, direct_outputs,
 	    commitment_number ^ channel->commitment_number_obscurer,
 	    channel_has(channel, OPT_ANCHOR_OUTPUTS),
+	    channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX),
 	    side);
 
 	/* Set the remote/local pubkeys on the commitment tx psbt */
 	psbt_input_add_pubkey(txs[0]->psbt, 0,
-			      &channel->funding_pubkey[side]);
+			      &channel->funding_pubkey[side], false /* is_taproot */);
 	psbt_input_add_pubkey(txs[0]->psbt, 0,
-			      &channel->funding_pubkey[!side]);
+			      &channel->funding_pubkey[!side], false /* is_taproot */);
 
 	add_htlcs(&txs, *htlcmap, channel, &keyset, side);
 
@@ -360,8 +406,22 @@ static bool get_room_above_reserve(const struct channel *channel,
 	/* Reserve is set by the *other* side */
 	struct amount_sat reserve = channel->config[!side].channel_reserve;
 	struct balance balance;
+	struct amount_msat owed = view->owed[side];
 
-	to_balance(&balance, view->owed[side]);
+	/* `lowest_splice_amnt` will always be negative or 0 */
+	if (amount_msat_less_eq_sat(owed, amount_sat(-view->lowest_splice_amnt[side]))) {
+		status_debug("Relative splice balance invalid");
+		return false;
+	}
+
+	/* `lowest_splice_amnt` is a relative amount */
+	if (!amount_msat_sub_sat(&owed, owed,
+				 amount_sat(-view->lowest_splice_amnt[side]))) {
+		status_debug("Owed amount should not wrap around from splice");
+		return false;
+	}
+
+	to_balance(&balance, owed);
 
 	for (size_t i = 0; i < tal_count(removing); i++)
 		balance_remove_htlc(&balance, removing[i], side);
@@ -392,17 +452,24 @@ static bool get_room_above_reserve(const struct channel *channel,
 static size_t num_untrimmed_htlcs(enum side side,
 				  struct amount_sat dust_limit,
 				  u32 feerate,
-				  bool option_static_remotekey,
+				  bool option_anchor_outputs,
+				  bool option_anchors_zero_fee_htlc_tx,
 				  const struct htlc **committed,
 				  const struct htlc **adding,
 				  const struct htlc **removing)
 {
 	return commit_tx_num_untrimmed(committed, feerate, dust_limit,
-				       option_static_remotekey, side)
+				       option_anchor_outputs,
+				       option_anchors_zero_fee_htlc_tx,
+				       side)
 		+ commit_tx_num_untrimmed(adding, feerate, dust_limit,
-					  option_static_remotekey, side)
+					  option_anchor_outputs,
+					  option_anchors_zero_fee_htlc_tx,
+					  side)
 		- commit_tx_num_untrimmed(removing, feerate, dust_limit,
-					  option_static_remotekey, side);
+					  option_anchor_outputs,
+					  option_anchors_zero_fee_htlc_tx,
+					  side);
 }
 
 static struct amount_sat fee_for_htlcs(const struct channel *channel,
@@ -415,12 +482,16 @@ static struct amount_sat fee_for_htlcs(const struct channel *channel,
 	struct amount_sat dust_limit = channel->config[side].dust_limit;
 	size_t untrimmed;
 	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
 
 	untrimmed = num_untrimmed_htlcs(side, dust_limit, feerate,
 					option_anchor_outputs,
+					option_anchors_zero_fee_htlc_tx,
 					committed, adding, removing);
 
-	return commit_tx_base_fee(feerate, untrimmed, option_anchor_outputs);
+	return commit_tx_base_fee(feerate, untrimmed,
+				  option_anchor_outputs,
+				  option_anchors_zero_fee_htlc_tx);
 }
 
 static bool htlc_dust(const struct channel *channel,
@@ -433,21 +504,25 @@ static bool htlc_dust(const struct channel *channel,
 {
 	struct amount_sat dust_limit = channel->config[side].dust_limit;
 	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
 	struct amount_msat trim_rmvd = AMOUNT_MSAT(0);
 
 	if (!commit_tx_amount_trimmed(committed, feerate,
 				      dust_limit,
 				      option_anchor_outputs,
+				      option_anchors_zero_fee_htlc_tx,
 				      side, trim_total))
 		return false;
 	if (!commit_tx_amount_trimmed(adding, feerate,
 				      dust_limit,
 				      option_anchor_outputs,
+				      option_anchors_zero_fee_htlc_tx,
 				      side, trim_total))
 		return false;
 	if (!commit_tx_amount_trimmed(removing, feerate,
 				      dust_limit,
 				      option_anchor_outputs,
+				      option_anchors_zero_fee_htlc_tx,
 				      side, &trim_rmvd))
 		return false;
 
@@ -489,6 +564,7 @@ static bool local_opener_has_fee_headroom(const struct channel *channel,
 	size_t untrimmed;
 	struct amount_sat fee;
 	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
 
 	assert(channel->opener == LOCAL);
 
@@ -497,12 +573,14 @@ static bool local_opener_has_fee_headroom(const struct channel *channel,
 	untrimmed = num_untrimmed_htlcs(LOCAL, channel->config[LOCAL].dust_limit,
 					feerate,
 					option_anchor_outputs,
+					option_anchors_zero_fee_htlc_tx,
 					committed, adding, removing);
 
 	/* Now, how much would it cost us if feerate increases 100% and we added
 	 * another HTLC? */
 	fee = commit_tx_base_fee(2 * feerate, untrimmed + 1,
-				 option_anchor_outputs);
+				 option_anchor_outputs,
+				 option_anchors_zero_fee_htlc_tx);
 	if (amount_msat_greater_eq_sat(remainder, fee))
 		return true;
 
@@ -535,6 +613,7 @@ static enum channel_add_err add_htlc(struct channel *channel,
 	const struct channel_view *view;
 	size_t htlc_count;
 	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
 	u32 feerate, feerate_ceil;
 
 	htlc = tal(tmpctx, struct htlc);
@@ -704,7 +783,7 @@ static enum channel_add_err add_htlc(struct channel *channel,
 		 * of 330 sats from the funder (either `to_local` or
 		 * `to_remote`).
 		 */
-		if (option_anchor_outputs
+		if ((option_anchor_outputs || option_anchors_zero_fee_htlc_tx)
 		    && channel->opener == sender
 		    && !amount_msat_sub_sat(&remainder, remainder, AMOUNT_SAT(660)))
 			return CHANNEL_ERR_CHANNEL_CAPACITY_EXCEEDED;
@@ -738,7 +817,7 @@ static enum channel_add_err add_htlc(struct channel *channel,
 						    &remainder))
 				return CHANNEL_ERR_CHANNEL_CAPACITY_EXCEEDED;
 
-			if (option_anchor_outputs
+			if ((option_anchor_outputs || option_anchors_zero_fee_htlc_tx)
 			    && channel->opener != sender
 			    && !amount_msat_sub_sat(&remainder, remainder, AMOUNT_SAT(660)))
 				return CHANNEL_ERR_CHANNEL_CAPACITY_EXCEEDED;
@@ -1167,6 +1246,7 @@ u32 approx_max_feerate(const struct channel *channel)
 	struct amount_sat avail;
 	const struct htlc **committed, **adding, **removing;
 	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
 
 	gather_htlcs(tmpctx, channel, !channel->opener,
 		     &committed, &removing, &adding);
@@ -1174,7 +1254,7 @@ u32 approx_max_feerate(const struct channel *channel)
 	/* Assume none are trimmed; this gives lower bound on feerate. */
 	num = tal_count(committed) + tal_count(adding) - tal_count(removing);
 
-	weight = commit_tx_base_weight(num, option_anchor_outputs);
+	weight = commit_tx_base_weight(num, option_anchor_outputs, option_anchors_zero_fee_htlc_tx);
 
 	/* Available is their view */
 	avail = amount_msat_to_sat_round_down(channel->view[!channel->opener].owed[channel->opener]);
@@ -1185,7 +1265,7 @@ u32 approx_max_feerate(const struct channel *channel)
 	 * of 330 sats from the funder (either `to_local` or
 	 * `to_remote`).
 	 */
-	if (option_anchor_outputs
+	if ((option_anchor_outputs || option_anchors_zero_fee_htlc_tx)
 	    && !amount_sat_sub(&avail, avail, AMOUNT_SAT(660))) {
 		avail = AMOUNT_SAT(0);
 	} else {
@@ -1236,22 +1316,27 @@ bool can_opener_afford_feerate(const struct channel *channel, u32 feerate_per_kw
 	size_t untrimmed;
 	const struct htlc **committed, **adding, **removing;
 	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
 
 	gather_htlcs(tmpctx, channel, !channel->opener,
 		     &committed, &removing, &adding);
 
 	untrimmed = commit_tx_num_untrimmed(committed, feerate_per_kw, dust_limit,
 					    option_anchor_outputs,
+					    option_anchors_zero_fee_htlc_tx,
 					    !channel->opener)
 			+ commit_tx_num_untrimmed(adding, feerate_per_kw, dust_limit,
 						  option_anchor_outputs,
+						  option_anchors_zero_fee_htlc_tx,
 						  !channel->opener)
 			- commit_tx_num_untrimmed(removing, feerate_per_kw, dust_limit,
 						  option_anchor_outputs,
+						  option_anchors_zero_fee_htlc_tx,
 						  !channel->opener);
 
 	fee = commit_tx_base_fee(feerate_per_kw, untrimmed,
-				 option_anchor_outputs);
+				 option_anchor_outputs,
+				 option_anchors_zero_fee_htlc_tx);
 
 	/* BOLT #3:
 	 * If `option_anchors` applies to the commitment
@@ -1259,7 +1344,7 @@ bool can_opener_afford_feerate(const struct channel *channel, u32 feerate_per_kw
 	 * of 330 sats from the funder (either `to_local` or
 	 * `to_remote`).
 	 */
-	if (option_anchor_outputs
+	if ((option_anchor_outputs || option_anchors_zero_fee_htlc_tx)
 	    && !amount_sat_add(&fee, fee, AMOUNT_SAT(660)))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 			      "Cannot add 660 sats to %s for anchor",

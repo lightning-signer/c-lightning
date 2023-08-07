@@ -24,9 +24,10 @@ struct outgoing_tx {
 	u32 minblock;
 	bool allowhighfees;
 	const char *cmd_id;
-	void (*finished)(struct channel *channel, bool success, const char *err);
+	bool (*finished)(struct channel *channel, const struct bitcoin_tx *,
+			 bool success, const char *err, void *arg);
 	bool (*refresh)(struct channel *, const struct bitcoin_tx **, void *arg);
-	void *refresh_arg;
+	void *cbarg;
 };
 
 struct block {
@@ -116,7 +117,7 @@ struct chain_topology {
 	struct feerate_est *smoothed_feerates;
 
 	/* Where to log things. */
-	struct log *log;
+	struct logger *log;
 
 	/* What range of blocks do we have in our database? */
 	u32 min_blockheight, max_blockheight;
@@ -182,6 +183,9 @@ u32 get_network_blockheight(const struct chain_topology *topo);
 u32 feerate_for_deadline(const struct chain_topology *topo, u32 blockcount);
 u32 smoothed_feerate_for_deadline(const struct chain_topology *topo, u32 blockcount);
 
+/* Get feerate to hit this *block number*. */
+u32 feerate_for_target(const struct chain_topology *topo, u64 deadline);
+
 /* Get range of feerates to insist other side abide by for normal channels.
  * If we have to guess, sets *unknown to true, otherwise false. */
 u32 feerate_min(struct lightningd *ld, bool *unknown);
@@ -190,7 +194,7 @@ u32 feerate_max(struct lightningd *ld, bool *unknown);
 /* These return 0 if unknown */
 u32 opening_feerate(struct chain_topology *topo);
 u32 mutual_close_feerate(struct chain_topology *topo);
-u32 unilateral_feerate(struct chain_topology *topo);
+u32 unilateral_feerate(struct chain_topology *topo, bool option_anchors);
 /* For onchain resolution. */
 u32 delayed_to_us_feerate(struct chain_topology *topo);
 u32 htlc_resolution_feerate(struct chain_topology *topo);
@@ -207,32 +211,39 @@ u32 default_locktime(const struct chain_topology *topo);
  * @cmd_id: the JSON command id which triggered this (or NULL).
  * @allowhighfees: set to true to override the high-fee checks in the backend.
  * @minblock: minimum block we can send it at (or 0).
- * @finished: if non-NULL, call that and don't rebroadcast.
+ * @finished: if non-NULL, call that when sendrawtransaction returns; if it returns true, don't rebroadcast.
  * @refresh: if non-NULL, callback before re-broadcasting (can replace tx):
  *           if returns false, delete.
- * @refresh_arg: argument for @refresh
+ * @cbarg: argument for @finished and @refresh
  */
 #define broadcast_tx(topo, channel, tx, cmd_id, allowhighfees,		\
-		     minblock, finished, refresh, refresh_arg)		\
+		     minblock, finished, refresh, cbarg)		\
 	broadcast_tx_((topo), (channel), (tx), (cmd_id), (allowhighfees), \
-		      (minblock), (finished),				\
+		      (minblock),					\
 		      typesafe_cb_preargs(bool, void *,			\
-					  (refresh), (refresh_arg),	\
+					  (finished), (cbarg),		\
+					  struct channel *,		\
+					  const struct bitcoin_tx *,	\
+					  bool, const char *),		\
+		      typesafe_cb_preargs(bool, void *,			\
+					  (refresh), (cbarg),		\
 					  struct channel *,		\
 					  const struct bitcoin_tx **),	\
-		      (refresh_arg))
+		      (cbarg))
 
 void broadcast_tx_(struct chain_topology *topo,
 		   struct channel *channel,
 		   const struct bitcoin_tx *tx TAKES,
 		   const char *cmd_id, bool allowhighfees, u32 minblock,
-		   void (*finished)(struct channel *,
+		   bool (*finished)(struct channel *,
+				    const struct bitcoin_tx *,
 				    bool success,
-				    const char *err),
+				    const char *err,
+				    void *),
 		   bool (*refresh)(struct channel *, const struct bitcoin_tx **, void *),
-		   void *refresh_arg TAKES);
+		   void *cbarg TAKES);
 
-struct chain_topology *new_topology(struct lightningd *ld, struct log *log);
+struct chain_topology *new_topology(struct lightningd *ld, struct logger *log);
 void setup_topology(struct chain_topology *topology,
 		    u32 min_blockheight, u32 max_blockheight);
 

@@ -35,6 +35,7 @@ typemap = {
     'outputdesc': 'OutputDesc',
     'hash': 'Sha256',
     'secret': 'Secret',
+    'integer': 'i64',
 }
 
 header = f"""#![allow(non_camel_case_types)]
@@ -85,7 +86,7 @@ def gen_enum(e):
 
     if e.deprecated:
         decl += "#[deprecated]\n"
-    decl += f"#[derive(Copy, Clone, Debug, Deserialize, Serialize)]\npub enum {e.typename} {{\n"
+    decl += f"#[derive(Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]\npub enum {e.typename} {{\n"
     for v in e.variants:
         if v is None:
             continue
@@ -111,6 +112,24 @@ def gen_enum(e):
             }}
         }}
     }}
+
+    """)
+
+    # Implement ToString for enums so we can print them nicely as they
+    # appear in the schemas.
+    decl += dedent(f"""\
+    impl ToString for {e.typename} {{
+        fn to_string(&self) -> String {{
+            match self {{
+    """)
+    for v in e.variants:
+        norm = v.normalized()
+        decl += f"            {e.typename}::{norm} => \"{norm}\",\n"
+    decl += dedent(f"""\
+            }}.to_string()
+        }}
+    }}
+
     """)
 
     typename = e.typename
@@ -124,7 +143,7 @@ def gen_enum(e):
         defi += rename_if_necessary(str(e.name), e.name.normalized())
         defi += f"    pub {e.name.normalized()}: {typename},\n"
     else:
-        defi = f'    #[serde(skip_serializing_if = "Option::is_none")]\n'
+        defi = f"    #[serde(skip_serializing_if = \"Option::is_none\")]\n"
         defi += f"    pub {e.name.normalized()}: Option<{typename}>,\n"
 
     return defi, decl
@@ -293,8 +312,6 @@ class RustGenerator(IGenerator):
         """
         self.write(f"""\
         use serde::{{Deserialize, Serialize}};
-        pub use requests::*;
-        pub use responses::*;
 
         #[derive(Clone, Debug, Serialize, Deserialize)]
         #[serde(tag = "method", content = "params")]

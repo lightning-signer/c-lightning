@@ -23,6 +23,7 @@
 #include <onchaind/onchaind_wiregen.h>
 #include <wallet/txfilter.h>
 #include <wally_bip32.h>
+#include <wally_psbt.h>
 #include <wire/wire_sync.h>
 
 /* We dump all the known preimages when onchaind starts up. */
@@ -476,6 +477,9 @@ struct onchain_signing_info {
 		    const struct bitcoin_tx *tx,
 		    const struct onchain_signing_info *info);
 
+	/* Information for consider_onchain_htlc_tx_rebroadcast */
+	struct bitcoin_tx *raw_htlc_tx;
+
 	/* Tagged union (for sanity checking!) */
 	enum onchaind_wire msgtype;
 	union {
@@ -556,7 +560,7 @@ static u8 *sign_htlc_success(const tal_t *ctx,
 			     const struct bitcoin_tx *tx,
 			     const struct onchain_signing_info *info)
 {
-	const bool anchor_outputs = channel_has(info->channel, OPT_ANCHOR_OUTPUTS);
+	const bool anchor_outputs = channel_type_has_anchors(info->channel->type);
 
 	assert(info->msgtype == WIRE_ONCHAIND_SPEND_HTLC_SUCCESS);
 	return towire_hsmd_sign_any_local_htlc_tx(ctx,
@@ -572,7 +576,7 @@ static u8 *sign_htlc_timeout(const tal_t *ctx,
 			     const struct bitcoin_tx *tx,
 			     const struct onchain_signing_info *info)
 {
-	const bool anchor_outputs = channel_has(info->channel, OPT_ANCHOR_OUTPUTS);
+	const bool anchor_outputs = channel_type_has_anchors(info->channel->type);
 
 	assert(info->msgtype == WIRE_ONCHAIND_SPEND_HTLC_TIMEOUT);
 	return towire_hsmd_sign_any_local_htlc_tx(ctx,
@@ -588,7 +592,7 @@ static u8 *sign_fulfill(const tal_t *ctx,
 			const struct bitcoin_tx *tx,
 			const struct onchain_signing_info *info)
 {
-	const bool anchor_outputs = channel_has(info->channel, OPT_ANCHOR_OUTPUTS);
+	const bool anchor_outputs = channel_type_has_anchors(info->channel->type);
 
 	assert(info->msgtype == WIRE_ONCHAIND_SPEND_FULFILL);
 	return towire_hsmd_sign_any_remote_htlc_to_us(ctx,
@@ -604,7 +608,7 @@ static u8 *sign_htlc_expired(const tal_t *ctx,
 			     const struct bitcoin_tx *tx,
 			     const struct onchain_signing_info *info)
 {
-	const bool anchor_outputs = channel_has(info->channel, OPT_ANCHOR_OUTPUTS);
+	const bool anchor_outputs = channel_type_has_anchors(info->channel->type);
 
 	assert(info->msgtype == WIRE_ONCHAIND_SPEND_HTLC_EXPIRED);
 	return towire_hsmd_sign_any_remote_htlc_to_us(ctx,
@@ -652,29 +656,6 @@ onchain_witness_htlc_tx(const tal_t *ctx, u8 **witness)
 	return cast_const2(const struct onchain_witness_element **, welements);
 }
 
-/* feerate_for_deadline, but really lowball for distant targets */
-static u32 feerate_for_target(const struct chain_topology *topo, u64 deadline)
-{
-	u64 blocks, blockheight;
-
-	blockheight = get_block_height(topo);
-
-	/* Past deadline?  Want it now. */
-	if (blockheight > deadline)
-		return feerate_for_deadline(topo, 1);
-
-	blocks = deadline - blockheight;
-
-	/* Over 200 blocks, we *always* use min fee! */
-	if (blocks > 200)
-		return FEERATE_FLOOR;
-	/* Over 100 blocks, use min fee bitcoind will accept */
-	if (blocks > 100)
-		return get_feerate_floor(topo);
-
-	return feerate_for_deadline(topo, blocks);
-}
-
 /* Make normal 1-input-1-output tx to us, but don't sign it yet.
  *
  * If worthwhile is not NULL, we set it to true normally, or false if
@@ -710,9 +691,10 @@ static struct bitcoin_tx *onchaind_tx_unsigned(const tal_t *ctx,
 	bitcoin_tx_add_input(tx, &info->out, info->to_self_delay,
 			     NULL, info->out_sats, NULL, info->wscript);
 
+	/* FIXME should this be p2tr now? */
 	bitcoin_tx_add_output(
 	    tx, scriptpubkey_p2wpkh(tmpctx, &final_key), NULL, info->out_sats);
-	psbt_add_keypath_to_last_output(tx, channel->final_key_idx, &final_wallet_ext_key);
+	psbt_add_keypath_to_last_output(tx, channel->final_key_idx, &final_wallet_ext_key, false /* is_taproot */);
 
 	/* Worst-case sig is 73 bytes */
 	weight = bitcoin_tx_weight(tx) + 1 + 3 + 73 + 0 + tal_count(info->wscript);
@@ -845,12 +827,17 @@ static bool consider_onchain_rebroadcast(struct channel *channel,
 
 	bitcoin_txid(newtx, &newtxid);
 	bitcoin_txid(*tx, &oldtxid);
-	log_info(channel->log,
-		 "RBF onchain txid %s (fee %s) with txid %s (fee %s)",
-		 type_to_string(tmpctx, struct bitcoin_txid, &oldtxid),
-		 fmt_amount_sat(tmpctx, info->fee),
-		 type_to_string(tmpctx, struct bitcoin_txid, &newtxid),
-		 fmt_amount_sat(tmpctx, newfee));
+
+	/* Don't spam the logs! */
+	log_(channel->log,
+	     amount_sat_less_eq(newfee, info->fee) ? LOG_DBG : LOG_INFORM,
+	     NULL, false,
+	     "RBF onchain txid %s (fee %s) with txid %s (fee %s)",
+	     type_to_string(tmpctx, struct bitcoin_txid, &oldtxid),
+	     fmt_amount_sat(tmpctx, info->fee),
+	     type_to_string(tmpctx, struct bitcoin_txid, &newtxid),
+	     fmt_amount_sat(tmpctx, newfee));
+
 	log_debug(channel->log,
 		  "RBF %s->%s",
 		  type_to_string(tmpctx, struct bitcoin_tx, *tx),
@@ -868,7 +855,142 @@ static bool consider_onchain_htlc_tx_rebroadcast(struct channel *channel,
 						 const struct bitcoin_tx **tx,
 						 struct onchain_signing_info *info)
 {
-	/* FIXME: Implement rbf! */
+	struct amount_sat change, excess;
+	struct utxo **utxos;
+	u32 feerate;
+	size_t weight;
+	struct bitcoin_tx *newtx;
+	size_t locktime;
+	struct bitcoin_txid oldtxid, newtxid;
+	struct wally_psbt *psbt;
+	const u8 *msg;
+	struct amount_sat oldfee, newfee;
+	struct lightningd *ld = channel->peer->ld;
+
+	/* We can't do much without anchor outputs (we could CPFP?) */
+	if (!channel_type_has_anchors(channel->type))
+		return true;
+
+	/* Note that we can have UTXOs taken from us if there are a lot of
+	 * closes going on, so we re-fetch them every time.  This is messy,
+	 * but since that bitcoind will take the highest feerate ones, it will
+	 * priority order them for us. */
+
+	feerate = feerate_for_target(ld->topology, info->deadline_block);
+
+	/* Make a copy to play with */
+	newtx = clone_bitcoin_tx(tmpctx, info->raw_htlc_tx);
+	weight = bitcoin_tx_weight(newtx);
+	utxos = tal_arr(tmpctx, struct utxo *, 0);
+
+	/* We'll need this to regenerate PSBT */
+	if (wally_psbt_get_locktime(newtx->psbt, &locktime) != WALLY_OK) {
+		log_broken(channel->log, "Cannot get psbt locktime?!");
+		return true;
+	}
+
+	/* Keep attaching input inputs until we get sufficient fees */
+	while (tx_feerate(newtx) < feerate) {
+		struct utxo *utxo;
+
+		/* Get fresh utxo */
+		utxo = wallet_find_utxo(tmpctx, ld->wallet,
+					get_block_height(ld->topology),
+					NULL,
+					0, /* FIXME: unused! */
+					0, false,
+					cast_const2(const struct utxo **, utxos));
+		if (!utxo) {
+			/* Did we get nothing at all? */
+			if (tal_count(utxos) == 0) {
+				log_unusual(channel->log,
+					    "We want to bump HTLC fee, but no funds!");
+				return true;
+			}
+			/* At least we got something, right? */
+			break;
+		}
+
+		/* Add to any UTXOs we have already */
+		tal_arr_expand(&utxos, utxo);
+		weight += bitcoin_tx_simple_input_weight(utxo->is_p2sh);
+	}
+
+	/* We were happy with feerate already (can't happen with zero-fee
+	 * anchors!)? */
+	if (tal_count(utxos) == 0)
+		return true;
+
+	/* PSBT knows how to spend utxos; append to existing. */
+	psbt = psbt_using_utxos(tmpctx, ld->wallet, utxos, locktime,
+				BITCOIN_TX_RBF_SEQUENCE, newtx->psbt);
+
+	/* Subtract how much we pay in fees for this tx, to calc excess. */
+	if (!amount_sat_sub(&excess,
+			    psbt_compute_fee(psbt),
+			    amount_sat((u64)weight * feerate / 1000))) {
+		excess = AMOUNT_SAT(0);
+	}
+
+	change = change_amount(excess, feerate, weight);
+	if (!amount_sat_eq(change, AMOUNT_SAT(0))) {
+		/* Append change output. */
+		struct pubkey final_key;
+		bip32_pubkey(ld, &final_key, channel->final_key_idx);
+		psbt_append_output(psbt,
+				   scriptpubkey_p2wpkh(tmpctx, &final_key),
+				   change);
+	}
+
+	/* Sanity check: are we paying more in fees than HTLC is worth? */
+	if (amount_sat_greater(psbt_compute_fee(psbt), info->out_sats)) {
+		log_unusual(channel->log,
+			    "Not spending %s in fees to get an HTLC worth %s!",
+			    fmt_amount_sat(tmpctx, psbt_compute_fee(psbt)),
+			    fmt_amount_sat(tmpctx, info->out_sats));
+		return true;
+	}
+
+	/* Now, get HSM to sign off. */
+	msg = towire_hsmd_sign_htlc_tx_mingle(NULL,
+					      &channel->peer->id,
+					      channel->dbid,
+					      cast_const2(const struct utxo **,
+							  utxos),
+					      psbt);
+	msg = hsm_sync_req(tmpctx, ld, take(msg));
+	if (!fromwire_hsmd_sign_htlc_tx_mingle_reply(tmpctx, msg, &psbt))
+		fatal("Reading sign_htlc_tx_mingle_reply: %s",
+		      tal_hex(tmpctx, msg));
+
+	if (!psbt_finalize(psbt))
+		fatal("Non-final PSBT from hsm: %s",
+		      type_to_string(tmpctx, struct wally_psbt, psbt));
+
+	newtx = tal(tal_parent(*tx), struct bitcoin_tx);
+	newtx->chainparams = chainparams;
+	newtx->wtx = psbt_final_tx(newtx, psbt);
+	assert(newtx->wtx);
+	newtx->psbt = tal_steal(newtx, psbt);
+
+	bitcoin_txid(*tx, &oldtxid);
+	bitcoin_txid(newtx, &newtxid);
+
+	oldfee = bitcoin_tx_compute_fee(*tx);
+	newfee = bitcoin_tx_compute_fee(newtx);
+
+	/* Don't spam the logs! */
+	log_(channel->log,
+	     amount_sat_less_eq(newfee, oldfee) ? LOG_DBG : LOG_INFORM,
+	     NULL, false,
+	     "RBF HTLC txid %s (fee %s) with txid %s (fee %s)",
+	     type_to_string(tmpctx, struct bitcoin_txid, &oldtxid),
+	     fmt_amount_sat(tmpctx, oldfee),
+	     type_to_string(tmpctx, struct bitcoin_txid, &newtxid),
+	     fmt_amount_sat(tmpctx, newfee));
+
+	tal_free(*tx);
+	*tx = newtx;
 	return true;
 }
 
@@ -1045,7 +1167,7 @@ static void handle_onchaind_spend_fulfill(struct channel *channel,
 	struct amount_sat out_sats;
 	struct preimage preimage;
 	u64 htlc_id;
-	const bool anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	const bool anchor_outputs = channel_type_has_anchors(channel->type);
 
 	info = new_signing_info(msg, channel, WIRE_ONCHAIND_SPEND_FULFILL);
 	info->minblock = 0;
@@ -1088,7 +1210,8 @@ static void handle_onchaind_spend_htlc_success(struct channel *channel,
 	u8 **witness;
 	struct bitcoin_signature sig;
 	const struct onchain_witness_element **welements;
-	const bool anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	const bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	const bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
 
 	info = new_signing_info(msg, channel, WIRE_ONCHAIND_SPEND_HTLC_SUCCESS);
 	info->minblock = 0;
@@ -1110,7 +1233,7 @@ static void handle_onchaind_spend_htlc_success(struct channel *channel,
 	 * * locktime: `0` for HTLC-success, `cltv_expiry` for HTLC-timeout
 	 */
 	tx = htlc_tx(NULL, chainparams, &out, info->wscript, out_sats, htlc_wscript, fee,
-		     0, anchor_outputs);
+		     0, option_anchor_outputs, option_anchors_zero_fee_htlc_tx);
 	tal_free(htlc_wscript);
 	if (!tx) {
 		/* Can only happen if fee > out_sats */
@@ -1134,6 +1257,14 @@ static void handle_onchaind_spend_htlc_success(struct channel *channel,
 						  info->wscript);
 	welements = onchain_witness_htlc_tx(tmpctx, witness);
 	bitcoin_tx_input_set_witness(tx, 0, take(witness));
+
+	info->raw_htlc_tx = clone_bitcoin_tx(info, tx);
+	info->out_sats = out_sats;
+
+	/* Immediately consider RBF. */
+	consider_onchain_htlc_tx_rebroadcast(channel,
+					     cast_const2(const struct bitcoin_tx **, &tx),
+					     info);
 
 	log_debug(channel->log, "Broadcast for onchaind tx %s",
 		  type_to_string(tmpctx, struct bitcoin_tx, tx));
@@ -1160,7 +1291,8 @@ static void handle_onchaind_spend_htlc_timeout(struct channel *channel,
 	u8 **witness;
 	struct bitcoin_signature sig;
 	const struct onchain_witness_element **welements;
-	const bool anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	const bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	const bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
 
 	info = new_signing_info(msg, channel, WIRE_ONCHAIND_SPEND_HTLC_TIMEOUT);
 
@@ -1181,7 +1313,7 @@ static void handle_onchaind_spend_htlc_timeout(struct channel *channel,
 	 * * locktime: `0` for HTLC-success, `cltv_expiry` for HTLC-timeout
 	 */
 	tx = htlc_tx(NULL, chainparams, &out, info->wscript, out_sats, htlc_wscript, fee,
-		     cltv_expiry, anchor_outputs);
+		     cltv_expiry, option_anchor_outputs, option_anchors_zero_fee_htlc_tx);
 	tal_free(htlc_wscript);
 	if (!tx) {
 		/* Can only happen if fee > out_sats */
@@ -1208,6 +1340,14 @@ static void handle_onchaind_spend_htlc_timeout(struct channel *channel,
 	welements = onchain_witness_htlc_tx(tmpctx, witness);
 	bitcoin_tx_input_set_witness(tx, 0, take(witness));
 
+	info->raw_htlc_tx = clone_bitcoin_tx(info, tx);
+	info->out_sats = out_sats;
+
+	/* Immediately consider RBF. */
+	consider_onchain_htlc_tx_rebroadcast(channel,
+					     cast_const2(const struct bitcoin_tx **, &tx),
+					     info);
+
 	log_debug(channel->log, "Broadcast for onchaind tx %s",
 		  type_to_string(tmpctx, struct bitcoin_tx, tx));
 	broadcast_tx(channel->peer->ld->topology,
@@ -1227,7 +1367,7 @@ static void handle_onchaind_spend_htlc_expired(struct channel *channel,
 	struct amount_sat out_sats;
 	u64 htlc_id;
 	u32 cltv_expiry;
-	const bool anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	const bool anchor_outputs = channel_type_has_anchors(channel->type);
 
 	info = new_signing_info(msg, channel, WIRE_ONCHAIND_SPEND_HTLC_EXPIRED);
 
@@ -1356,6 +1496,7 @@ static void onchain_error(struct channel *channel,
 			  const struct channel_id *channel_id UNUSED,
 			  const char *desc,
 			  bool warning UNUSED,
+			  bool aborted UNUSED,
 			  const u8 *err_for_them UNUSED)
 {
 	channel_set_owner(channel, NULL);
@@ -1499,6 +1640,7 @@ enum watch_result onchaind_funding_spent(struct channel *channel,
 				  channel->static_remotekey_start[LOCAL],
 				  channel->static_remotekey_start[REMOTE],
 				   channel_has(channel, OPT_ANCHOR_OUTPUTS),
+				   channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX),
 				  feerate_min(ld, NULL));
 	subd_send_msg(channel->owner, take(msg));
 

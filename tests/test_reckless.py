@@ -142,7 +142,7 @@ def test_search(node_factory):
     n = get_reckless_node(node_factory)
     r = reckless([f"--network={NETWORK}", "search", "testplugpass"], dir=n.lightning_dir)
     assert r.returncode == 0
-    assert 'found testplugpass in repo: https://github.com/lightningd/plugins' in r.stdout
+    assert 'found testplugpass in source: https://github.com/lightningd/plugins' in r.stdout
 
 
 def test_install(node_factory):
@@ -154,6 +154,22 @@ def test_install(node_factory):
     assert 'plugin installed:' in r.stdout
     assert 'testplugpass enabled' in r.stdout
     check_stderr(r.stderr)
+    plugin_path = Path(n.lightning_dir) / 'reckless/testplugpass'
+    print(plugin_path)
+    assert os.path.exists(plugin_path)
+
+
+def test_local_dir_install(node_factory):
+    """Test search and install from local directory source."""
+    n = get_reckless_node(node_factory)
+    n.start()
+    r = reckless([f"--network={NETWORK}", "-v", "source", "add",
+                  "tests/data/recklessrepo/lightningd/testplugpass"],
+                 dir=n.lightning_dir)
+    assert r.returncode == 0
+    r = reckless([f"--network={NETWORK}", "-v", "install", "testplugpass"], dir=n.lightning_dir)
+    assert r.returncode == 0
+    assert 'testplugpass enabled' in r.stdout
     plugin_path = Path(n.lightning_dir) / 'reckless/testplugpass'
     print(plugin_path)
     assert os.path.exists(plugin_path)

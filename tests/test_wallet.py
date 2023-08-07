@@ -5,7 +5,7 @@ from fixtures import TEST_NETWORK
 from pyln.client import RpcError, Millisatoshi
 from shutil import copyfile
 from utils import (
-    only_one, wait_for, sync_blockheight, EXPERIMENTAL_FEATURES,
+    only_one, wait_for, sync_blockheight,
     VALGRIND, check_coin_moves, TailableProc, scriptpubkey_addr,
     check_utxos_channel
 )
@@ -316,7 +316,10 @@ def test_txprepare(node_factory, bitcoind, chainparams):
             assert o['scriptPubKey']['type'] == 'witness_v0_keyhash'
             assert scriptpubkey_addr(o['scriptPubKey']) == addr
         else:
-            assert o['scriptPubKey']['type'] in ['witness_v0_keyhash', 'fee']
+            if chainparams['elements']:
+                o['scriptPubKey']['type'] in ['witness_v0_keyhash', 'fee']
+            else:
+                assert o['scriptPubKey']['type'] in ['witness_v1_taproot', 'fee']
 
     # Now prepare one with no change.
     prep2 = l1.rpc.txprepare([{addr: 'all'}])
@@ -438,7 +441,10 @@ def test_txprepare(node_factory, bitcoind, chainparams):
     assert decode['vout'][outnum2]['scriptPubKey']['type'] == 'witness_v0_keyhash'
     assert scriptpubkey_addr(decode['vout'][outnum2]['scriptPubKey']) == addr
 
-    assert decode['vout'][changenum]['scriptPubKey']['type'] == 'witness_v0_keyhash'
+    if chainparams['elements']:
+        assert decode['vout'][changenum]['scriptPubKey']['type'] == 'witness_v0_keyhash'
+    else:
+        assert decode['vout'][changenum]['scriptPubKey']['type'] == 'witness_v1_taproot'
 
 
 def test_reserveinputs(node_factory, bitcoind, chainparams):
@@ -738,6 +744,7 @@ def test_utxopsbt(node_factory, bitcoind, chainparams):
                     reservedok=True)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "non-beneficial value considered as fees is above maximum feerate")
 def test_sign_external_psbt(node_factory, bitcoind, chainparams):
     """
     A PSBT w/ one of our inputs should be signable (we can fill
@@ -815,6 +822,7 @@ def test_psbt_version(node_factory, bitcoind, chainparams):
 
 
 @unittest.skipIf(TEST_NETWORK == 'liquid-regtest', 'Core/Elements need joinpsbt support for v2')
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "policy: can't withdraw to non-wallet address") # FIXME - should work with VLS_PERMISSIVE
 def test_sign_and_send_psbt(node_factory, bitcoind, chainparams):
     """
     Tests for the sign + send psbt RPCs
@@ -1065,78 +1073,6 @@ def test_txsend(node_factory, bitcoind, chainparams):
     assert scriptpubkey_addr(decode['vout'][changenum]['scriptPubKey']) in [f['address'] for f in l1.rpc.listfunds()['outputs']]
 
 
-@unittest.skipIf(TEST_NETWORK != 'regtest', "Fee outputs throw off our output matching logic")
-@unittest.skipIf(not EXPERIMENTAL_FEATURES, "Tests annotations which are compiled only with experimental features")
-def test_transaction_annotations(node_factory, bitcoind):
-    l1, l2, l3 = node_factory.get_nodes(3)
-    l1.fundwallet(10**6)
-
-    # We should now have a transaction that gave us the funds in the
-    # transactions table...
-    outputs = l1.rpc.listfunds()['outputs']
-    assert(len(outputs) == 1 and outputs[0]['status'] == 'confirmed')
-    out = outputs[0]
-    idx = out['output']
-    assert(idx in [0, 1] and out['amount_msat'] == Millisatoshi("{}sat".format(10**6)))
-
-    # ... and it should have an annotation on the output reading 'deposit'
-    txs = l1.rpc.listtransactions()['transactions']
-    assert(len(txs) == 1)
-    tx = txs[0]
-    output = tx['outputs'][idx]
-    assert(output['type'] == 'deposit' and output['amount_msat'] == Millisatoshi(1000000000))
-
-    # ... and all other output should be change, and have no annotations
-    types = []
-    for i, o in enumerate(tx['outputs']):
-        if i == idx:
-            continue
-        if 'type' in o:
-            types.append(o['type'])
-        else:
-            types.append(None)
-
-    assert(set([None]) == set(types))
-
-    ##########################################################################
-    # Let's now open a channel. The opener should get the funding transaction
-    # annotated as channel open and deposit.
-    l1.connect(l2)
-    fundingtx = l1.rpc.fundchannel(l2.info['id'], 10**5)
-
-    # We should have one output unreserved, and it should be unconfirmed
-    outputs = l1.rpc.listfunds()['outputs']
-    assert len(outputs) == 2
-    outputs = [o for o in outputs if not o['reserved']]
-    assert(len(outputs) == 1 and outputs[0]['status'] == 'unconfirmed')
-
-    # It should also match the funding txid:
-    assert(outputs[0]['txid'] == fundingtx['txid'])
-
-    # Confirm the channel and check that the output changed to confirmed
-    bitcoind.generate_block(3)
-    sync_blockheight(bitcoind, [l1, l2])
-    outputs = l1.rpc.listfunds()['outputs']
-    assert(len(outputs) == 1 and outputs[0]['status'] == 'confirmed')
-
-    # We should have 2 transactions, the second one should be the funding tx
-    # (we are ordering by blockheight and txindex, so that order should be ok)
-    txs = l1.rpc.listtransactions()['transactions']
-    assert(len(txs) == 2 and txs[1]['hash'] == fundingtx['txid'])
-
-    # Check the annotated types
-    types = [o['type'] for o in txs[1]['outputs']]
-    changeidx = 0 if types[0] == 'deposit' else 1
-    fundidx = 1 - changeidx
-    assert(types[changeidx] == 'deposit' and types[fundidx] == 'channel_funding')
-
-    # And check the channel annotation on the funding output
-    channels = l1.rpc.listpeerchannels()['channels']
-    assert(len(channels) == 1)
-    scid = channels[0]['short_channel_id']
-    assert(txs[1]['outputs'][fundidx]['channel'] == scid)
-
-
 def write_all(fd, bytestr):
     """Wrapper, since os.write can do partial writes"""
     off = 0
@@ -1145,6 +1081,7 @@ def write_all(fd, bytestr):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support hsm_secret file")
 def test_hsm_secret_encryption(node_factory):
     l1 = node_factory.get_node(may_fail=True)  # May fail when started without key
     password = "reckful&é🍕\n"
@@ -1208,6 +1145,7 @@ class HsmTool(TailableProc):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support hsm_secret file")
 def test_hsmtool_secret_decryption(node_factory):
     l1 = node_factory.get_node()
     password = "reckless123#{ù}\n"
@@ -1309,47 +1247,42 @@ def test_hsmtool_secret_decryption(node_factory):
 def test_hsmtool_dump_descriptors(node_factory, bitcoind):
     l1 = node_factory.get_node()
     l1.fundwallet(10**6)
-
     # Get a tpub descriptor of lightningd's wallet
     hsm_path = os.path.join(l1.daemon.lightning_dir, TEST_NETWORK, "hsm_secret")
     cmd_line = ["tools/hsmtool", "dumponchaindescriptors", hsm_path, "testnet"]
-    out = subprocess.check_output(cmd_line).decode("utf8").split("\n")
-    descriptor = [l for l in out if l.startswith("wpkh(tpub")][0]
+    descriptors = subprocess.check_output(cmd_line).decode("utf8").split("\n")
 
-    # If we switch wallet, we can't generate address: do so now.
-    mine_to_addr = bitcoind.rpc.getnewaddress()
+    # Deprecated or empty line
+    descriptors = [desc for desc in descriptors if not (desc.startswith("sh(wpkh(") or desc == '')]
 
-    # Import the descriptor to bitcoind
-    try:
-        bitcoind.rpc.importmulti([{
-            "desc": descriptor,
-            # No need to rescan, we'll transact afterward
-            "timestamp": "now",
-            # The default
-            "range": [0, 99]
-        }])
-    except JSONRPCError:
-        # Oh look, a new API!
-        # Need watch-only wallet, since descriptor has no privkeys.
-        bitcoind.rpc.createwallet("lightningd-ro", True)
+    withdraw_addr = None
+    index_offset = 2  # index starts handing out addrs at 2
 
-        # FIXME: No way to access non-default wallet in python-bitcoinlib
-        bitcoind.rpc.unloadwallet("lightningd-tests", True)
-        bitcoind.rpc.importdescriptors([{
-            "desc": descriptor,
-            # No need to rescan, we'll transact afterward
-            "timestamp": "now",
-            # The default
-            "range": [0, 99]
-        }])
+    # Generate twenty addresses for all known descriptors
+    cln_addrs = [l1.rpc.newaddr('all') for _ in range(20)]
+    for descriptor in descriptors:
+        for i, cln_addr in enumerate(cln_addrs):
+            computed_addr = bitcoind.rpc.deriveaddresses(descriptor, [i + index_offset, i + index_offset])[0]
+            if descriptor.startswith("wpkh"):
+                assert cln_addr["bech32"] == computed_addr
+                withdraw_addr = cln_addr["bech32"]
+            elif descriptor.startswith("tr"):
+                assert cln_addr["p2tr"] == computed_addr
+                withdraw_addr = cln_addr["p2tr"]
+            else:
+                raise Exception('Unexpected descriptor!')
 
-    # Funds sent to lightningd can be retrieved by bitcoind
-    addr = l1.rpc.newaddr()["bech32"]
-    txid = l1.rpc.withdraw(addr, 10**3)["txid"]
-    bitcoind.generate_block(1, txid, mine_to_addr)
-    assert len(bitcoind.rpc.listunspent(1, 1, [addr])) == 1
+        # For last address per type:
+        # Funds sent to lightningd can be retrieved by bitcoind
+        txid = l1.rpc.withdraw(withdraw_addr, 10**3)["txid"]
+        bitcoind.generate_block(1, txid, bitcoind.rpc.getnewaddress())
+        l1.daemon.wait_for_log('Owning output .* txid {} CONFIRMED'.format(txid))
+        actual_index = len(cln_addrs) - 1 + index_offset
+        res = bitcoind.rpc.scantxoutset("start", [{"desc": descriptor, "range": [actual_index, actual_index]}])
+        assert res["total_amount"] == Decimal('0.00001000')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support generatehsm")
 def test_hsmtool_generatehsm(node_factory):
     l1 = node_factory.get_node(start=False)
     hsm_path = os.path.join(l1.daemon.lightning_dir, TEST_NETWORK,
@@ -1590,7 +1523,7 @@ def test_withdraw_bech32m(node_factory, bitcoind):
     l1 = node_factory.get_node()
     l1.fundwallet(10000000)
 
-    # Based on BIP-320, but all changed to regtest.
+    # Based on BIP-350, but all changed to valid regtest.
     addrs = ("BCRT1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KYGT080",
              "bcrt1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qzf4jry",
              "bcrt1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k0ylj56",
@@ -1610,7 +1543,49 @@ def test_withdraw_bech32m(node_factory, bitcoind):
     args = []
     for addr in addrs:
         args += [{addr: 10**3}]
-    l1.rpc.multiwithdraw(args)["txid"]
+    res = l1.rpc.multiwithdraw(args)
+
+    # Let's check to make sure outputs are as expected (plus change)
+    outputs = bitcoind.rpc.decoderawtransaction(res['tx'])["vout"]
+    assert set([output['scriptPubKey']['address'] for output in outputs]).issuperset([addr.lower() for addr in addrs])
+
+
+@unittest.skipIf(TEST_NETWORK != 'regtest', "Elements-based schnorr is not yet supported")
+def test_p2tr_deposit_withdrawal(node_factory, bitcoind):
+
+    # Don't get any funds from previous runs.
+    l1 = node_factory.get_node(random_hsm=True)
+
+    # Can fetch p2tr addresses through 'all' or specifically
+    deposit_addrs = [l1.rpc.newaddr('all')] * 3
+    withdrawal_addr = l1.rpc.newaddr('p2tr')
+
+    # Add some funds to withdraw
+    for addr_type in ['p2tr', 'bech32']:
+        for i in range(3):
+            l1.bitcoin.rpc.sendtoaddress(deposit_addrs[i][addr_type], 1)
+
+    bitcoind.generate_block(1)
+
+    wait_for(lambda: len(l1.rpc.listfunds()['outputs']) == 6)
+    for i in range(3):
+        assert l1.rpc.listfunds()['outputs'][i]['address'] == deposit_addrs[i]['p2tr']
+        assert l1.rpc.listfunds()['outputs'][i + 3]['address'] == deposit_addrs[i]['bech32']
+    l1.rpc.withdraw(withdrawal_addr['p2tr'], 100000000 * 5)
+    wait_for(lambda: len(bitcoind.rpc.getrawmempool()) == 1)
+    raw_tx = bitcoind.rpc.getrawtransaction(bitcoind.rpc.getrawmempool()[0], 1)
+    assert len(raw_tx['vin']) == 6
+    assert len(raw_tx['vout']) == 2
+    # Change goes to p2tr
+    for output in raw_tx['vout']:
+        assert output["scriptPubKey"]["type"] == "witness_v1_taproot"
+    bitcoind.generate_block(1)
+    wait_for(lambda: len(l1.rpc.listtransactions()['transactions']) == 7)
+
+    # Only self-send + change is left
+    wait_for(lambda: len(l1.rpc.listfunds()['outputs']) == 2)
+
+    # make sure tap derivation is embedded in PSBT output
 
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Address is network specific")

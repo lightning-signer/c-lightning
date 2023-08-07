@@ -9,6 +9,7 @@
 struct channel_type *channel_type_none(const tal_t *ctx);
 struct channel_type *channel_type_static_remotekey(const tal_t *ctx);
 struct channel_type *channel_type_anchor_outputs(const tal_t *ctx);
+struct channel_type *channel_type_anchors_zero_fee_htlc(const tal_t *ctx);
 
 /* channel_type variants */
 void channel_type_set_zeroconf(struct channel_type *channel_type);
@@ -29,6 +30,9 @@ struct channel_type *default_channel_type(const tal_t *ctx,
 
 /* Does this type include this feature? */
 bool channel_type_has(const struct channel_type *type, int feature);
+
+/* Convenience for querying either anchor_outputs or anchors_zero_fee_htlc_tx */
+bool channel_type_has_anchors(const struct channel_type *type);
 
 /* Are these two channel_types equivalent? */
 bool channel_type_eq(const struct channel_type *a,

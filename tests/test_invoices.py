@@ -1,7 +1,7 @@
 from fixtures import *  # noqa: F401,F403
 from fixtures import TEST_NETWORK
 from pyln.client import RpcError, Millisatoshi
-from utils import only_one, wait_for, wait_channel_quiescent, mine_funding_to_announce
+from utils import only_one, wait_for, wait_channel_quiescent, mine_funding_to_announce, TIMEOUT
 
 
 import os
@@ -130,6 +130,7 @@ def test_invoice_weirdstring(node_factory):
     l1.rpc.delinvoice(weird_label, "unpaid")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "VLS policies catch two-invoice-one-preimage ahead of the node") # FIXME - should work with VLS_PERMISSIVE
 def test_invoice_preimage(node_factory):
     """Test explicit invoice 'preimage'.
     """
@@ -707,6 +708,123 @@ def test_listinvoices_filter(node_factory):
         assert len(r['invoices']) == 0
 
 
+def test_wait_invoices(node_factory, executor):
+    # We use delexpiredinvoice
+    l1, l2 = node_factory.line_graph(2, opts={'allow-deprecated-apis': True})
+
+    # Asking for 0 gives us current index.
+    waitres = l2.rpc.call('wait', {'subsystem': 'invoices', 'indexname': 'created', 'nextvalue': 0})
+    assert waitres == {'subsystem': 'invoices',
+                       'created': 0}
+
+    # Now ask for 1.
+    waitfut = executor.submit(l2.rpc.call, 'wait', {'subsystem': 'invoices', 'indexname': 'created', 'nextvalue': 1})
+    time.sleep(1)
+
+    inv = l2.rpc.invoice(42, 'invlabel', 'invdesc')
+    waitres = waitfut.result(TIMEOUT)
+    assert waitres == {'subsystem': 'invoices',
+                       'created': 1,
+                       'details': {'label': 'invlabel',
+                                   'bolt11': inv['bolt11'],
+                                   'status': 'unpaid'}}
+    assert only_one(l2.rpc.listinvoices('invlabel')['invoices'])['created_index'] == 1
+    assert 'updated_index' not in only_one(l2.rpc.listinvoices('invlabel')['invoices'])
+
+    # Second returns instantly, without any details.
+    waitres = l2.rpc.call('wait', {'subsystem': 'invoices', 'indexname': 'created', 'nextvalue': 1})
+    assert waitres == {'subsystem': 'invoices',
+                       'created': 1}
+
+    # Now for updates
+    waitres = l2.rpc.call('wait', {'subsystem': 'invoices', 'indexname': 'updated', 'nextvalue': 0})
+    assert waitres == {'subsystem': 'invoices',
+                       'updated': 0}
+
+    waitfut = executor.submit(l2.rpc.call, 'wait', {'subsystem': 'invoices', 'indexname': 'updated', 'nextvalue': 1})
+    time.sleep(1)
+    l1.rpc.pay(inv['bolt11'])
+    waitres = waitfut.result(TIMEOUT)
+    assert waitres == {'subsystem': 'invoices',
+                       'updated': 1,
+                       'details': {'label': 'invlabel', 'status': 'paid'}}
+    assert only_one(l2.rpc.listinvoices('invlabel')['invoices'])['created_index'] == 1
+    assert only_one(l2.rpc.listinvoices('invlabel')['invoices'])['updated_index'] == 1
+
+    # Second returns instantly, without any details.
+    waitres = l2.rpc.call('wait', {'subsystem': 'invoices', 'indexname': 'updated', 'nextvalue': 1})
+    assert waitres == {'subsystem': 'invoices',
+                       'updated': 1}
+
+    # Now check expiry works.
+    inv2 = l2.rpc.invoice(42, 'invlabel2', 'invdesc2', expiry=2)
+    waitres = l2.rpc.call('wait', {'subsystem': 'invoices', 'indexname': 'updated', 'nextvalue': 2})
+
+    assert waitres == {'subsystem': 'invoices',
+                       'updated': 2,
+                       # FIXME: fill in details!
+                       #  {'label': 'invlabel2', 'bolt11': inv2['bolt11'], 'status': 'expired'}
+                       'details': {'status': 'expired'}}
+
+    assert only_one(l2.rpc.listinvoices('invlabel2')['invoices'])['created_index'] == 2
+    assert only_one(l2.rpc.listinvoices('invlabel2')['invoices'])['updated_index'] == 2
+
+    # Now for deletions
+    waitres = l2.rpc.call('wait', {'subsystem': 'invoices', 'indexname': 'deleted', 'nextvalue': 0})
+    assert waitres == {'subsystem': 'invoices',
+                       'deleted': 0}
+
+    waitfut = executor.submit(l2.rpc.call, 'wait', {'subsystem': 'invoices', 'indexname': 'deleted', 'nextvalue': 1})
+    time.sleep(1)
+    l2.rpc.delinvoice('invlabel', 'paid')
+    waitres = waitfut.result(TIMEOUT)
+
+    assert waitres == {'subsystem': 'invoices',
+                       'deleted': 1,
+                       'details': {'label': 'invlabel',
+                                   'bolt11': inv['bolt11'],
+                                   'status': 'paid'}}
+
+    # Second returns instantly, without any details.
+    waitres = l2.rpc.call('wait', {'subsystem': 'invoices', 'indexname': 'deleted', 'nextvalue': 1})
+    assert waitres == {'subsystem': 'invoices',
+                       'deleted': 1}
+
+    # Now check delexpiredinvoice works.
+    waitfut = executor.submit(l2.rpc.call, 'wait', {'subsystem': 'invoices', 'indexname': 'deleted', 'nextvalue': 2})
+    time.sleep(1)
+    l2.rpc.delexpiredinvoice()
+    waitres = waitfut.result(TIMEOUT)
+
+    assert waitres == {'subsystem': 'invoices',
+                       'deleted': 2,
+                       'details': {'label': 'invlabel2',
+                                   'bolt11': inv2['bolt11'],
+                                   'status': 'expired'}}
+
+    # Creating a new on gives us 3, not another 2!
+    waitfut = executor.submit(l2.rpc.call, 'wait', {'subsystem': 'invoices', 'indexname': 'created', 'nextvalue': 3})
+    time.sleep(1)
+    inv = l2.rpc.invoice(42, 'invlabel2', 'invdesc2', deschashonly=True)
+    waitres = waitfut.result(TIMEOUT)
+    assert waitres == {'subsystem': 'invoices',
+                       'created': 3,
+                       'details': {'label': 'invlabel2',
+                                   'bolt11': inv['bolt11'],
+                                   'status': 'unpaid'}}
+    assert only_one(l2.rpc.listinvoices('invlabel2')['invoices'])['created_index'] == 3
+    assert 'updated_index' not in only_one(l2.rpc.listinvoices('invlabel2')['invoices'])
+
+    # Deleting a description causes updated to fire!
+    waitfut = executor.submit(l2.rpc.call, 'wait', {'subsystem': 'invoices', 'indexname': 'updated', 'nextvalue': 3})
+    time.sleep(1)
+    l2.rpc.delinvoice('invlabel2', status='unpaid', desconly=True)
+    waitres = waitfut.result(TIMEOUT)
+    assert waitres == {'subsystem': 'invoices',
+                       'updated': 3,
+                       'details': {'label': 'invlabel2', 'description': 'invdesc2'}}
+
+
 def test_invoice_deschash(node_factory, chainparams):
     l1, l2 = node_factory.line_graph(2)
 
@@ -723,10 +841,6 @@ def test_invoice_deschash(node_factory, chainparams):
 
     listinv = only_one(l2.rpc.listinvoices()['invoices'])
     assert listinv['description'] == 'One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon'
-
-    # To pay it we need to provide the (correct!) description.
-    with pytest.raises(RpcError, match=r'you did not provide description parameter'):
-        l1.rpc.pay(inv['bolt11'])
 
     with pytest.raises(RpcError, match=r'does not match description'):
         l1.rpc.pay(inv['bolt11'], description=listinv['description'][:-1])
@@ -754,3 +868,101 @@ def test_invoice_deschash(node_factory, chainparams):
     wait_for(lambda: len([ev for ev in l1.rpc.bkpr_listincome()['income_events'] if ev['tag'] == 'invoice']) == 1)
     inv = only_one([ev for ev in l1.rpc.bkpr_listincome()['income_events'] if ev['tag'] == 'invoice'])
     assert inv['description'] == b11['description_hash']
+
+
+def test_listinvoices_index(node_factory, executor):
+    l1, l2 = node_factory.line_graph(2)
+
+    invs = {}
+    for i in range(1, 100):
+        invs[i] = l2.rpc.invoice(i, str(i), "test_listinvoices_index")
+
+    assert [inv['label'] for inv in l2.rpc.listinvoices(index='created')['invoices']] == [str(i) for i in range(1, 100)]
+    assert [inv['label'] for inv in l2.rpc.listinvoices(index='created', start=1)['invoices']] == [str(i) for i in range(1, 100)]
+    assert [inv['label'] for inv in l2.rpc.listinvoices(index='created', start=2)['invoices']] == [str(i) for i in range(2, 100)]
+    assert [inv['label'] for inv in l2.rpc.listinvoices(index='created', start=99)['invoices']] == [str(i) for i in range(99, 100)]
+    assert l2.rpc.listinvoices(index='created', start=100) == {'invoices': []}
+    assert l2.rpc.listinvoices(index='created', start=2100) == {'invoices': []}
+
+    # Pay 10 of them, in reverse order.  These will be the last ones in the 'updated' index.
+    for i in range(70, 60, -1):
+        l1.rpc.pay(invs[i]['bolt11'])
+
+    # Make sure it's fully resolved!
+    wait_for(lambda: only_one(l2.rpc.listpeerchannels()['channels'])['htlcs'] == [])
+
+    # They're all still there!
+    assert set([inv['label'] for inv in l2.rpc.listinvoices(index='updated')['invoices']]) == set([str(i) for i in range(1, 100)])
+
+    # index values are correct.
+    for inv in l2.rpc.listinvoices(index='updated')['invoices']:
+        assert inv['created_index'] == int(inv['label'])
+        if int(inv['label']) in range(70, 60, -1):
+            assert inv['updated_index'] == 70 - int(inv['label']) + 1
+        else:
+            assert 'updated_index' not in inv
+
+    # Last 10 are in a defined order:
+    assert [inv['label'] for inv in l2.rpc.listinvoices(index='updated', start=1)['invoices']] == [str(i) for i in range(70, 60, -1)]
+    assert [inv['label'] for inv in l2.rpc.listinvoices(index='updated', start=2)['invoices']] == [str(i) for i in range(69, 60, -1)]
+    assert [inv['label'] for inv in l2.rpc.listinvoices(index='updated', start=10)['invoices']] == [str(i) for i in range(61, 60, -1)]
+    assert l2.rpc.listinvoices(index='updated', start=11) == {'invoices': []}
+    assert l2.rpc.listinvoices(index='updated', start=2100) == {'invoices': []}
+
+    # limit should work!
+    for i in range(1, 10):
+        assert only_one(l2.rpc.listinvoices(index='updated', start=i, limit=1)['invoices'])['label'] == str(70 + 1 - i)
+
+
+def test_expiry_startup_crash(node_factory, bitcoind):
+    """We crash trying to expire invoice on startup"""
+    l1 = node_factory.get_node()
+
+    l1.rpc.invoice(42, 'invlabel', 'invdesc', expiry=10)
+    l1.stop()
+
+    time.sleep(12)
+    # Boom!:
+    # 0x55eddb820d30 wait_index_increment
+    # 	lightningd/wait.c:112
+    # 0x55eddb82ca9e invoice_index_inc
+    # 	wallet/invoices.c:738
+    # 0x55eddb82cc23 invoice_index_update_status
+    # 	wallet/invoices.c:775
+    # 0x55eddb82b769 trigger_expiration
+    # 	wallet/invoices.c:185
+    # 0x55eddb82b570 invoices_new
+    # 	wallet/invoices.c:134
+    # 0x55eddb82eeac wallet_new
+    # 	wallet/wallet.c:121
+    # 0x55eddb7dca6f main
+    # 	lightningd/lightningd.c:1082
+    l1.start()
+
+
+@unittest.skipIf(TEST_NETWORK != 'regtest', "The DB migration is network specific due to the chain var.")
+@unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "This test is based on a sqlite3 snapshot")
+def test_invoices_wait_db_migration(node_factory, bitcoind):
+    """Canned db is from v23.02.2's test_invoice_routeboost_private l2"""
+    bitcoind.generate_block(28)
+    l2 = node_factory.get_node(node_id=2,
+                               dbfile='invoices_pre_waitindex.sqlite3.xz',
+                               options={'database-upgrade': True})
+
+    # And now we crash:
+    # Error executing statement: wallet/invoices.c:282: INSERT INTO invoices            ( id, payment_hash, payment_key, state            , msatoshi, label, expiry_time            , pay_index, msatoshi_received            , paid_timestamp, bolt11, description, features, local_offer_id)     VALUES ( ?, ?, ?, ?            , ?, ?, ?            , NULL, NULL            , NULL, ?, ?, ?, ?);: UNIQUE constraint failed: invoices.id
+    l2.rpc.invoice(1000, "test", "test")
+
+
+@unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "This test is based on a sqlite3 snapshot")
+@unittest.skipIf(TEST_NETWORK != 'regtest', "The DB migration is network specific due to the chain var.")
+def test_invoice_botched_migration(node_factory, chainparams):
+    """Test for grubles' case, where they ran successfully with the wrong var: they have *both* last_invoice_created_index *and *last_invoices_created_index* (this can happen if invoice id 1 was deleted, so they didn't die on invoice creation):
+    Error executing statement: wallet/db.c:1684: UPDATE vars SET name = 'last_invoices_created_index' WHERE name = 'last_invoice_created_index': UNIQUE constraint failed: vars.name
+    """
+    l1 = node_factory.get_node(dbfile='invoices_botched_waitindex_migrate.sqlite3.xz',
+                               options={'database-upgrade': True})
+
+    assert ([(i['created_index'], i['label']) for i in l1.rpc.listinvoices()["invoices"]]
+            == [(1, "made_after_bad_migration"), (2, "label1")])
+    assert l1.rpc.invoice(100, "test", "test")["created_index"] == 3

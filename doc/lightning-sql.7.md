@@ -205,6 +205,8 @@ The following tables are currently supported:
   - `bolt12` (type `string`, sqltype `TEXT`)
   - `local_offer_id` (type `hash`, sqltype `BLOB`)
   - `invreq_payer_note` (type `string`, sqltype `TEXT`)
+  - `created_index` (type `u64`, sqltype `INTEGER`)
+  - `updated_index` (type `u64`, sqltype `INTEGER`)
   - `pay_index` (type `u64`, sqltype `INTEGER`)
   - `amount_received_msat` (type `msat`, sqltype `INTEGER`)
   - `paid_at` (type `u64`, sqltype `INTEGER`)
@@ -250,6 +252,7 @@ The following tables are currently supported:
     - `row` (reference to `peerchannels_channel_type.rowid`, sqltype `INTEGER`)
     - `arrindex` (index within array, sqltype `INTEGER`)
     - `names` (type `string`, sqltype `TEXT`)
+  - `ignore_fee_limits` (type `boolean`, sqltype `INTEGER`)
   - `feerate_perkw` (type `u32`, sqltype `INTEGER`, from JSON object `feerate`)
   - `feerate_perkb` (type `u32`, sqltype `INTEGER`, from JSON object `feerate`)
   - `owner` (type `string`, sqltype `TEXT`)
@@ -268,6 +271,7 @@ The following tables are currently supported:
     - `funding_outnum` (type `u32`, sqltype `INTEGER`)
     - `feerate` (type `string`, sqltype `TEXT`)
     - `total_funding_msat` (type `msat`, sqltype `INTEGER`)
+    - `splice_amount` (type `integer`, sqltype `INTEGER`)
     - `our_funding_msat` (type `msat`, sqltype `INTEGER`)
     - `scratch_txid` (type `txid`, sqltype `BLOB`)
   - `close_to` (type `hex`, sqltype `BLOB`)
@@ -379,16 +383,12 @@ The following tables are currently supported:
     - `txid` (type `txid`, sqltype `BLOB`)
     - `idx` (type `u32`, sqltype `INTEGER`, from JSON field `index`)
     - `sequence` (type `u32`, sqltype `INTEGER`)
-    - `type` (type `string`, sqltype `TEXT`)
-    - `channel` (type `short_channel_id`, sqltype `TEXT`)
   - related table `transactions_outputs`
     - `row` (reference to `transactions.rowid`, sqltype `INTEGER`)
     - `arrindex` (index within array, sqltype `INTEGER`)
     - `idx` (type `u32`, sqltype `INTEGER`, from JSON field `index`)
     - `amount_msat` (type `msat`, sqltype `INTEGER`)
     - `scriptPubKey` (type `hex`, sqltype `BLOB`)
-    - `type` (type `string`, sqltype `TEXT`)
-    - `channel` (type `short_channel_id`, sqltype `TEXT`)
 
 [comment]: # (GENERATE-DOC-END)
 
@@ -514,4 +514,4 @@ RESOURCES
 ---------
 
 Main web site: <https://github.com/ElementsProject/lightning>
-[comment]: # ( SHA256STAMP:3eb4e024a1e1a4b40460b48b835354514456558797b8f8ce3c76dcbb9ca79dab)
+[comment]: # ( SHA256STAMP:2f77078555f16a9dbee5f068d4d0ba18727aeb378be674cd96bf7c1554a74ce5)

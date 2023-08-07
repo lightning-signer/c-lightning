@@ -15,7 +15,7 @@ Core Lightning (previously c-lightning) is a lightweight, highly customizable an
     * [Pruning](#pruning)
     * [HD wallet encryption](#hd-wallet-encryption)
 	* [Developers](#developers)
-* [Documentation](https://lightning.readthedocs.io/)
+* [Documentation](https://docs.corelightning.org/docs)
 
 ## Project Status
 
@@ -39,20 +39,9 @@ Pruning (`prune=n` option in `bitcoin.conf`) is partially supported, see [here](
 
 There are 4 supported installation options:
 
- - Installation from the [Ubuntu PPA][ppa].
  - Installation of a pre-compiled binary from the [release page][releases] on GitHub.
  - Using one of the [provided docker images][dockerhub] on the Docker Hub.
- - Compiling the source code yourself as described in the [installation documentation](doc/INSTALL.md).
-
-For the impatient here's the gist of it for Ubuntu:
-
-```bash
-sudo apt-get install -y software-properties-common
-sudo add-apt-repository -u ppa:lightningnetwork/ppa
-sudo apt-get install lightningd snapd
-sudo snap install bitcoin-core
-sudo ln -s /snap/bitcoin-core/current/bin/bitcoin{d,-cli} /usr/local/bin/
-```
+ - Compiling the source code yourself as described in the [installation documentation](doc/getting-started/getting-started/installation.md).
 
 ### Starting `lightningd`
 
@@ -91,7 +80,7 @@ You can start `lightningd` with the following command:
 lightningd --network=bitcoin --log-level=debug
 ```
 
-This creates a `.lightning/` subdirectory in your home directory: see `man -l doc/lightningd.8` (or https://lightning.readthedocs.io/) for more runtime options.
+This creates a `.lightning/` subdirectory in your home directory: see `man -l doc/lightningd.8` (or https://docs.corelightning.org/docs) for more runtime options.
 
 ### Using The JSON-RPC Interface
 
@@ -200,6 +189,8 @@ Command line options will always override the values in the configuration file.
 To use a configuration file, create a file named `config` within your top-level lightning directory or network subdirectory
 (eg. `~/.lightning/config` or `~/.lightning/bitcoin/config`).  See `man -l doc/lightningd-config.5`.
 
+A sample configuration file is available at `contrib/config-example`.
+
 ## Further information
 
 ### Pruning
@@ -219,7 +210,7 @@ If you encrypt your `hsm_secret`, you will have to pass the `--encrypted-hsm` st
 
 ### Developers
 
-Developers wishing to contribute should start with the developer guide [here](doc/HACKING.md).
+Developers wishing to contribute should start with the developer guide [here](doc/contribute-to-core-lightning/coding-style-guidelines.md).
 You should also configure with `--enable-developer` to get additional checks and options.
 
 [blockstream-store-blog]: https://blockstream.com/2018/01/16/en-lightning-charge/
@@ -234,8 +225,7 @@ You should also configure with `--enable-developer` to get additional checks and
 [ml2]: https://lists.linuxfoundation.org/mailman/listinfo/lightning-dev
 [discord]: https://discord.gg/mE9s4rc5un
 [telegram]: https://t.me/lightningd
-[docs]: https://lightning.readthedocs.org
-[ppa]: https://launchpad.net/~lightningnetwork/+archive/ubuntu/ppa
+[docs]: https://docs.corelightning.org/docs
 [releases]: https://github.com/ElementsProject/lightning/releases
 [dockerhub]: https://hub.docker.com/r/elementsproject/lightningd/
 [jsonrpcspec]: https://www.jsonrpc.org/specification

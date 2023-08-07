@@ -3,6 +3,7 @@
 
 #include "config.h"
 #include "db.h"
+#include <ccan/rune/rune.h>
 #include <common/onion_encode.h>
 #include <common/penalty_base.h>
 #include <common/utxo.h>
@@ -10,11 +11,13 @@
 #include <lightningd/bitcoind.h>
 #include <lightningd/log.h>
 #include <lightningd/peer_htlcs.h>
+#include <lightningd/wait.h>
 
 struct amount_msat;
 struct invoices;
 struct channel;
 struct channel_inflight;
+struct json_escape;
 struct lightningd;
 struct node_id;
 struct oneshot;
@@ -26,7 +29,7 @@ enum state_change;
 struct wallet {
 	struct lightningd *ld;
 	struct db *db;
-	struct log *log;
+	struct logger *log;
 	struct invoices *invoices;
 	struct list_head unstored_payments;
 	u64 max_channel_dbid;
@@ -292,14 +295,14 @@ struct wallet_shachain {
 	struct shachain chain;
 };
 
-/* Possible states for a wallet_payment. Payments start in
+/* Possible states for a payment. Payments start in
  * `PENDING`. Outgoing payments are set to `PAYMENT_COMPLETE` once we
  * get the preimage matching the rhash, or to
  * `PAYMENT_FAILED`. */
 /* /!\ This is a DB ENUM, please do not change the numbering of any
  * already defined elements (adding is ok but you should append the
- * test case test_wallet_payment_status_enum() ) /!\ */
-enum wallet_payment_status {
+ * test case test_payment_status_enum() ) /!\ */
+enum payment_status {
 	PAYMENT_PENDING = 0,
 	PAYMENT_COMPLETE = 1,
 	PAYMENT_FAILED = 2
@@ -310,7 +313,7 @@ struct tx_annotation {
 	struct short_channel_id channel;
 };
 
-static inline enum wallet_payment_status wallet_payment_status_in_db(enum wallet_payment_status w)
+static inline enum payment_status payment_status_in_db(enum payment_status w)
 {
 	switch (w) {
 	case PAYMENT_PENDING:
@@ -342,7 +345,7 @@ struct wallet_payment {
 	u64 partid;
 	u64 groupid;
 
-	enum wallet_payment_status status;
+	enum payment_status status;
 
 	/* The destination may not be known if we used `sendonion` */
 	struct node_id *destination;
@@ -370,6 +373,30 @@ struct wallet_payment {
 	/* If we are associated with an internal invoice_request */
 	struct sha256 *local_invreq_id;
 };
+
+struct wallet_payment *wallet_payment_new(const tal_t *ctx,
+					  u64 dbid,
+					  u32 timestamp,
+					  const u32 *completed_at,
+					  const struct sha256 *payment_hash,
+					  u64 partid,
+					  u64 groupid,
+					  enum payment_status status,
+					  /* The destination may not be known if we used `sendonion` */
+					  const struct node_id *destination TAKES,
+					  struct amount_msat msatoshi,
+					  struct amount_msat msatoshi_sent,
+					  struct amount_msat total_msat,
+					  /* If and only if PAYMENT_COMPLETE */
+					  const struct preimage *payment_preimage TAKES,
+					  const struct secret *path_secrets TAKES,
+					  const struct node_id *route_nodes TAKES,
+					  const struct short_channel_id *route_channels TAKES,
+					  const char *invstring TAKES,
+					  const char *label TAKES,
+					  const char *description TAKES,
+					  const u8 *failonion TAKES,
+					  const struct sha256 *local_invreq_id);
 
 struct outpoint {
 	struct bitcoin_outpoint outpoint;
@@ -406,12 +433,6 @@ struct wallet_transaction {
 
 	/* Fully parsed transaction */
 	const struct bitcoin_tx *tx;
-
-	/* tal_arr containing the annotation types, if any, for the respective
-	 * inputs and outputs. 0 if there are no annotations for the
-	 * element. */
-	struct tx_annotation *input_annotations;
-	struct tx_annotation *output_annotations;
 };
 
 /**
@@ -488,6 +509,20 @@ struct utxo *wallet_find_utxo(const tal_t *ctx, struct wallet *w,
 			      bool nonwrapped,
 			      const struct utxo **excludes);
 
+/**
+ * wallet_has_funds: do we have sufficient other UTXOs for this amount?
+ * @w: the wallet
+ * @excludes: the utxos not to count (tal_arr or NULL)
+ * @current_blockheight: current chain length.
+ * @sats: the target
+ *
+ * This is a gross estimate, since it doesn't take into account the fees we
+ * would need to actually spend these utxos!
+ */
+bool wallet_has_funds(struct wallet *wallet,
+		      const struct utxo **excludes,
+		      u32 current_blockheight,
+		      struct amount_sat sats);
 /**
  * wallet_add_onchaind_utxo - Add a UTXO with spending info from onchaind.
  *
@@ -571,6 +606,9 @@ bool wallet_shachain_add_hash(struct wallet *wallet,
  * @wallet: the wallet
  */
 u64 wallet_get_channel_dbid(struct wallet *wallet);
+
+void wallet_htlcsigs_confirm_inflight(struct wallet *w, struct channel *chan,
+				      const struct bitcoin_outpoint *confirmed_outpoint);
 
 /**
  * wallet_channel_save -- Upsert the channel into the database
@@ -822,247 +860,6 @@ static inline enum invoice_status invoice_status_in_db(enum invoice_status s)
 	fatal("%s: %u is invalid", __func__, s);
 }
 
-/* The information about an invoice */
-struct invoice_details {
-	/* Current invoice state */
-	enum invoice_status state;
-	/* Preimage for this invoice */
-	struct preimage r;
-	/* Hash of preimage r */
-	struct sha256 rhash;
-	/* Label assigned by user */
-	const struct json_escape *label;
-	/* NULL if they specified "any" */
-	struct amount_msat *msat;
-	/* Absolute UNIX epoch time this will expire */
-	u64 expiry_time;
-	/* Set if state == PAID; order to be returned by waitanyinvoice */
-	u64 pay_index;
-	/* Set if state == PAID; amount received */
-	struct amount_msat received;
-	/* Set if state == PAID; time paid */
-	u64 paid_timestamp;
-	/* BOLT11 or BOLT12 encoding for this invoice */
-	const char *invstring;
-
-	/* The description of the payment. */
-	char *description;
-	/* The features, if any (tal_arr) */
-	u8 *features;
-	/* The offer this refers to, if any. */
-	struct sha256 *local_offer_id;
-};
-
-/* An object that handles iteration over the set of invoices */
-struct invoice_iterator {
-	/* The contents of this object is subject to change
-	 * and should not be depended upon */
-	void *p;
-};
-
-struct invoice {
-	/* Internal, rest of lightningd should not use */
-	/* Database ID */
-	u64 id;
-};
-
-#define INVOICE_MAX_LABEL_LEN 128
-
-/**
- * wallet_invoice_create - Create a new invoice.
- *
- * @wallet - the wallet to create the invoice in.
- * @pinvoice - pointer to location to load new invoice in.
- * @msat - the amount the invoice should have, or
- * NULL for any-amount invoices.
- * @label - the unique label for this invoice. Must be
- * non-NULL.
- * @expiry - the number of seconds before the invoice
- * expires
- *
- * Returns false if label already exists or expiry is 0.
- * Returns true if created invoice.
- * FIXME: Fallback addresses
- */
-bool wallet_invoice_create(struct wallet *wallet,
-			   struct invoice *pinvoice,
-			   const struct amount_msat *msat TAKES,
-			   const struct json_escape *label TAKES,
-			   u64 expiry,
-			   const char *b11enc,
-			   const char *description,
-			   const u8 *features,
-			   const struct preimage *r,
-			   const struct sha256 *rhash,
-			   const struct sha256 *local_offer_id);
-
-/**
- * wallet_invoice_find_by_label - Search for an invoice by label
- *
- * @wallet - the wallet to search.
- * @pinvoice - pointer to location to load found invoice in.
- * @label - the label to search for.
- *
- * Returns false if no invoice with that label exists.
- * Returns true if found.
- */
-bool wallet_invoice_find_by_label(struct wallet *wallet,
-				  struct invoice *pinvoice,
-				  const struct json_escape *label);
-
-/**
- * wallet_invoice_find_by_rhash - Search for an invoice by payment_hash
- *
- * @wallet - the wallet to search.
- * @pinvoice - pointer to location to load found invoice in.
- * @rhash - the payment_hash to search for.
- *
- * Returns false if no invoice with that rhash exists.
- * Returns true if found.
- */
-bool wallet_invoice_find_by_rhash(struct wallet *wallet,
-				  struct invoice *pinvoice,
-				  const struct sha256 *rhash);
-
-/**
- * wallet_invoice_find_unpaid - Search for an unpaid, unexpired invoice by
- * payment_hash
- *
- * @wallet - the wallet to search.
- * @pinvoice - pointer to location to load found invoice in.
- * @rhash - the payment_hash to search for.
- *
- * Returns false if no unpaid invoice with that rhash exists.
- * Returns true if found.
- */
-bool wallet_invoice_find_unpaid(struct wallet *wallet,
-				struct invoice *pinvoice,
-				const struct sha256 *rhash);
-
-/**
- * wallet_invoice_delete - Delete an invoice
- *
- * @wallet - the wallet to delete the invoice from.
- * @invoice - the invoice to delete.
- *
- * Return false on failure.
- */
-bool wallet_invoice_delete(struct wallet *wallet,
-			   struct invoice invoice);
-
-bool wallet_invoice_delete_description(struct wallet *wallet,
-				       struct invoice invoice);
-
-/**
- * wallet_invoice_delete_expired - Delete all expired invoices
- * with expiration time less than or equal to the given.
- *
- * @wallet - the wallet to delete invoices from.
- * @max_expiry_time - the maximum expiry time to delete.
- */
-void wallet_invoice_delete_expired(struct wallet *wallet,
-				   u64 max_expiry_time);
-
-
-/**
- * wallet_invoice_iterate - Iterate over all existing invoices
- *
- * @wallet - the wallet whose invoices are to be iterated over.
- * @iterator - the iterator object to use.
- *
- * Return false at end-of-sequence, true if still iterating.
- * Usage:
- *
- *   struct invoice_iterator it;
- *   memset(&it, 0, sizeof(it))
- *   while (wallet_invoice_iterate(wallet, &it)) {
- *       ...
- *   }
- */
-bool wallet_invoice_iterate(struct wallet *wallet,
-			    struct invoice_iterator *it);
-
-/**
- * wallet_invoice_iterator_deref - Read the details of the
- * invoice currently pointed to by the given iterator.
- *
- * @ctx - the owner of the label and msatoshi fields returned.
- * @wallet - the wallet whose invoices are to be iterated over.
- * @iterator - the iterator object to use.
- * @return pointer to the invoice details allocated off of `ctx`.
- */
-const struct invoice_details *wallet_invoice_iterator_deref(const tal_t *ctx,
-			      struct wallet *wallet,
-			      const struct invoice_iterator *it);
-
-/**
- * wallet_invoice_resolve - Mark an invoice as paid
- *
- * @wallet - the wallet containing the invoice.
- * @invoice - the invoice to mark as paid.
- * @received - the actual amount received.
- *
- * If the invoice is not UNPAID, returns false.
- */
-bool wallet_invoice_resolve(struct wallet *wallet,
-			    struct invoice invoice,
-			    struct amount_msat received);
-
-/**
- * wallet_invoice_waitany - Wait for any invoice to be paid.
- *
- * @ctx - the owner of the callback. If the owner is freed,
- * the callback is cancelled.
- * @wallet - the wallet to query.
- * @lastpay_index - wait for invoices after the specified
- * pay_index. Use 0 to wait for the first invoice.
- * @cb - the callback to invoke. If an invoice is already
- * paid with pay_index greater than lastpay_index, this
- * is called immediately, otherwise it is called during
- * an invoices_resolve call. Will never be given a NULL
- * pointer-to-invoice.
- * @cbarg - the callback data.
- */
-void wallet_invoice_waitany(const tal_t *ctx,
-			    struct wallet *wallet,
-			    u64 lastpay_index,
-			    void (*cb)(const struct invoice *, void*),
-			    void *cbarg);
-
-/**
- * wallet_invoice_waitone - Wait for a specific invoice to be paid,
- * deleted, or expired.
- *
- * @ctx - the owner of the callback. If the owner is freed,
- * the callback is cancelled.
- * @wallet - the wallet to query.
- * @invoice - the invoice to wait on.
- * @cb - the callback to invoice. If invoice is already paid
- * or expired, this is called immediately, otherwise it is
- * called during an invoices_resolve or invoices_delete call.
- * If the invoice was deleted, the callback is given a NULL
- * invoice.
- * @cbarg - the callback data.
- *
- */
-void wallet_invoice_waitone(const tal_t *ctx,
-			    struct wallet *wallet,
-			    struct invoice invoice,
-			    void (*cb)(const struct invoice *, void*),
-			    void *cbarg);
-
-/**
- * wallet_invoice_details - Get the invoice_details of an invoice.
- *
- * @ctx - the owner of the label and msatoshi fields returned.
- * @wallet - the wallet to query.
- * @invoice - the invoice to get details on.
- * @return pointer to the invoice details allocated off of `ctx`.
- */
-struct invoice_details *wallet_invoice_details(const tal_t *ctx,
-					       struct wallet *wallet,
-					       struct invoice invoice);
-
 /**
  * wallet_htlc_stubs - Retrieve HTLC stubs for the given channel
  *
@@ -1107,7 +904,7 @@ void wallet_payment_store(struct wallet *wallet,
 void wallet_payment_delete(struct wallet *wallet,
 			   const struct sha256 *payment_hash,
 			   const u64 *groupid, const u64 *partid,
-			   const enum wallet_payment_status *status);
+			   const enum payment_status *status);
 
 /**
  * wallet_local_htlc_out_delete - Remove a local outgoing failed HTLC
@@ -1149,7 +946,7 @@ u64 wallet_payment_get_groupid(struct wallet *wallet,
 void wallet_payment_set_status(struct wallet *wallet,
 			       const struct sha256 *payment_hash,
 			       u64 partid, u64 groupid,
-			       const enum wallet_payment_status newstatus,
+			       const enum payment_status newstatus,
 			       const struct preimage *preimage);
 
 /**
@@ -1211,10 +1008,19 @@ wallet_payments_by_invoice_request(const tal_t *ctx,
 				   const struct sha256 *local_invreq_id);
 
 /**
- * wallet_htlc_sigs_save - Store the latest HTLC sigs for the channel
+ * wallet_htlc_sigs_save - Delete all HTLC sigs (including inflights) for the
+ * channel and store `htlc_sigs` as the new values.
  */
 void wallet_htlc_sigs_save(struct wallet *w, u64 channel_id,
 			   const struct bitcoin_signature *htlc_sigs);
+
+/**
+ * wallet_htlc_sigs_add - Appends `htlc_sigs` for the given inflight splice.
+ * `inflight_id` is the funding txid for the given splice.
+ */
+void wallet_htlc_sigs_add(struct wallet *w, u64 channel_id,
+			  struct bitcoin_outpoint inflight_outpoint,
+			  const struct bitcoin_signature *htlc_sigs);
 
 /**
  * wallet_sanity_check - Check that the wallet is setup for this node_id and chain
@@ -1675,10 +1481,22 @@ void wallet_datastore_update(struct wallet *w,
 void wallet_datastore_remove(struct wallet *w, const char **key);
 
 /**
+ * Get a single entry from the datastore
+ * @ctx: the tal ctx to allocate off
+ * @w: the wallet
+ * @key: the key
+ * @generation: the generation or NULL (set if returns non-NULL)
+ */
+u8 *wallet_datastore_get(const tal_t *ctx,
+			 struct wallet *w,
+			 const char **key,
+			 u64 *generation);
+
+/**
  * Iterate through the datastore.
  * @ctx: the tal ctx to allocate off
  * @w: the wallet
- * @startkey: NULL, or the first key to start with
+ * @startkey: NULL, or the subkey to iterate
  * @key: the first key (if returns non-NULL)
  * @data: the first data (if returns non-NULL)
  * @generation: the first generation (if returns non-NULL)
@@ -1696,7 +1514,7 @@ struct db_stmt *wallet_datastore_first(const tal_t *ctx,
 /**
  * Iterate through the datastore.
  * @ctx: the tal ctx to allocate off
- * @w: the wallet
+ * @startkey: NULL, or the subkey to iterate
  * @stmt: the previous statement.
  * @key: the key (if returns non-NULL)
  * @data: the data (if returns non-NULL)
@@ -1706,11 +1524,16 @@ struct db_stmt *wallet_datastore_first(const tal_t *ctx,
  * If you choose not to call wallet_datastore_next() you must free it!
  */
 struct db_stmt *wallet_datastore_next(const tal_t *ctx,
-				      struct wallet *w,
+				      const char **startkey,
 				      struct db_stmt *stmt,
 				      const char ***key,
 				      const u8 **data,
 				      u64 *generation);
+
+/* Does k1 match k2 as far as k2 goes? */
+bool datastore_key_startswith(const char **k1, const char **k2);
+/* Does k1 match k2? */
+bool datastore_key_eq(const char **k1, const char **k2);
 
 /**
  * Iterate through the htlcs table.
@@ -1756,4 +1579,58 @@ struct wally_psbt *psbt_using_utxos(const tal_t *ctx,
 				    u32 nlocktime,
 				    u32 nsequence,
 				    struct wally_psbt *base);
+
+/**
+ * Get a particular runestring from the db
+ * @ctx: tal ctx for return to be tallocated from
+ * @wallet: the wallet
+ * @unique_id: the id of the rune.
+ *
+ * Returns NULL if it's not found.
+ */
+const char *wallet_get_rune(const tal_t *ctx, struct wallet *wallet, u64 unique_id);
+
+/**
+ * Get every runestring from the db
+ * @ctx: tal ctx for return to be tallocated from
+ * @wallet: the wallet
+ */
+const char **wallet_get_runes(const tal_t *ctx, struct wallet *wallet);
+
+/**
+ * wallet_rune_insert -- Insert the newly created rune into the database
+ *
+ * @wallet: the wallet to save into
+ * @rune: the instance to store
+ */
+void wallet_rune_insert(struct wallet *wallet, struct rune *rune);
+
+/* Load the runes blacklist */
+struct rune_blacklist {
+	u64 start, end;
+};
+
+/**
+ * Load the blacklist from the db.
+ * @ctx: tal ctx for return to be tallocated from
+ * @wallet: the wallet
+ */
+struct rune_blacklist *wallet_get_runes_blacklist(const tal_t *ctx, struct wallet *wallet);
+
+/**
+ * wallet_insert_blacklist -- Insert rune into blacklist
+ *
+ * @wallet: the wallet to save into
+ * @entry: the new entry to insert
+ */
+void wallet_insert_blacklist(struct wallet *wallet, const struct rune_blacklist *entry);
+
+/**
+ * wallet_delete_blacklist -- Delete row from blacklist
+ *
+ * @wallet: the wallet to delete from
+ * @entry: the entry to delete
+ */
+void wallet_delete_blacklist(struct wallet *wallet, const struct rune_blacklist *entry);
+
 #endif /* LIGHTNING_WALLET_WALLET_H */

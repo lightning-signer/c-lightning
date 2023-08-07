@@ -51,14 +51,15 @@ struct close_command {
 
 /* Resolve a single close command. */
 static void
-resolve_one_close_command(struct close_command *cc, bool cooperative)
+resolve_one_close_command(struct close_command *cc, bool cooperative,
+			  const struct bitcoin_tx *close_tx)
 {
 	struct json_stream *result = json_stream_success(cc->cmd);
 
-	json_add_tx(result, "tx", cc->channel->last_tx);
-	if (!invalid_last_tx(cc->channel->last_tx)) {
+	json_add_tx(result, "tx", close_tx);
+	if (!invalid_last_tx(close_tx)) {
 		struct bitcoin_txid txid;
-		bitcoin_txid(cc->channel->last_tx, &txid);
+		bitcoin_txid(close_tx, &txid);
 		json_add_txid(result, "txid", &txid);
 	}
 	if (cooperative)
@@ -69,24 +70,31 @@ resolve_one_close_command(struct close_command *cc, bool cooperative)
 	was_pending(command_success(cc->cmd, result));
 }
 
-/* Resolve a close command for a channel that will be closed soon: returns
- * the cmd_id of one, if any (allocated off ctx). */
-const char *resolve_close_command(const tal_t *ctx,
-				  struct lightningd *ld, struct channel *channel,
-				  bool cooperative)
+const char *cmd_id_from_close_command(const tal_t *ctx,
+				      struct lightningd *ld, struct channel *channel)
+{
+	struct close_command *cc;
+
+	list_for_each(&ld->close_commands, cc, list) {
+		if (cc->channel != channel)
+			continue;
+		return tal_strdup(ctx, cc->cmd->id);
+	}
+	return NULL;
+}
+
+/* Resolve a close command for a channel that will be closed soon. */
+void resolve_close_command(struct lightningd *ld, struct channel *channel,
+			   bool cooperative, const struct bitcoin_tx *close_tx)
 {
 	struct close_command *cc;
 	struct close_command *n;
-	const char *cmd_id = NULL;
 
 	list_for_each_safe(&ld->close_commands, cc, n, list) {
 		if (cc->channel != channel)
 			continue;
-		if (!cmd_id)
-			cmd_id = tal_strdup(ctx, cc->cmd->id);
-		resolve_one_close_command(cc, cooperative);
+		resolve_one_close_command(cc, cooperative, close_tx);
 	}
-	return cmd_id;
 }
 
 /* Destroy the close command structure in reaction to the
@@ -199,10 +207,8 @@ static bool closing_fee_is_acceptable(struct lightningd *ld,
 				      struct channel *channel,
 				      const struct bitcoin_tx *tx)
 {
-	struct amount_sat fee, last_fee, min_fee;
+	struct amount_sat fee, last_fee;
 	u64 weight;
-	u32 min_feerate;
-	bool feerate_unknown;
 
 	/* Calculate actual fee (adds in eliminated outputs) */
 	fee = calc_tx_fee(channel->funding_sats, tx);
@@ -219,16 +225,21 @@ static bool closing_fee_is_acceptable(struct lightningd *ld,
 		  type_to_string(tmpctx, struct amount_sat, &last_fee),
 		  weight);
 
-	/* If we don't have a feerate estimate, this gives feerate_floor */
-	min_feerate = feerate_min(ld, &feerate_unknown);
+	if (!channel->ignore_fee_limits && !ld->config.ignore_fee_limits) {
+		struct amount_sat min_fee;
+		u32 min_feerate;
 
-	min_fee = amount_tx_fee(min_feerate, weight);
-	if (amount_sat_less(fee, min_fee)) {
-		log_debug(channel->log, "... That's below our min %s"
-			  " for weight %"PRIu64" at feerate %u",
-			  type_to_string(tmpctx, struct amount_sat, &min_fee),
-			  weight, min_feerate);
-		return false;
+		/* If we don't have a feerate estimate, this gives feerate_floor */
+		min_feerate = feerate_min(ld, NULL);
+
+		min_fee = amount_tx_fee(min_feerate, weight);
+		if (amount_sat_less(fee, min_fee)) {
+			log_debug(channel->log, "... That's below our min %s"
+				  " for weight %"PRIu64" at feerate %u",
+				  type_to_string(tmpctx, struct amount_sat, &min_fee),
+				  weight, min_feerate);
+			return false;
+		}
 	}
 
 	/* Prefer new over old: this covers the preference
@@ -359,6 +370,7 @@ void peer_start_closingd(struct channel *channel, struct peer_fd *peer_fd)
 	struct lightningd *ld = channel->peer->ld;
 	u32 final_commit_feerate;
 	bool option_anchor_outputs = channel_has(channel, OPT_ANCHOR_OUTPUTS);
+	bool option_anchors_zero_fee_htlc_tx = channel_has(channel, OPT_ANCHORS_ZERO_FEE_HTLC_TX);
 
 	if (!channel->shutdown_scriptpubkey[REMOTE]) {
 		channel_internal_error(channel,
@@ -403,7 +415,8 @@ void peer_start_closingd(struct channel *channel, struct peer_fd *peer_fd)
 	final_commit_feerate = get_feerate(channel->fee_states,
 					   channel->opener, LOCAL);
 	feelimit = commit_tx_base_fee(final_commit_feerate, 0,
-				      option_anchor_outputs);
+				      option_anchor_outputs,
+				      option_anchors_zero_fee_htlc_tx);
 
 	/* If we can't determine feerate, start at half unilateral feerate. */
 	feerate = mutual_close_feerate(ld->topology);
@@ -415,10 +428,10 @@ void peer_start_closingd(struct channel *channel, struct peer_fd *peer_fd)
 
 	/* We use a feerate if anchor_outputs, otherwise max fee is set by
 	 * the final unilateral. */
-	if (option_anchor_outputs) {
+	if (option_anchor_outputs || option_anchors_zero_fee_htlc_tx) {
 		max_feerate = tal(tmpctx, u32);
 		/* Aim for reasonable max, but use final if we don't know. */
-		*max_feerate = unilateral_feerate(ld->topology);
+		*max_feerate = unilateral_feerate(ld->topology, false);
 		if (!*max_feerate)
 			*max_feerate = final_commit_feerate;
 		/* No other limit on fees */
@@ -432,6 +445,11 @@ void peer_start_closingd(struct channel *channel, struct peer_fd *peer_fd)
 	if (channel->closing_feerate_range) {
 		min_feerate = channel->closing_feerate_range[0];
 		max_feerate = &channel->closing_feerate_range[1];
+	} else if (channel->ignore_fee_limits || ld->config.ignore_fee_limits) {
+		min_feerate = 1;
+		tal_free(max_feerate);
+		max_feerate = tal(tmpctx, u32);
+		*max_feerate = 0xFFFFFFFF;
 	}
 
 	/* BOLT #3:
@@ -499,7 +517,8 @@ void peer_start_closingd(struct channel *channel, struct peer_fd *peer_fd)
 				       (channel->closing_fee_negotiation_step == 50
 					&& channel->closing_fee_negotiation_step_unit == CLOSING_FEE_NEGOTIATION_STEP_UNIT_PERCENTAGE)
 				       /* Always use quickclose with anchors */
-				       || option_anchor_outputs,
+				       || option_anchor_outputs
+				       || option_anchors_zero_fee_htlc_tx,
 				       channel->shutdown_wrong_funding);
 
 	/* We don't expect a response: it will give us feedback on
@@ -671,6 +690,11 @@ static struct command_result *json_close(struct command *cmd,
 	index_val = (u32) channel->final_key_idx;
 	final_index = &index_val;
 
+	/* Don't send a scriptpubkey peer won't accept */
+	anysegwit = !chainparams->is_elements && feature_negotiated(cmd->ld->our_features,
+				       channel->peer->their_features,
+				       OPT_SHUTDOWN_ANYSEGWIT);
+
 	/* If we've set a local shutdown script for this peer, and it's not the
 	 * default upfront script, try to close to a different channel.
 	 * Error is an operator error */
@@ -679,8 +703,13 @@ static struct command_result *json_close(struct command *cmd,
 				  tal_count(close_to_script),
 				  channel->shutdown_scriptpubkey[LOCAL],
 				  tal_count(channel->shutdown_scriptpubkey[LOCAL]))) {
-		u8 *default_close_to = p2wpkh_for_keyidx(tmpctx, cmd->ld,
-							 channel->final_key_idx);
+		u8 *default_close_to = NULL;
+		if (anysegwit)
+			default_close_to = p2tr_for_keyidx(tmpctx, cmd->ld,
+							  				   channel->final_key_idx);
+		else
+            default_close_to = p2wpkh_for_keyidx(tmpctx, cmd->ld,
+							  					 channel->final_key_idx);
 		if (!memeq(default_close_to, tal_count(default_close_to),
 			   channel->shutdown_scriptpubkey[LOCAL],
 			   tal_count(channel->shutdown_scriptpubkey[LOCAL]))) {
@@ -719,10 +748,6 @@ static struct command_result *json_close(struct command *cmd,
 	} else
 		close_script_set = false;
 
-	/* Don't send a scriptpubkey peer won't accept */
-	anysegwit = feature_negotiated(cmd->ld->our_features,
-				       channel->peer->their_features,
-				       OPT_SHUTDOWN_ANYSEGWIT);
 	if (!valid_shutdown_scriptpubkey(channel->shutdown_scriptpubkey[LOCAL],
 					 anysegwit, false)) {
 		/* Explicit check for future segwits. */
@@ -819,6 +844,7 @@ static struct command_result *json_close(struct command *cmd,
 	 * waiting) */
 	switch (channel->state) {
 		case CHANNELD_NORMAL:
+		case CHANNELD_AWAITING_SPLICE:
 		case CHANNELD_AWAITING_LOCKIN:
 		case DUALOPEND_AWAITING_LOCKIN:
 			channel_set_state(channel,

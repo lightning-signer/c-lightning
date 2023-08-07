@@ -248,6 +248,12 @@ msgtype,hsmd_sign_mutual_close_tx,21
 msgdata,hsmd_sign_mutual_close_tx,tx,bitcoin_tx,
 msgdata,hsmd_sign_mutual_close_tx,remote_funding_key,pubkey,
 
+# channeld asks HSM to sign splice tx.
+msgtype,hsmd_sign_splice_tx,29
+msgdata,hsmd_sign_splice_tx,tx,bitcoin_tx,
+msgdata,hsmd_sign_splice_tx,remote_funding_key,pubkey,
+msgdata,hsmd_sign_splice_tx,input_index,u32,
+
 # Reply for all the above requests.
 msgtype,hsmd_sign_tx_reply,112
 msgdata,hsmd_sign_tx_reply,sig,bitcoin_signature,
@@ -332,6 +338,16 @@ msgdata,hsmd_check_pubkey,pubkey,pubkey,
 msgtype,hsmd_check_pubkey_reply,128
 msgdata,hsmd_check_pubkey_reply,ok,bool,
 
+msgtype,hsmd_sign_anchorspend,147
+msgdata,hsmd_sign_anchorspend,peerid,node_id,
+msgdata,hsmd_sign_anchorspend,channel_dbid,u64,
+msgdata,hsmd_sign_anchorspend,num_inputs,u16,
+msgdata,hsmd_sign_anchorspend,inputs,utxo,num_inputs
+msgdata,hsmd_sign_anchorspend,psbt,wally_psbt,
+
+msgtype,hsmd_sign_anchorspend_reply,148
+msgdata,hsmd_sign_anchorspend_reply,psbt,wally_psbt,
+
 # These are where lightningd asks for signatures on onchaind's behalf.
 msgtype,hsmd_sign_any_delayed_payment_to_us,142
 msgdata,hsmd_sign_any_delayed_payment_to_us,commit_num,u64,
@@ -370,3 +386,13 @@ msgdata,hsmd_sign_any_local_htlc_tx,option_anchor_outputs,bool,
 msgdata,hsmd_sign_any_local_htlc_tx,input,u32,
 msgdata,hsmd_sign_any_local_htlc_tx,peerid,node_id,
 msgdata,hsmd_sign_any_local_htlc_tx,channel_dbid,u64,
+
+msgtype,hsmd_sign_htlc_tx_mingle,149
+msgdata,hsmd_sign_htlc_tx_mingle,peerid,node_id,
+msgdata,hsmd_sign_htlc_tx_mingle,channel_dbid,u64,
+msgdata,hsmd_sign_htlc_tx_mingle,num_inputs,u16,
+msgdata,hsmd_sign_htlc_tx_mingle,inputs,utxo,num_inputs
+msgdata,hsmd_sign_htlc_tx_mingle,psbt,wally_psbt,
+
+msgtype,hsmd_sign_htlc_tx_mingle_reply,150
+msgdata,hsmd_sign_htlc_tx_mingle_reply,psbt,wally_psbt,

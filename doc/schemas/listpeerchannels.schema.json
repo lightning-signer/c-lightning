@@ -41,7 +41,8 @@
               "FUNDING_SPEND_SEEN",
               "ONCHAIN",
               "DUALOPEND_OPEN_INIT",
-              "DUALOPEND_AWAITING_LOCKIN"
+              "DUALOPEND_AWAITING_LOCKIN",
+              "CHANNELD_AWAITING_SPLICE"
             ],
             "description": "the channel state, in particular \"CHANNELD_NORMAL\" means the channel can be used normally"
           },
@@ -83,6 +84,11 @@
                 }
               }
             }
+          },
+          "ignore_fee_limits": {
+            "type": "boolean",
+            "added": "v23.08",
+            "description": "set if we allow this peer to set fees to anything they want"
           },
           "feerate": {
             "type": "object",
@@ -141,7 +147,7 @@
           },
           "inflight": {
             "type": "array",
-            "description": "Current candidate funding transactions (only for dual-funding)",
+            "description": "Current candidate funding transactions",
             "items": {
               "type": "object",
               "additionalProperties": false,
@@ -150,6 +156,7 @@
                 "funding_outnum",
                 "feerate",
                 "total_funding_msat",
+                "splice_amount",
                 "our_funding_msat",
                 "scratch_txid"
               ],
@@ -169,6 +176,11 @@
                 "total_funding_msat": {
                   "type": "msat",
                   "description": "total amount in the channel"
+                },
+                "splice_amount": {
+                  "type": "integer",
+                  "added": "v23.08",
+                  "description": "The amouont of sats we're splicing in or out"
                 },
                 "our_funding_msat": {
                   "type": "msat",
@@ -212,6 +224,7 @@
               "enum": [
                 "option_static_remotekey",
                 "option_anchor_outputs",
+                "option_anchors_zero_fee_htlc_tx",
                 "option_scid_alias",
                 "option_zeroconf"
               ],
@@ -608,6 +621,7 @@
                 "scratch_txid": {},
                 "channel_type": {},
                 "feerate": {},
+                "ignore_fee_limits": {},
                 "owner": {},
                 "short_channel_id": {},
                 "channel_id": {},
@@ -698,6 +712,7 @@
                 "scratch_txid": {},
                 "channel_type": {},
                 "feerate": {},
+                "ignore_fee_limits": {},
                 "owner": {},
                 "short_channel_id": {},
                 "channel_id": {},
@@ -787,6 +802,7 @@
                 "scratch_txid": {},
                 "channel_type": {},
                 "feerate": {},
+                "ignore_fee_limits": {},
                 "owner": {},
                 "short_channel_id": {},
                 "channel_id": {},
@@ -877,6 +893,7 @@
                 "scratch_txid": {},
                 "channel_type": {},
                 "feerate": {},
+                "ignore_fee_limits": {},
                 "owner": {},
                 "alias": {},
                 "short_channel_id": {},

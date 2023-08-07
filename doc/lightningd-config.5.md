@@ -14,6 +14,8 @@ file (default: **$HOME/.lightning/config**) then a network-specific
 configuration file (default: **$HOME/.lightning/testnet/config**).  This can
 be changed: see *--conf* and *--lightning-dir*.
 
+Note that some configuration options, marked *dynamic*m can be changed at runtime: see lightning-setconfig(7).
+
 General configuration files are processed first, then network-specific
 ones, then command line options: later options override earlier ones
 except *addr* options and *log-level* with subsystems, which
@@ -80,6 +82,10 @@ This is not valid within the per-network configuration file.
 * **mainnet**
 
   Alias for *network=bitcoin*.
+
+* **regtest**
+
+  Alias for *network=regtest* (added in v23.08)
 
 * **testnet**
 
@@ -149,11 +155,11 @@ binary.
 
   Specify pid file to write to.
 
-* **log-level**=*LEVEL*\[:*SUBSYSTEM*\]
+* **log-level**=*LEVEL*\[:*SUBSYSTEM*\]\[:*PATH*\]
 
   What log level to print out: options are io, debug, info, unusual,
 broken.  If *SUBSYSTEM* is supplied, this sets the logging level
-for any subsystem (or *nodeid*) containing that string. This option may be specified multiple times.
+for any subsystem (or *nodeid*) containing that string. If *PATH* is supplied, it means this log-level filter is only applied to that `log-file`, which is useful for creating logs to capture a specific subsystem.  This option may be specified multiple times.
 Subsystems include:
 
   * *lightningd*: The main lightning daemon
@@ -189,8 +195,7 @@ Subsystems include:
   So, **log-level=debug:plugin** would set debug level logging on all
 plugins and the plugin manager.  **log-level=io:chan#55** would set
 IO logging on channel number 55 (or 550, for that matter).
-**log-level=debug:024b9a1fa8** would set debug logging for that channel
-(or any node id containing that string).
+**log-level=debug:024b9a1fa8:/tmp/024b9a1fa8.debug.log** would set debug logging for that channel only on the **log-file=/tmp/024b9a1fa8.debug.log** (or any node id containing that string).
 
 * **log-prefix**=*PREFIX*
 
@@ -285,6 +290,10 @@ connections; default is not to activate the plugin at all.
 
 ### Lightning node customization options
 
+* **recover**=*codex32secret*
+
+  Restore the node from a 32-byte secret encoded as a codex32 secret string: this will fail if the `hsm_secret` file exists.  Your node will start the node in offline mode, for manual recovery.  The secret can be extracted from the `hsm_secret` using hsmtool(8).
+
 * **alias**=*NAME*
 
   Up to 32 bytes of UTF-8 characters to tag your node. Completely silly, since
@@ -312,7 +321,7 @@ millionths, so 10000 is 1%, 1000 is 0.1%. Changing this value will only
 affect new channels and not existing ones. If you want to change fees
 for existing channels, use the RPC call lightning-setchannel(7).
 
-* **min-capacity-sat**=*SATOSHI*
+* **min-capacity-sat**=*SATOSHI* [*dynamic*]
 
   Default: 10000. This value defines the minimal effective channel
 capacity in satoshi to accept for channel opening requests. This will
@@ -327,7 +336,8 @@ falls below this.
   Allow nodes which establish channels to us to set any fee they want.
 This may result in a channel which cannot be closed, should fees
 increase, but make channels far more reliable since we never close it
-due to unreasonable fees.
+due to unreasonable fees.  Note that this can be set on a per-channel
+basis with lightning-setchannel(7).
 
 * **commit-time**=*MILLISECONDS*
 
@@ -434,34 +444,39 @@ have to do that.
 This option specifies that these (comma-separated) types are to be
 accepted, and ignored.
 
+* **min-emergency-msat**=*msat*
+
+  This is the amount of funds to keep in the wallet to close anchor channels (which don't carry their own transaction fees).  It defaults to 25000sat, and is only maintained if there are any anchor channels (or, when opening an anchor channel).  This amount may be insufficient for multiple closes at once, however.
+  
+
 ### Cleanup control options:
 
-* **autoclean-cycle**=*SECONDS* [plugin `autoclean`]
+* **autoclean-cycle**=*SECONDS* [plugin `autoclean`, *dynamic*]
 
   Perform search for things to clean every *SECONDS* seconds (default
 3600, or 1 hour, which is usually sufficient).
 
-* **autoclean-succeededforwards-age**=*SECONDS* [plugin `autoclean`]
+* **autoclean-succeededforwards-age**=*SECONDS* [plugin `autoclean`, *dynamic*]
 
   How old successful forwards (`settled` in listforwards `status`) have to be before deletion (default 0, meaning never).
 
-* **autoclean-failedforwards-age**=*SECONDS* [plugin `autoclean`]
+* **autoclean-failedforwards-age**=*SECONDS* [plugin `autoclean`, *dynamic*]
 
   How old failed forwards (`failed` or `local_failed` in listforwards `status`) have to be before deletion (default 0, meaning never).
 
-* **autoclean-succeededpays-age**=*SECONDS* [plugin `autoclean`]
+* **autoclean-succeededpays-age**=*SECONDS* [plugin `autoclean`, *dynamic*]
 
   How old successful payments (`complete` in listpays `status`) have to be before deletion (default 0, meaning never).
 
-* **autoclean-failedpays-age**=*SECONDS* [plugin `autoclean`]
+* **autoclean-failedpays-age**=*SECONDS* [plugin `autoclean`, *dynamic*]
 
   How old failed payment attempts (`failed` in listpays `status`) have to be before deletion (default 0, meaning never).
 
-* **autoclean-paidinvoices-age**=*SECONDS* [plugin `autoclean`]
+* **autoclean-paidinvoices-age**=*SECONDS* [plugin `autoclean`, *dynamic*]
 
   How old invoices which were paid (`paid` in listinvoices `status`) have to be before deletion (default 0, meaning never).
 
-* **autoclean-expiredinvoices-age**=*SECONDS* [plugin `autoclean`]
+* **autoclean-expiredinvoices-age**=*SECONDS* [plugin `autoclean`, *dynamic*]
 
   How old invoices which were not paid (and cannot be) (`expired` in listinvoices `status`) before deletion (default 0, meaning never).
 
@@ -497,7 +512,7 @@ precisely control where to bind and what to announce with the
 *bind-addr* and *announce-addr* options. These will **disable** the
 *autolisten* logic, so you must specifiy exactly what you want!
 
-* **addr**=*\[IPADDRESS\[:PORT\]\]|autotor:TORIPADDRESS\[:SERVICEPORT\]\[/torport=TORPORT\]|statictor:TORIPADDRESS\[:SERVICEPORT\]\[/torport=TORPORT\]\[/torblob=\[blob\]\]|DNS\[:PORT\]*
+* **addr**=*\[IPADDRESS\[:PORT\]\]|autotor:TORIPADDRESS\[:SERVICEPORT\]\[/torport=TORPORT\]|statictor:TORIPADDRESS\[:SERVICEPORT\]\[/torport=TORPORT\]\[/torblob=\[blob\]\]|HOSTNAME\[:PORT\]*
 
   Set an IP address (v4 or v6) or automatic Tor address to listen on and
 (maybe) announce as our node address.
@@ -534,12 +549,12 @@ defined by you and possibly different from your local node port assignment.
 
   This option can be used multiple times to add more addresses, and
 its use disables autolisten.  If necessary, and 'always-use-proxy'
-is not specified, a DNS lookup may be done to resolve 'DNS' or 'TORIPADDRESS'.
+is not specified, a DNS lookup may be done to resolve `HOSTNAME` or `TORIPADDRESS'`.
 
-  If a 'DNS' hostname was given that resolves to a local interface, the daemon
-will bind to that interface: if **announce-addr-dns** is true then it will also announce that as type 'DNS' (rather than announcing the IP address).
+  If `HOSTNAME` was given that resolves to a local interface, the daemon
+will bind to that interface.
 
-* **bind-addr**=*\[IPADDRESS\[:PORT\]\]|SOCKETPATH|DNS\[:PORT\]|DNS\[:PORT\]*
+* **bind-addr**=*\[IPADDRESS\[:PORT\]\]|SOCKETPATH|HOSTNAME\[:PORT\]*
 
   Set an IP address or UNIX domain socket to listen to, but do not
 announce. A UNIX domain socket is distinguished from an IP address by
@@ -554,10 +569,10 @@ not specified, 9735 is used.
 its use disables autolisten.  If necessary, and 'always-use-proxy'
 is not specified, a DNS lookup may be done to resolve 'IPADDRESS'.
 
-  If a 'DNS' hostname was given and 'always-use-proxy' is not specified,
-a lookup may be done to resolve it and bind to a local interface (if found).
+  If a HOSTNAME was given and `always-use-proxy` is not specified,
+a DNS lookup may be done to resolve it and bind to a local interface (if found).
 
-* **announce-addr**=*IPADDRESS\[:PORT\]|TORADDRESS.onion\[:PORT\]|DNS\[:PORT\]*
+* **announce-addr**=*IPADDRESS\[:PORT\]|TORADDRESS.onion\[:PORT\]|dns:HOSTNAME\[:PORT\]*
 
   Set an IP (v4 or v6) address or Tor address to announce; a Tor address
 is distinguished by ending in *.onion*. *PORT* defaults to 9735.
@@ -569,12 +584,11 @@ announced addresses are public (e.g. not localhost).
   This option can be used multiple times to add more addresses, and
 its use disables autolisten.
 
-  Since v22.11 'DNS' hostnames can be used for announcement: see **announce-addr-dns**.
+  Since v23.058, the `dns:` prefix can be used to indicate that this hostname and port should be announced as a DNS hostname entry.  Please note that most mainnet nodes do not yet use, read or propagate this information correctly.
 
-* **announce-addr-dns**=*BOOL*
+* **announce-addr-dns**=*BOOL* (deprecated in v23.08)
 
-  Set to *true* (default is *false), this so that names given as arguments to **addr** and **announce-addr** are published in node announcement messages as names, rather than IP addresses.  Please note that most mainnet nodes do not yet use, read or propagate this information correctly.
-
+  When set to *true* (default is *false*), prefixes all `HOSTNAME` in **announce-addr** with `dns:`.
 
 * **offline**
 
@@ -664,28 +678,18 @@ considered important.
 
 Experimental options are subject to breakage between releases: they
 are made available for advanced users who want to test proposed
-features. When the build is configured _without_ `--enable-experimental-features`,
-below options are available but disabled by default.
-Supported features can be listed with `lightningd --list-features-only`
-
-A build _with_ `--enable-experimental-features` flag hard-codes some of below
-options as enabled, ignoring their command line flag. It may also add support for
-even more features. The safest way to determine the active configuration is by
-checking `listconfigs` or by looking at `our_features` (bits) in `getinfo`.
+features.
 
 * **experimental-onion-messages**
 
   Specifying this enables sending, forwarding and receiving onion messages,
 which are in draft status in the [bolt][bolt] specifications (PR #759).
-A build with `--enable-experimental-features` usually enables this via
-experimental-offers, see below.
+This is automatically enabled by `experimental-offers`.
 
 * **experimental-offers**
 
   Specifying this enables the `offers` and `fetchinvoice` plugins and
-corresponding functionality, which are in draft status ([bolt][bolt] #798) as [bolt12][bolt12].
-A build with `--enable-experimental-features` enables this permanently and usually
-enables experimental-onion-messages as well.
+corresponding functionality, which are in draft status ([bolt][bolt] #798) as [bolt12][bolt12], as well as `experimental-onion-messages`.
 
 * **fetchinvoice-noconnect**
 
@@ -707,6 +711,16 @@ about whether to add funds or not to a proposed channel is handled
 automatically by a plugin that implements the appropriate logic for
 your needs. The default behavior is to not contribute funds.
 
+* **experimental-splicing**
+
+  Specifying this enables support for the splicing protocol ([bolt][bolt] #863),
+allowing both parties to dynamically adjust the size a channel. These changes
+can be built interactively using PSBT and combined with other channel actions
+including dual fund, additional channel splices, or generic transaction activity.
+The operations will be bundled into a single transaction. The channel will remain
+active while awaiting splice confirmation, however you can only spend the smaller
+of the prior channel balance and the new one.
+
 * **experimental-websocket-port**=*PORT*
 
   Specifying this enables support for accepting incoming WebSocket
@@ -719,6 +733,29 @@ frames once the connection is upgraded.
   Specifying this option means we will store up to 64k of encrypted
 data for our peers, and give them our (encrypted!) backup data to
 store as well, based on a protocol similar to [bolt][bolt] #881.
+
+* **experimental-quiesce**
+
+  Specifying this option advertizes `option_quiesce`.  Not very useful
+by itself, except for testing.
+
+* **experimental-upgrade-protocol**
+
+  Specifying this option means we send (and allow receipt of) a simple
+protocol to update channel types.  At the moment, we only support setting
+`option_static_remotekey` to ancient channels.  The peer must also support
+this option.
+
+
+* **experimental-anchors**
+
+  Specifying this option turns on the `option_anchors_zero_fee_htlc_tx`
+feature, meaning we can open anchor-based channels.  This will become
+the default for new channels in future, after more testing.  Anchor-based
+channels use larger commitment transactions, with the trade-off that they
+don't have to use a worst-case fee, but can bump the commitment transaction
+if it's needed.  Note that this means that we need to keep
+some funds aside: see `min-emergency-msat`.
 
 BUGS
 ----

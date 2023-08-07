@@ -26,6 +26,7 @@
 #include <common/json_param.h>
 #include <common/memleak.h>
 #include <common/timeout.h>
+#include <common/trace.h>
 #include <db/exec.h>
 #include <fcntl.h>
 #include <lightningd/jsonrpc.h>
@@ -63,7 +64,7 @@ struct json_connection {
 	struct io_conn *conn;
 
 	/* Logging for this json connection. */
-	struct log *log;
+	struct logger *log;
 
 	/* The buffer (required to interpret tokens). */
 	char *buffer;
@@ -149,7 +150,7 @@ static void destroy_jcon(struct json_connection *jcon)
 	tal_free(jcon->log);
 }
 
-struct log *command_log(struct command *cmd)
+struct logger *command_log(struct command *cmd)
 {
 	if (cmd->jcon)
 		return cmd->jcon->log;
@@ -332,7 +333,7 @@ static void json_add_help_command(struct command *cmd,
 	char *usage;
 
 	/* If they disallow deprecated APIs, don't even list them */
-	if (!deprecated_apis && json_command->deprecated)
+	if (!cmd->ld->deprecated_apis && json_command->deprecated)
 		return;
 
 	usage = tal_fmt(cmd, "%s%s %s",
@@ -400,7 +401,7 @@ static struct command_result *json_help(struct command *cmd,
 			return command_fail(cmd, JSONRPC2_METHOD_NOT_FOUND,
 					    "Unknown command %s",
 					    cmdname);
-		if (!deprecated_apis && one_cmd->deprecated)
+		if (!cmd->ld->deprecated_apis && one_cmd->deprecated)
 			return command_fail(cmd, JSONRPC2_METHOD_NOT_FOUND,
 					    "Deprecated command %s",
 					    cmdname);
@@ -594,8 +595,10 @@ void json_stream_log_suppress_for_cmd(struct json_stream *js,
 	const char *nm = cmd->json_cmd->name;
 	const char *s = tal_fmt(tmpctx, "Suppressing logging of %s command", nm);
 	log_io(cmd->jcon->log, LOG_IO_OUT, NULL, s, NULL, 0);
-	json_stream_log_suppress(js, strdup(nm));
 
+	/* Really shouldn't be used for anything else */
+	assert(streq(nm, "getlog"));
+	js->log = NULL;
 }
 
 static struct json_stream *json_start(struct command *cmd)
@@ -957,7 +960,7 @@ parse_request(struct json_connection *jcon, const jsmntok_t tok[])
 		    c, JSONRPC2_METHOD_NOT_FOUND, "Unknown command '%.*s'",
 		    method->end - method->start, jcon->buffer + method->start);
 	}
-	if (c->json_cmd->deprecated && !deprecated_apis) {
+	if (c->json_cmd->deprecated && !jcon->ld->deprecated_apis) {
 		return command_fail(c, JSONRPC2_METHOD_NOT_FOUND,
 				    "Command %.*s is deprecated",
 				    json_tok_full_len(method),
@@ -976,7 +979,10 @@ parse_request(struct json_connection *jcon, const jsmntok_t tok[])
 	rpc_hook->custom_replace = NULL;
 	rpc_hook->custom_buffer = NULL;
 
+	trace_span_start("lightningd/jsonrpc", &c);
+	trace_span_tag(&c, "method", c->json_cmd->name);
 	completed = plugin_hook_call_rpc_command(jcon->ld, c->id, rpc_hook);
+	trace_span_end(&c);
 
 	/* If it's deferred, mark it (otherwise, it's completed) */
 	if (!completed)
@@ -1141,8 +1147,8 @@ static struct io_plan *jcon_connected(struct io_conn *conn,
 	list_head_init(&jcon->commands);
 
 	/* We want to log on destruction, so we free this in destructor. */
-	jcon->log = new_log(ld->log_book, ld->log_book, NULL, "jsonrpc#%i",
-			    io_conn_fd(conn));
+	jcon->log = new_logger(ld->log_book, ld->log_book, NULL, "jsonrpc#%i",
+			       io_conn_fd(conn));
 
 	tal_add_destructor(jcon, destroy_jcon);
 
@@ -1263,6 +1269,11 @@ bool command_usage_only(const struct command *cmd)
 	return cmd->mode == CMD_USAGE;
 }
 
+bool command_deprecated_apis(const struct command *cmd)
+{
+	return cmd->ld->deprecated_apis;
+}
+
 void command_set_usage(struct command *cmd, const char *usage TAKES)
 {
 	usage = tal_strdup(cmd->ld, usage);
@@ -1374,7 +1385,7 @@ void jsonrpc_notification_end(struct jsonrpc_notification *n)
 
 struct jsonrpc_request *jsonrpc_request_start_(
     const tal_t *ctx, const char *method,
-    const char *id_prefix, bool id_as_string, struct log *log,
+    const char *id_prefix, bool id_as_string, struct logger *log,
     bool add_header,
     void (*notify_cb)(const char *buffer,
 		      const jsmntok_t *methodtok,

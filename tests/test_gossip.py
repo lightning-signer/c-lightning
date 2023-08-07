@@ -14,6 +14,7 @@ import logging
 import math
 import os
 import pytest
+import re
 import struct
 import subprocess
 import time
@@ -117,11 +118,10 @@ def test_announce_address(node_factory, bitcoind):
     """Make sure our announcements are well formed."""
 
     # We do not allow announcement of duplicates.
-    opts = {'announce-addr-dns': True,
-            'announce-addr':
+    opts = {'announce-addr':
             ['4acth47i6kxnvkewtm6q7ib2s3ufpo5sqbsnzjpbi7utijcltosqemad.onion',
              '1.2.3.4:1234',
-             'example.com:1236',
+             'dns:example.com:1236',
              '::'],
             'log-level': 'io',
             'dev-allow-localhost': None}
@@ -185,6 +185,7 @@ def test_announce_dns_suppressed(node_factory, bitcoind):
 
 
 @pytest.mark.developer("gossip without DEVELOPER=1 is slow")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "trouble with IPv6 in VLS CI runner")
 def test_announce_and_connect_via_dns(node_factory, bitcoind):
     """ Test that DNS annoucements propagate and can be used when connecting.
 
@@ -202,8 +203,7 @@ def test_announce_and_connect_via_dns(node_factory, bitcoind):
         - 'dev-allow-localhost' must not be set, so it does not resolve localhost anyway.
     """
     opts1 = {'disable-dns': None,
-             'announce-addr-dns': True,
-             'announce-addr': ['localhost.localdomain:12345'],  # announce dns
+             'announce-addr': ['dns:localhost.localdomain:12345'],  # announce dns
              'bind-addr': ['127.0.0.1:12345', '[::1]:12345']}   # and bind local IPs
     opts3 = {'may_reconnect': True}
     opts4 = {'disable-dns': None}
@@ -252,8 +252,7 @@ def test_announce_and_connect_via_dns(node_factory, bitcoind):
 def test_only_announce_one_dns(node_factory, bitcoind):
     # and test that we can't announce more than one DNS address
     l1 = node_factory.get_node(expect_fail=True, start=False,
-                               options={'announce-addr-dns': True,
-                                        'announce-addr': ['localhost.localdomain:12345', 'example.com:12345']})
+                               options={'announce-addr': ['dns:localhost.localdomain:12345', 'dns:example.com:12345']})
     l1.daemon.start(wait_for_initialized=False, stderr_redir=True)
     wait_for(lambda: l1.daemon.is_in_stderr("Only one DNS can be announced"))
 
@@ -262,7 +261,7 @@ def test_announce_dns_without_port(node_factory, bitcoind):
     """ Checks that the port of a DNS announcement is set to the corresponding
         network port. In this case regtest 19846
     """
-    opts = {'announce-addr-dns': True, 'announce-addr': ['example.com']}
+    opts = {'announce-addr': ['dns:example.com']}
     l1 = node_factory.get_node(options=opts)
 
     # 'address': [{'type': 'dns', 'address': 'example.com', 'port': 0}]
@@ -699,8 +698,10 @@ def test_routing_gossip(node_factory, bitcoind):
     # openchannel calls fundwallet which mines a block; so first channel
     # is 4 deep, last is unconfirmed.
 
-    # Allow announce messages.
-    mine_funding_to_announce(bitcoind, nodes, num_blocks=6, wait_for_mempool=1)
+    # Allow announce messages, but don't run too fast, otherwise gossip can be in the future for nodes.
+    sync_blockheight(bitcoind, nodes)
+    bitcoind.generate_block(wait_for_mempool=1)
+    mine_funding_to_announce(bitcoind, nodes)
 
     # Deep check that all channels are in there
     comb = []
@@ -1384,9 +1385,10 @@ def test_gossipwith(node_factory):
                          check=True,
                          timeout=TIMEOUT, stdout=subprocess.PIPE).stdout
 
-    num_msgs = 0
+    msgs = set()
     while len(out):
         l, t = struct.unpack('>HH', out[0:4])
+        msg = out[2:2 + l]
         out = out[2 + l:]
 
         # Ignore pings, timestamp_filter
@@ -1394,10 +1396,11 @@ def test_gossipwith(node_factory):
             continue
         # channel_announcement node_announcement or channel_update
         assert t == 256 or t == 257 or t == 258
-        num_msgs += 1
+        msgs.add(msg)
 
     # one channel announcement, two channel_updates, two node announcements.
-    assert num_msgs == 7
+    # due to initial blast, we can have duplicates!
+    assert len(msgs) == 5
 
 
 def test_gossip_notices_close(node_factory, bitcoind):
@@ -1772,9 +1775,14 @@ def test_gossip_store_compact_on_load(node_factory, bitcoind):
 
     l2.restart()
 
-    wait_for(lambda: l2.daemon.is_in_log(r'gossip_store_compact_offline: [5-8] deleted, 9 copied'))
+    # These appear before we're fully started, so will already in log:
+    line = l2.daemon.is_in_log(r'gossip_store_compact_offline: .* deleted, 9 copied')
+    m = re.search(r'gossip_store_compact_offline: (.*) deleted', line)
+    # We can have private re-tranmissions, but at minumum we had a deleted private
+    # channel message and two private updates, then two deleted updates.
+    assert int(m.group(1)) >= 5
 
-    wait_for(lambda: l2.daemon.is_in_log(r'gossip_store: Read 2/4/2/0 cannounce/cupdate/nannounce/cdelete from store \(0 deleted\) in [0-9]* bytes'))
+    assert l2.daemon.is_in_log(r'gossip_store: Read 2/4/2/0 cannounce/cupdate/nannounce/cdelete from store \(0 deleted\) in [0-9]* bytes')
 
 
 def test_gossip_announce_invalid_block(node_factory, bitcoind):
@@ -1998,7 +2006,7 @@ def check_socket(ip_addr, port):
 
 
 @pytest.mark.developer("needs a running Tor service instance at port 9151 or 9051")
-def test_statictor_onions(node_factory):
+def test_static_tor_onions(node_factory):
     """First basic tests ;-)
 
     Assume that tor is configured and just test
@@ -2033,7 +2041,7 @@ def test_statictor_onions(node_factory):
 
 
 @pytest.mark.developer("needs a running Tor service instance at port 9151 or 9051")
-def test_torport_onions(node_factory):
+def test_tor_port_onions(node_factory):
     """First basic tests for torport ;-)
 
     Assume that tor is configured and just test
@@ -2227,6 +2235,51 @@ def test_gossip_private_updates(node_factory, bitcoind):
     wait_for(lambda: l1.daemon.is_in_log(r'gossip_store_compact_offline: 5 deleted, 3 copied'))
 
 
+def test_gossip_not_dying(node_factory, bitcoind):
+    l1 = node_factory.get_node()
+    l2, l3 = node_factory.line_graph(2, wait_for_announce=True)
+
+    l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
+    # Wait until it sees all the updates, node announcments.
+    wait_for(lambda: len([n for n in l1.rpc.listnodes()['nodes'] if 'alias' in n])
+             + len(l1.rpc.listchannels()['channels']) == 4)
+
+    def get_gossip(node):
+        out = subprocess.run(['devtools/gossipwith',
+                              '--initial-sync',
+                              '--timeout-after=2',
+                              '{}@localhost:{}'.format(node.info['id'], node.port)],
+                             check=True,
+                             timeout=TIMEOUT, stdout=subprocess.PIPE).stdout
+
+        msgs = []
+        while len(out):
+            l, t = struct.unpack('>HH', out[0:4])
+            msg = out[2:2 + l]
+            out = out[2 + l:]
+
+            # Ignore pings, timestamp_filter
+            if t == 265 or t == 18:
+                continue
+            # channel_announcement node_announcement or channel_update
+            assert t == 256 or t == 257 or t == 258
+            msgs.append(msg)
+
+        return msgs
+
+    assert len(get_gossip(l1)) == 5
+
+    # Close l2->l3, mine block.
+    l2.rpc.close(l3.info['id'])
+    bitcoind.generate_block(1, wait_for_mempool=1)
+
+    l1.daemon.wait_for_log("closing soon due to the funding outpoint being spent")
+
+    # We won't gossip the dead channel any more (but we still propagate node_announcement).  But connectd is not explicitly synced, so wait for "a bit".
+    time.sleep(1)
+    assert len(get_gossip(l1)) == 2
+
+
 @pytest.mark.skip("Zombie research had unexpected side effects")
 @pytest.mark.developer("Needs --dev-fast-gossip, --dev-fast-gossip-prune")
 def test_channel_resurrection(node_factory, bitcoind):
@@ -2294,3 +2347,40 @@ def test_channel_resurrection(node_factory, bitcoind):
     for l in gs.stdout.decode().splitlines():
         if "ZOMBIE" in l:
             assert ("DELETED" in l)
+
+
+def test_dump_own_gossip(node_factory):
+    """We *should* send all self-related gossip unsolicited, if we have any"""
+    l1, l2 = node_factory.line_graph(2, wait_for_announce=True)
+
+    # Make sure l1 has updates in both directions, and node_announcements
+    wait_for(lambda: len(l1.rpc.listchannels()['channels']) == 2)
+    wait_for(lambda: len(l1.rpc.listnodes()['nodes']) == 2)
+
+    # We should get channel_announcement, channel_update, node_announcement.
+    # (Plus random pings, timestamp_filter)
+    out = subprocess.run(['devtools/gossipwith',
+                          '--timeout-after={}'.format(int(math.sqrt(TIMEOUT) + 1)),
+                          '{}@localhost:{}'.format(l1.info['id'], l1.port)],
+                         check=True,
+                         timeout=TIMEOUT, stdout=subprocess.PIPE).stdout
+
+    # In theory, we could do the node_announcement any time after channel_announcement, but we don't.
+    expect = [256,  # channel_announcement
+              258,  # channel_update
+              258,  # channel_update
+              257]  # node_announcement
+
+    while len(out):
+        l, t = struct.unpack('>HH', out[0:4])
+        out = out[2 + l:]
+
+        # Ignore pings, timestamp_filter
+        if t == 265 or t == 18:
+            continue
+
+        assert t == expect[0]
+        expect = expect[1:]
+
+    # We should get exactly what we expected.
+    assert expect == []

@@ -47,6 +47,9 @@ struct amount_sat amount_tx_fee(u32 fee_per_kw UNNEEDED, size_t weight UNNEEDED)
 /* Generated stub for command_check_only */
 bool command_check_only(const struct command *cmd UNNEEDED)
 { fprintf(stderr, "command_check_only called!\n"); abort(); }
+/* Generated stub for command_deprecated_apis */
+bool command_deprecated_apis(const struct command *cmd UNNEEDED)
+{ fprintf(stderr, "command_deprecated_apis called!\n"); abort(); }
 /* Generated stub for command_fail */
 struct command_result *command_fail(struct command *cmd UNNEEDED, enum jsonrpc_errcode code UNNEEDED,
 				    const char *fmt UNNEEDED, ...)
@@ -58,8 +61,6 @@ void command_set_usage(struct command *cmd UNNEEDED, const char *usage UNNEEDED)
 /* Generated stub for command_usage_only */
 bool command_usage_only(const struct command *cmd UNNEEDED)
 { fprintf(stderr, "command_usage_only called!\n"); abort(); }
-/* Generated stub for deprecated_apis */
-bool deprecated_apis;
 /* Generated stub for fromwire */
 const u8 *fromwire(const u8 **cursor UNNEEDED, size_t *max UNNEEDED, void *copy UNNEEDED, size_t n UNNEEDED)
 { fprintf(stderr, "fromwire called!\n"); abort(); }
@@ -86,6 +87,9 @@ u32 fromwire_u32(const u8 **cursor UNNEEDED, size_t *max UNNEEDED)
 /* Generated stub for fromwire_u64 */
 u64 fromwire_u64(const u8 **cursor UNNEEDED, size_t *max UNNEEDED)
 { fprintf(stderr, "fromwire_u64 called!\n"); abort(); }
+/* Generated stub for fromwire_s64 */
+s64 fromwire_s64(const u8 **cursor UNNEEDED, size_t *max UNNEEDED)
+{ fprintf(stderr, "fromwire_s64 called!\n"); abort(); }
 /* Generated stub for fromwire_u8 */
 u8 fromwire_u8(const u8 **cursor UNNEEDED, size_t *max UNNEEDED)
 { fprintf(stderr, "fromwire_u8 called!\n"); abort(); }
@@ -161,6 +165,9 @@ int segwit_addr_decode(
     const char* addr
 )
 { fprintf(stderr, "segwit_addr_decode called!\n"); abort(); }
+/* Generated stub for to_canonical_invstr */
+const char *to_canonical_invstr(const tal_t *ctx UNNEEDED, const char *invstring UNNEEDED)
+{ fprintf(stderr, "to_canonical_invstr called!\n"); abort(); }
 /* Generated stub for towire */
 void towire(u8 **pptr UNNEEDED, const void *data UNNEEDED, size_t len UNNEEDED)
 { fprintf(stderr, "towire called!\n"); abort(); }
@@ -180,6 +187,9 @@ void towire_u32(u8 **pptr UNNEEDED, u32 v UNNEEDED)
 /* Generated stub for towire_u64 */
 void towire_u64(u8 **pptr UNNEEDED, u64 v UNNEEDED)
 { fprintf(stderr, "towire_u64 called!\n"); abort(); }
+/* Generated stub for towire_s64 */
+void towire_s64(u8 **pptr UNNEEDED, s64 v UNNEEDED)
+{ fprintf(stderr, "towire_s64 called!\n"); abort(); }
 /* Generated stub for towire_u8 */
 void towire_u8(u8 **pptr UNNEEDED, u8 v UNNEEDED)
 { fprintf(stderr, "towire_u8 called!\n"); abort(); }

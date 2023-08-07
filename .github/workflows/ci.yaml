@@ -22,19 +22,27 @@ jobs:
     runs-on: ubuntu-20.04
     timeout-minutes: 30
     env:
-      RUST: 1
-      COMPAT: 1
       BOLTDIR: bolts
     strategy:
       fail-fast: true
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
 
-      - name: Set up Python 3.7
+      - name: Rebase
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git fetch origin ${{ github.base_ref }}
+          git rebase origin/${{ github.base_ref }}
+
+      - name: Set up Python 3.8
         uses: actions/setup-python@v4
         with:
-          python-version: 3.7
+          python-version: 3.8
 
       - name: Install dependencies
         run: |
@@ -46,13 +54,82 @@ jobs:
           # We're going to check BOLT quotes, so get the latest version
           git clone https://github.com/lightning/bolts.git ../${BOLTDIR}
       - name: Configure
-        run: ./configure
+        run: ./configure --enable-debugbuild --enable-rust
       - name: Check source
-        run: make -j 4 check-source
+        run: make -j 4 check-source BASE_REF="origin/${{ github.base_ref }}"
       - name: Check Generated Files have been updated
         run: make -j 4 check-gen-updated
       - name: Check docs
         run: make -j 4 check-doc
+
+  compile:
+    name: Compile CLN ${{ matrix.cfg }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    needs:
+      - prebuild
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - CFG: gcc-dev1
+            DEVELOPER: 1
+            VALGRIND: 1
+            COMPILER: gcc
+          - CFG: gcc-dev0
+            DEVELOPER: 0
+            VALGRIND: 1
+            COMPILER: gcc
+          # While we're at it let's try to compile with clang
+          - CFG: clang-dev1
+            DEVELOPER: 1
+            VALGRIND: 1
+            COMPILER: clang
+          - CFG: clang-sanitizers
+            DEVELOPER: 1
+            COMPILER: clang
+            ASAN: 1
+            UBSAN: 1
+            VALGRIND: 0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+
+      - name: Install dependencies
+        run: |
+          bash -x .github/scripts/setup.sh
+
+      - name: Build
+        env:
+          DEVELOPER: ${{ matrix.DEVELOPER }}
+          COMPILER: ${{ matrix.COMPILER }}
+          ASAN: ${{ matrix.ASAN }}
+          UBSAN: ${{ matrix.UBSAN }}
+          VALGRIND: ${{ matrix.VALGRIND }}
+          COMPAT: 1
+          CFG: ${{ matrix.CFG }}
+        run: |
+          set -e
+          pip3 install --user pip wheel poetry
+          poetry export -o requirements.txt --with dev --without-hashes
+          python3 -m pip install -r requirements.txt
+          ./configure --enable-debugbuild CC="$COMPILER"
+
+          make -j $(nproc) testpack.tar.bz2
+
+          # Rename now so we don't clash
+          mv testpack.tar.bz2 cln-${CFG}.tar.bz2
+      - name: Check rust packages
+        run: cargo test --all
+      - uses: actions/upload-artifact@v3
+        with:
+          name: cln-${{ matrix.CFG }}.tar.bz2
+          path: cln-${{ matrix.CFG }}.tar.bz2
 
   check-units:
     # The unit test checks are not in the critical path (not dependent
@@ -61,19 +138,25 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     env:
-      COMPAT: 1
-      VALGRIND: 1
       BOLTDIR: bolts
     needs:
-      - prebuild
+      - compile
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - CFG: gcc-dev1
+            VALGRIND: 1
+          - CFG: clang-sanitizers
+            VALGRIND: 0
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Set up Python 3.7
+      - name: Set up Python 3.8
         uses: actions/setup-python@v4
         with:
-          python-version: 3.7
+          python-version: 3.8
 
       - name: Install dependencies
         run: |
@@ -86,31 +169,29 @@ jobs:
           # We're going to check BOLT quotes, so get the latest version
           git clone https://github.com/lightning/bolts.git ../${BOLTDIR}
 
-      - name: Build
+      - name: Download build
+        uses: actions/download-artifact@v3
+        with:
+          name: cln-${{ matrix.CFG }}.tar.bz2
+
+      - name: Check
         run: |
-          ./configure
-          make -j $(nproc) check-units installcheck
+          tar -xaf cln-${{ matrix.CFG }}.tar.bz2
+          make -j $(nproc) check-units installcheck VALGRIND=${{ matrix.VALGRIND }}
 
   check-fuzz:
     name: Run fuzz regression tests
     runs-on: ubuntu-22.04
-    env:
-      COMPAT: 1
-      DEVELOPER: 1
-      EXPERIMENTAL_FEATURES: 1
-      ASAN: 1
-      UBSAN: 1
-      VALGRIND: 0
     needs:
       - prebuild
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Set up Python 3.7
+      - name: Set up Python 3.8
         uses: actions/setup-python@v4
         with:
-          python-version: 3.7
+          python-version: 3.8
 
       - name: Install dependencies
         run: |
@@ -122,157 +203,83 @@ jobs:
 
       - name: Build
         run: |
-          ./configure --enable-fuzzing CC=clang
+          ./configure --enable-debugbuild --enable-fuzzing --enable-developer --disable-valgrind CC=clang
           make -j $(nproc) check-fuzz
-
-  compile:
-    name: Compile CLN ${{ matrix.cfg }}
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
-    env:
-      COMPAT: 1
-    needs:
-      - prebuild
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - CFG: gcc-dev1-exp1
-            DEVELOPER: 1
-            EXPERIMENTAL_FEATURES: 1
-            COMPILER: gcc
-          - CFG: gcc-dev1-exp0
-            DEVELOPER: 1
-            EXPERIMENTAL_FEATURES: 0
-            COMPILER: gcc
-          - CFG: gcc-dev0-exp1
-            DEVELOPER: 0
-            EXPERIMENTAL_FEATURES: 1
-            COMPILER: gcc
-          - CFG: gcc-dev0-exp0
-            DEVELOPER: 0
-            EXPERIMENTAL_FEATURES: 0
-            COMPILER: gcc
-          # While we're at it let's try to compile with clang
-          - CFG: clang-dev1-exp1
-            DEVELOPER: 1
-            EXPERIMENTAL_FEATURES: 1
-            COMPILER: clang
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-
-      - name: Set up Python 3.7
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.7
-
-      - name: Install dependencies
-        run: |
-          bash -x .github/scripts/setup.sh
-
-      - name: Build
-        env:
-          VALGRIND: ${{ matrix.VALGRIND }}
-          DEVELOPER: ${{ matrix.DEVELOPER }}
-          EXPERIMENTAL_FEATURES: ${{ matrix.EXPERIMENTAL_FEATURES }}
-          COMPILER: ${{ matrix.COMPILER }}
-          COMPAT: 1
-          CFG: ${{ matrix.CFG }}
-        run: |
-          set -e
-          pip3 install --user pip wheel poetry
-          poetry export -o requirements.txt --with dev --without-hashes
-          python3 -m pip install -r requirements.txt
-          ./configure CC="$COMPILER"
-
-          make -j $(nproc) testpack.tar.bz2
-
-          # Rename now so we don't clash
-          mv testpack.tar.bz2 cln-${CFG}.tar.bz2
-      - name: Check rust packages
-        run: cargo test --all
-      - uses: actions/upload-artifact@v2.2.4
-        with:
-          name: cln-${{ matrix.CFG }}.tar.bz2
-          path: cln-${{ matrix.CFG }}.tar.bz2
 
   integration:
     name: Test CLN ${{ matrix.name }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     env:
-      COMPAT: 1
-      BITCOIN_VERSION: 24.0.1
+      BITCOIN_VERSION: "25.0"
       ELEMENTS_VERSION: 22.0.2
       RUST_PROFILE: release  # Has to match the one in the compile step
+      PYTEST_OPTS: --timeout=1200
     needs:
       - compile
     strategy:
       fail-fast: true
       matrix:
         include:
-          - NAME: gcc-dev1-exp1
-            CFG: gcc-dev1-exp1
+          - NAME: gcc-dev1
+            CFG: gcc-dev1
             DEVELOPER: 1
-            EXPERIMENTAL_FEATURES: 1
             TEST_DB_PROVIDER: sqlite3
             COMPILER: gcc
             TEST_NETWORK: regtest
-          - NAME:  gcc-dev1-exp0
-            CFG: gcc-dev1-exp0
-            DEVELOPER: 1
-            EXPERIMENTAL_FEATURES: 0
-            TEST_DB_PROVIDER: sqlite3
-            COMPILER: gcc
-            TEST_NETWORK: regtest
-          - NAME: gcc-dev0-exp1
-            CFG: gcc-dev0-exp1
+          - NAME: gcc-dev0
+            CFG: gcc-dev0
             DEVELOPER: 0
-            EXPERIMENTAL_FEATURES: 1
-            TEST_DB_PROVIDER: sqlite3
-            COMPILER: gcc
-            TEST_NETWORK: regtest
-          - NAME: gcc-dev0-exp0
-            CFG: gcc-dev0-exp0
-            DEVELOPER: 0
-            EXPERIMENTAL_FEATURES: 0
             TEST_DB_PROVIDER: sqlite3
             COMPILER: gcc
             TEST_NETWORK: regtest
           # While we're at it let's try to compile with clang
-          - NAME: clang-dev1-exp1
-            CFG: clang-dev1-exp1
+          - NAME: clang-dev1
+            CFG: clang-dev1
             DEVELOPER: 1
-            EXPERIMENTAL_FEATURES: 1
             TEST_DB_PROVIDER: sqlite3
             COMPILER: clang
             TEST_NETWORK: regtest
           # And of course we want to test postgres too
           - NAME: postgres
-            CFG: gcc-dev1-exp1
+            CFG: gcc-dev1
             DEVELOPER: 1
-            EXPERIMENTAL_FEATURES: 1
             COMPILER: gcc
             TEST_DB_PROVIDER: postgres
             TEST_NETWORK: regtest
           # And don't forget about elements (like cdecker did when
           # reworking the CI...)
           - NAME: liquid
-            CFG: gcc-dev1-exp1
+            CFG: gcc-dev1
             DEVELOPER: 1
-            EXPERIMENTAL_FEATURES: 1
             COMPILER: gcc
             TEST_NETWORK: liquid-regtest
             TEST_DB_PROVIDER: sqlite3
+          # And dual funding!
+          - NAME: dual-fund
+            CFG: gcc-dev1
+            TEST_DB_PROVIDER: sqlite3
+            COMPILER: gcc
+            TEST_NETWORK: regtest
+            DEVELOPER: 1
+            EXPERIMENTAL_DUAL_FUND: 1
+          # And splicing!
+          - NAME: splicing
+            CFG: gcc-dev1
+            TEST_DB_PROVIDER: sqlite3
+            COMPILER: gcc
+            TEST_NETWORK: regtest
+            DEVELOPER: 1
+            EXPERIMENTAL_DUAL_FUND: 1
+            EXPERIMENTAL_SPLICING: 1
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Set up Python 3.7
+      - name: Set up Python 3.8
         uses: actions/setup-python@v4
         with:
-          python-version: 3.7
+          python-version: 3.8
 
       - name: Install dependencies
         run: |
@@ -289,10 +296,10 @@ jobs:
 
       - name: Test
         env:
-          VALGRIND: ${{ matrix.VALGRIND }}
           DEVELOPER: ${{ matrix.DEVELOPER }}
-          EXPERIMENTAL_FEATURES: ${{ matrix.EXPERIMENTAL_FEATURES }}
           COMPILER: ${{ matrix.COMPILER }}
+          EXPERIMENTAL_DUAL_FUND: ${{ matrix.EXPERIMENTAL_DUAL_FUND }}
+          EXPERIMENTAL_SPLICING: ${{ matrix.EXPERIMENTAL_SPLICING }}
           COMPAT: 1
           CFG: ${{ matrix.CFG }}
           SLOW_MACHINE: 1
@@ -300,24 +307,21 @@ jobs:
           TEST_DEBUG: 1
           TEST_DB_PROVIDER: ${{ matrix.TEST_DB_PROVIDER }}
           TEST_NETWORK: ${{ matrix.TEST_NETWORK }}
+          LIGHTNINGD_POSTGRES_NO_VACUUM: 1
         run: |
           tar -xaf cln-${CFG}.tar.bz2
-          poetry run pytest tests/ -vvv -n ${PYTEST_PAR} ${PYTEST_OPTS}
+          VALGRIND=0 poetry run pytest tests/ -vvv -n ${PYTEST_PAR} ${PYTEST_OPTS}
 
   integration-valgrind:
     name: Valgrind Test CLN ${{ matrix.name }}
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     env:
-      COMPAT: 1
-      BITCOIN_VERSION: 24.0.1
+      BITCOIN_VERSION: "25.0"
       ELEMENTS_VERSION: 22.0.2
       RUST_PROFILE: release  # Has to match the one in the compile step
-      VALGRIND: 1
-      CFG: gcc-dev1-exp1
-      DEVELOPER: 1
-      EXPERIMENTAL_FEATURES: 1
-      PYTEST_OPTS: --test-group-random-seed=42
+      CFG: gcc-dev1
+      PYTEST_OPTS: --test-group-random-seed=42 --timeout=1800
     needs:
       - compile
     strategy:
@@ -348,10 +352,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Set up Python 3.7
+      - name: Set up Python 3.8
         uses: actions/setup-python@v4
         with:
-          python-version: 3.7
+          python-version: 3.8
 
       - name: Install dependencies
         run: |
@@ -365,20 +369,87 @@ jobs:
       - name: Download build
         uses: actions/download-artifact@v3
         with:
-          name: cln-gcc-dev1-exp1.tar.bz2
+          name: cln-gcc-dev1.tar.bz2
 
       - name: Unpack build
-        run: tar -xvjf cln-gcc-dev1-exp1.tar.bz2
+        run: tar -xvjf cln-gcc-dev1.tar.bz2
 
       - name: Test
         env:
-          COMPAT: 1
           SLOW_MACHINE: 1
           TEST_DEBUG: 1
         run: |
+          VALGRIND=1 poetry run pytest tests/ -vvv -n 3 ${PYTEST_OPTS}  ${{ matrix.PYTEST_OPTS }}
 
-          sed -i 's/VALGRIND=0/VALGRIND=1/g' config.vars
-          poetry run pytest tests/ -vvv -n 3 ${PYTEST_OPTS}  ${{ matrix.PYTEST_OPTS }}
+  integration-sanitizers:
+    name: Sanitizers Test CLN
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      BITCOIN_VERSION: "25.0"
+      ELEMENTS_VERSION: 22.0.2
+      RUST_PROFILE: release
+      SLOW_MACHINE: 1
+      TEST_DEBUG: 1
+      PYTEST_OPTS: --test-group-random-seed=42 --timeout=1800
+    needs:
+      - compile
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - NAME: ASan/UBSan (01/10)
+            PYTEST_OPTS: --test-group=1  --test-group-count=10
+          - NAME: ASan/UBSan (02/10)
+            PYTEST_OPTS: --test-group=2  --test-group-count=10 -n 1
+          - NAME: ASan/UBSan (03/10)
+            PYTEST_OPTS: --test-group=3  --test-group-count=10
+          - NAME: ASan/UBSan (04/10)
+            PYTEST_OPTS: --test-group=4  --test-group-count=10
+          - NAME: ASan/UBSan (05/10)
+            PYTEST_OPTS: --test-group=5  --test-group-count=10
+          - NAME: ASan/UBSan (06/10)
+            PYTEST_OPTS: --test-group=6  --test-group-count=10
+          - NAME: ASan/UBSan (07/10)
+            PYTEST_OPTS: --test-group=7  --test-group-count=10
+          - NAME: ASan/UBSan (08/10)
+            PYTEST_OPTS: --test-group=8  --test-group-count=10
+          - NAME: ASan/UBSan (09/10)
+            PYTEST_OPTS: --test-group=9  --test-group-count=10
+          - NAME: ASan/UBSan (10/10)
+            PYTEST_OPTS: --test-group=10 --test-group-count=10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.8
+
+      - name: Install dependencies
+        run: |
+          bash -x .github/scripts/setup.sh
+          set -e
+          pip3 install --user pip wheel poetry
+          poetry export -o requirements.txt --with dev --without-hashes
+          python3 -m pip install -r requirements.txt
+          poetry install
+
+      - name: Install bitcoind
+        run: .github/scripts/install-bitcoind.sh
+
+      - name: Download build
+        uses: actions/download-artifact@v3
+        with:
+          name: cln-clang-sanitizers.tar.bz2
+
+      - name: Unpack build
+        run: tar -xvjf cln-clang-sanitizers.tar.bz2
+
+      - name: Test
+        run: |
+          poetry run pytest tests/ -vvv -n 2 ${PYTEST_OPTS}  ${{ matrix.PYTEST_OPTS }}
 
   gather:
     # A dummy task that depends on the full matrix of tests, and
@@ -389,6 +460,8 @@ jobs:
     needs:
       - integration
       - check-units
+      - integration-valgrind
+      - integration-sanitizers
     steps:
       - name: Complete
         run: |

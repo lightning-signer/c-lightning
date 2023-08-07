@@ -198,7 +198,7 @@ static struct command_result *json_paystatus(struct command *cmd,
 
 	if (!param(cmd, buf, params,
 		   /* FIXME: rename to invstring */
-		   p_opt("bolt11", param_string, &invstring),
+		   p_opt("bolt11", param_invstring, &invstring),
 		   NULL))
 		return command_param_failed();
 
@@ -547,7 +547,7 @@ static struct command_result *json_listpays(struct command *cmd,
 	/* FIXME: would be nice to parse as a bolt11 so check worked in future */
 	if (!param(cmd, buf, params,
 		   /* FIXME: parameter should be invstring now */
-		   p_opt("bolt11", param_string, &invstring),
+		   p_opt("bolt11", param_invstring, &invstring),
 		   p_opt("payment_hash", param_sha256, &payment_hash),
 		   p_opt("status", param_string, &status_str),
 		   NULL))
@@ -582,7 +582,9 @@ static const char *init(struct plugin *p,
 
 	rpc_scan(p, "listconfigs",
 		 take(json_out_obj(NULL, NULL, NULL)),
-		 "{max-locktime-blocks:%,experimental-offers:%}",
+		 "{configs:"
+		 "{max-locktime-blocks:{value_int:%},"
+		 "experimental-offers:{set:%}}}",
 		 JSON_SCAN(json_to_number, &maxdelay_default),
 		 JSON_SCAN(json_to_bool, &exp_offers));
 
@@ -797,6 +799,55 @@ static void on_payment_failure(struct payment *payment)
 	}
 }
 
+static struct command_result *selfpay_success(struct command *cmd,
+					      const char *buf,
+					      const jsmntok_t *result,
+					      struct payment *p)
+{
+	struct json_stream *ret = jsonrpc_stream_success(cmd);
+	struct preimage preimage;
+	const char *err;
+
+	err = json_scan(tmpctx, buf, result,
+			"{payment_preimage:%}",
+			JSON_SCAN(json_to_preimage, &preimage));
+	if (err)
+		plugin_err(p->plugin,
+			   "selfpay didn't have payment_preimage? %.*s",
+			   json_tok_full_len(result),
+			   json_tok_full(buf, result));
+	json_add_payment_success(ret, p, &preimage, NULL);
+	return command_finished(cmd, ret);
+}
+
+static struct command_result *selfpay(struct command *cmd, struct payment *p)
+{
+	struct out_req *req;
+
+	/* This "struct payment" simply gets freed once command is done. */
+	tal_steal(cmd, p);
+
+	req = jsonrpc_request_start(cmd->plugin, cmd, "sendpay",
+				    selfpay_success,
+				    forward_error, p);
+	/* Empty route means "to-self" */
+	json_array_start(req->js, "route");
+	json_array_end(req->js);
+	json_add_sha256(req->js, "payment_hash", p->payment_hash);
+	if (p->label)
+		json_add_string(req->js, "label", p->label);
+	json_add_amount_msat(req->js, "amount_msat", p->amount);
+	json_add_string(req->js, "bolt11", p->invstring);
+	if (p->payment_secret)
+		json_add_secret(req->js, "payment_secret", p->payment_secret);
+	json_add_u64(req->js, "groupid", p->groupid);
+	if (p->payment_metadata)
+		json_add_hex_talarr(req->js, "payment_metadata", p->payment_metadata);
+	if (p->description)
+		json_add_string(req->js, "description", p->description);
+	return send_outreq(cmd->plugin, req);
+}
+
 /* We are interested in any prior attempts to pay this payment_hash /
  * invoice so we can set the `groupid` correctly and ensure we don't
  * already have a pending payment running. We also collect the summary
@@ -914,6 +965,11 @@ payment_listsendpays_previous(struct command *cmd, const char *buf,
 	p->groupid = last_group + 1;
 	p->on_payment_success = on_payment_success;
 	p->on_payment_failure = on_payment_failure;
+
+	/* Bypass everything if we're doing (synchronous) self-pay */
+	if (node_id_eq(&my_id, p->destination))
+		return selfpay(cmd, p);
+
 	payment_start(p);
 	return command_still_pending(cmd);
 }
@@ -931,26 +987,23 @@ struct payment_modifier *paymod_mods[] = {
 	&exemptfee_pay_mod,
 	&directpay_pay_mod,
 	&shadowroute_pay_mod,
-	/* NOTE: The order in which these three paymods are executed is
-	 * significant!
-	 * routehints *must* execute first before payee_incoming_limit
-	 * which *must* execute bfore presplit.
+	/* NOTE: The order in which these two paymods are executed is
+	 * significant! `routehints` *must* execute first before
+	 * payee_incoming_limit.
 	 *
 	 * FIXME: Giving an ordered list of paymods to the paymod
 	 * system is the wrong interface, given that the order in
-	 * which paymods execute is significant.
-	 * (This is typical of Entity-Component-System pattern.)
-	 * What should be done is that libplugin-pay should have a
-	 * canonical list of paymods in the order they execute
-	 * correctly, and whether they are default-enabled/default-disabled,
-	 * and then clients like `pay` and `keysend` will disable/enable
-	 * paymods that do not help them, instead of the current interface
-	 * where clients provide an *ordered* list of paymods they want to
-	 * use.
+	 * which paymods execute is significant.  (This is typical of
+	 * Entity-Component-System pattern.)  What should be done is
+	 * that libplugin-pay should have a canonical list of paymods
+	 * in the order they execute correctly, and whether they are
+	 * default-enabled/default-disabled, and then clients like
+	 * `pay` and `keysend` will disable/enable paymods that do not
+	 * help them, instead of the current interface where clients
+	 * provide an *ordered* list of paymods they want to use.
 	 */
 	&routehints_pay_mod,
 	&payee_incoming_limit_pay_mod,
-	&presplit_pay_mod,
 	&waitblockheight_pay_mod,
 	&retry_pay_mod,
 	&adaptive_splitter_pay_mod,
@@ -992,7 +1045,7 @@ static struct command_result *json_pay(struct command *cmd,
 	 * initialized directly that way. */
 	if (!param(cmd, buf, params,
 		   /* FIXME: parameter should be invstring now */
-		   p_req("bolt11", param_string, &b11str),
+		   p_req("bolt11", param_invstring, &b11str),
 		   p_opt("amount_msat|msatoshi", param_msat, &msat),
 		   p_opt("label", param_string, &label),
 		   p_opt_def("riskfactor", param_millionths,
@@ -1006,7 +1059,7 @@ static struct command_result *json_pay(struct command *cmd,
 		   p_opt("localinvreqid", param_sha256, &local_invreq_id),
 		   p_opt("exclude", param_route_exclusion_array, &exclusions),
 		   p_opt("maxfee", param_msat, &maxfee),
-		   p_opt("description", param_string, &description),
+		   p_opt("description", param_escaped_string, &description),
 #if DEVELOPER
 		   p_opt_def("use_shadow", param_bool, &use_shadow, true),
 #endif
@@ -1051,24 +1104,6 @@ static struct command_result *json_pay(struct command *cmd,
 			    cmd, JSONRPC2_INVALID_PARAMS,
 			    "Invalid bolt11:"
 			    " sets feature var_onion with no secret");
-
-		/* BOLT #11:
-		 * A reader:
-		 *...
-		 * - MUST check that the SHA2 256-bit hash in the `h` field
-		 *   exactly matches the hashed description.
-		 */
-		if (!b11->description && !deprecated_apis) {
-			if (!b11->description_hash) {
-				return command_fail(cmd,
-						    JSONRPC2_INVALID_PARAMS,
-						    "Invalid bolt11: missing description");
-			}
-			if (!description)
-				return command_fail(cmd,
-						    JSONRPC2_INVALID_PARAMS,
-						    "bolt11 uses description_hash, but you did not provide description parameter");
-		}
 	} else {
 		b12 = invoice_decode(tmpctx, b11str, strlen(b11str),
 				     plugin_feature_set(cmd->plugin),
@@ -1185,13 +1220,8 @@ static struct command_result *json_pay(struct command *cmd,
 					    "This payment blinded path fee overflows!");
 	}
 
-	if (node_id_eq(&my_id, p->destination))
-		return command_fail(cmd, JSONRPC2_INVALID_PARAMS,
-				    "This payment is destined for ourselves. "
-				    "Self-payments are not supported");
-
 	p->local_id = &my_id;
-	p->json_buffer = tal_steal(p, buf);
+	p->json_buffer = buf;
 	p->json_toks = params;
 	p->why = "Initial attempt";
 	p->constraints.cltv_budget = *maxdelay;
@@ -1227,7 +1257,6 @@ static struct command_result *json_pay(struct command *cmd,
 	}
 
 	shadow_route = payment_mod_shadowroute_get_data(p);
-	payment_mod_presplit_get_data(p)->disable = disablempp;
 	payment_mod_adaptive_splitter_get_data(p)->disable = disablempp;
 	payment_mod_route_exclusions_get_data(p)->exclusions = exclusions;
 
