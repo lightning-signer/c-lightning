@@ -9,9 +9,9 @@ from utils import (
 )
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('EXPERIMENTAL_SPLICING') != '1', "splicing not supported yet")
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "splicing not supported by VLS yet (VLS #325)")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @flaky
 def test_splice(node_factory, bitcoind):
