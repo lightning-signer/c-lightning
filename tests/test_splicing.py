@@ -14,13 +14,21 @@ def test_splice(node_factory, bitcoind):
 
     chan_id = l1.get_channel_id(l2)
 
+    print("EXPLORE-SPLICING: initial channel setup")
+
     # add extra sats to pay fee
+    print("EXPLORE-SPLICING: adding extra to pay fee")
     funds_result = l1.rpc.fundpsbt("109000sat", "slow", 166, excess_as_change=True)
 
+    print("EXPLORE-SPLICING: initing splice")
     result = l1.rpc.splice_init(chan_id, 100000, funds_result['psbt'])
+    print("EXPLORE-SPLICING: updating splice")
     result = l1.rpc.splice_update(chan_id, result['psbt'])
+    print("EXPLORE-SPLICING: signpsbt")
     result = l1.rpc.signpsbt(result['psbt'])
+    print("EXPLORE-SPLICING: signing splice")
     result = l1.rpc.splice_signed(chan_id, result['signed_psbt'])
+    print("EXPLORE-SPLICING: splice signed")
 
     l2.daemon.wait_for_log(r'CHANNELD_NORMAL to CHANNELD_AWAITING_SPLICE')
     l1.daemon.wait_for_log(r'CHANNELD_NORMAL to CHANNELD_AWAITING_SPLICE')
