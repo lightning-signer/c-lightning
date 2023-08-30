@@ -5,9 +5,9 @@ import unittest
 import time
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('EXPERIMENTAL_SPLICING') != '1', "splicing not supported yet")
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "splicing not supported by VLS yet (VLS #325)")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 def test_splice(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, fundamount=1000000, wait_for_announce=True, opts={'experimental-splicing': None})
