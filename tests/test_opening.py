@@ -520,6 +520,7 @@ def test_v2_rbf_abort_channel_opens(node_factory, bitcoind, chainparams):
     l1.daemon.wait_for_log(' to CHANNELD_NORMAL')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "sign_option_will_fund_offer unimplemented")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
@@ -1397,6 +1398,7 @@ def test_funder_contribution_limits(node_factory, bitcoind):
     assert l3.daemon.is_in_log(r'calling `signpsbt` .* 6 inputs')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 def test_inflight_dbload(node_factory, bitcoind):
     """Bad db field access breaks Postgresql on startup with opening leases"""
@@ -1709,6 +1711,7 @@ def test_buy_liquidity_ad_no_v2(node_factory, bitcoind):
                            compact_lease='029a002d000000004b2003e8')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 def test_v2_replay_bookkeeping(node_factory, bitcoind):
     """ Test that your bookkeeping for a liquidity ad is good
@@ -1773,6 +1776,7 @@ def test_v2_replay_bookkeeping(node_factory, bitcoind):
     l1.rpc.bkpr_listbalances()
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "sign_option_will_fund_offer unimplemented")
 @pytest.mark.openchannel('v2')
 def test_buy_liquidity_ad_check_bookkeeping(node_factory, bitcoind):
     """ Test that your bookkeeping for a liquidity ad is good."""

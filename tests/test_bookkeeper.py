@@ -332,6 +332,7 @@ def test_bookkeeping_rbf_withdraw(node_factory, bitcoind):
     assert len(fees) == 1
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "hsmd_sign_option_will_fund_offer not supported")
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "turns off bookkeeper at start")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "network fees hardcoded")
