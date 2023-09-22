@@ -94,7 +94,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT:
 	case WIRE_HSMD_CHECK_FUTURE_SECRET:
-	case WIRE_HSMD_READY_CHANNEL:
+	case WIRE_HSMD_SETUP_CHANNEL:
 		return (client->capabilities & HSM_PERM_COMMITMENT_POINT) != 0;
 
 	case WIRE_HSMD_SIGN_REMOTE_COMMITMENT_TX:
@@ -143,7 +143,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_CUPDATE_SIG_REPLY:
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:
 	case WIRE_HSMD_NEW_CHANNEL_REPLY:
-	case WIRE_HSMD_READY_CHANNEL_REPLY:
+	case WIRE_HSMD_SETUP_CHANNEL_REPLY:
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
@@ -337,7 +337,7 @@ static bool mem_is_zero(const void *mem, size_t len)
 
 /* ~This stub implementation is overriden by fully validating signers
  * that need the unchanging channel parameters. */
-static u8 *handle_ready_channel(struct hsmd_client *c, const u8 *msg_in)
+static u8 *handle_setup_channel(struct hsmd_client *c, const u8 *msg_in)
 {
 	bool is_outbound;
 	struct amount_sat channel_value;
@@ -354,7 +354,7 @@ static u8 *handle_ready_channel(struct hsmd_client *c, const u8 *msg_in)
 	struct amount_msat value_msat;
 	struct channel_type *channel_type;
 
-	if (!fromwire_hsmd_ready_channel(tmpctx, msg_in, &is_outbound,
+	if (!fromwire_hsmd_setup_channel(tmpctx, msg_in, &is_outbound,
 					&channel_value, &push_value, &funding_txid,
 					&funding_txout, &local_to_self_delay,
 					&local_shutdown_script,
@@ -376,7 +376,7 @@ static u8 *handle_ready_channel(struct hsmd_client *c, const u8 *msg_in)
 	assert(local_to_self_delay > 0);
 	assert(remote_to_self_delay > 0);
 
-	return towire_hsmd_ready_channel_reply(NULL);
+	return towire_hsmd_setup_channel_reply(NULL);
 }
 
 /*~ For almost every wallet tx we use the BIP32 seed, but not for onchain
@@ -1904,8 +1904,8 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 
 	case WIRE_HSMD_NEW_CHANNEL:
 		return handle_new_channel(client, msg);
-	case WIRE_HSMD_READY_CHANNEL:
-		return handle_ready_channel(client, msg);
+	case WIRE_HSMD_SETUP_CHANNEL:
+		return handle_setup_channel(client, msg);
 	case WIRE_HSMD_GET_OUTPUT_SCRIPTPUBKEY:
 		return handle_get_output_scriptpubkey(client, msg);
 	case WIRE_HSMD_CHECK_FUTURE_SECRET:
@@ -1982,7 +1982,7 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 	case WIRE_HSMD_CUPDATE_SIG_REPLY:
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:
 	case WIRE_HSMD_NEW_CHANNEL_REPLY:
-	case WIRE_HSMD_READY_CHANNEL_REPLY:
+	case WIRE_HSMD_SETUP_CHANNEL_REPLY:
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
