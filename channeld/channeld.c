@@ -789,6 +789,9 @@ static void check_mutual_splice_locked(struct peer *peer)
 	status_debug("mutual splice_locked, channel updated to: %s",
 		     type_to_string(tmpctx, struct channel, peer->channel));
 
+	/* ensure the signer is locking at the same time */
+	lock_signer_outpoint(&inflight->outpoint);
+
 	msg = towire_channeld_got_splice_locked(NULL, inflight->amnt,
 						inflight->splice_amnt,
 						&inflight->outpoint.txid);
