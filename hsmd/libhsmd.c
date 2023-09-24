@@ -112,6 +112,10 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_SIGN_OPTION_WILL_FUND_OFFER:
 		return (client->capabilities & HSM_PERM_SIGN_WILL_FUND_OFFER) != 0;
 
+	case WIRE_HSMD_CHECK_OUTPOINT:
+	case WIRE_HSMD_LOCK_OUTPOINT:
+		return (client->capabilities & HSM_PERM_LOCK_OUTPOINT) != 0;
+
 	case WIRE_HSMD_INIT:
 	case WIRE_HSMD_NEW_CHANNEL:
 	case WIRE_HSMD_CLIENT_HSMFD:
@@ -145,6 +149,8 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:
 	case WIRE_HSMD_NEW_CHANNEL_REPLY:
 	case WIRE_HSMD_SETUP_CHANNEL_REPLY:
+	case WIRE_HSMD_CHECK_OUTPOINT_REPLY:
+	case WIRE_HSMD_LOCK_OUTPOINT_REPLY:
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
@@ -400,6 +406,38 @@ static u8 *handle_next_funding_pubkey(struct hsmd_client *c, const u8 *msg_in)
 	derive_basepoints(&seed, &funding_pubkey, NULL, NULL, NULL);
 
 	return towire_hsmd_setup_channel_reply(NULL);
+}
+
+/* ~This stub implementation is overriden by fully validating signers
+ * to ensure they are caught up when outpoints are freshly buried */
+static u8 *handle_check_outpoint(struct hsmd_client *c, const u8 *msg_in)
+{
+	struct bitcoin_txid funding_txid;
+	u16 funding_txout;
+	bool is_buried;
+
+	if (!fromwire_hsmd_check_outpoint(msg_in, &funding_txid, &funding_txout))
+		return hsmd_status_malformed_request(c, msg_in);
+
+	/* This stub always approves */
+	is_buried = true;
+
+	return towire_hsmd_check_outpoint_reply(NULL, is_buried);
+}
+
+/* ~This stub implementation is overriden by fully validating signers to
+ * change their funding/splice state to locked */
+static u8 *handle_lock_outpoint(struct hsmd_client *c, const u8 *msg_in)
+{
+	struct bitcoin_txid funding_txid;
+	u16 funding_txout;
+
+	if (!fromwire_hsmd_lock_outpoint(msg_in, &funding_txid, &funding_txout))
+		return hsmd_status_malformed_request(c, msg_in);
+
+	/* Stub implementation */
+
+	return towire_hsmd_lock_outpoint_reply(NULL);
 }
 
 /*~ For almost every wallet tx we use the BIP32 seed, but not for onchain
@@ -1931,6 +1969,10 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 		return handle_setup_channel(client, msg);
 	case WIRE_HSMD_NEXT_FUNDING_PUBKEY:
 		return handle_next_funding_pubkey(client, msg);
+	case WIRE_HSMD_CHECK_OUTPOINT:
+		return handle_check_outpoint(client, msg);
+	case WIRE_HSMD_LOCK_OUTPOINT:
+		return handle_lock_outpoint(client, msg);
 	case WIRE_HSMD_GET_OUTPUT_SCRIPTPUBKEY:
 		return handle_get_output_scriptpubkey(client, msg);
 	case WIRE_HSMD_CHECK_FUTURE_SECRET:
@@ -2009,6 +2051,8 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 	case WIRE_HSMD_NEW_CHANNEL_REPLY:
 	case WIRE_HSMD_SETUP_CHANNEL_REPLY:
 	case WIRE_HSMD_NEXT_FUNDING_PUBKEY_REPLY:
+	case WIRE_HSMD_CHECK_OUTPOINT_REPLY:
+	case WIRE_HSMD_LOCK_OUTPOINT_REPLY:
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
@@ -2051,6 +2095,8 @@ u8 *hsmd_init(struct secret hsm_secret,
 		WIRE_HSMD_SIGN_ANCHORSPEND,
 		WIRE_HSMD_SIGN_HTLC_TX_MINGLE,
 		WIRE_HSMD_SIGN_SPLICE_TX,
+		WIRE_HSMD_CHECK_OUTPOINT,
+		WIRE_HSMD_LOCK_OUTPOINT,
 	};
 
 	/*~ Don't swap this. */

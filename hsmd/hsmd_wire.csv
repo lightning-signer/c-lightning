@@ -100,6 +100,22 @@ msgdata,hsmd_next_funding_pubkey,funding_txout,u32,
 msgtype,hsmd_next_funding_pubkey_reply,134
 msgdata,hsmd_next_funding_pubkey_reply,next_funding_pubkey,pubkey,
 
+# check if the signer agrees that a funding candidate outpoint is buried
+msgtype,hsmd_check_outpoint,32
+msgdata,hsmd_check_outpoint,funding_txid,bitcoin_txid,
+msgdata,hsmd_check_outpoint,funding_txout,u16,
+
+msgtype,hsmd_check_outpoint_reply,132
+msgdata,hsmd_check_outpoint_reply,is_buried,bool,
+
+# change the funding/splice state to locked
+msgtype,hsmd_lock_outpoint,37
+msgdata,hsmd_lock_outpoint,funding_txid,bitcoin_txid,
+msgdata,hsmd_lock_outpoint,funding_txout,u16,
+
+# No value returned.
+msgtype,hsmd_lock_outpoint_reply,137
+
 # Return signature for a funding tx.
 #include <common/utxo.h>
 
