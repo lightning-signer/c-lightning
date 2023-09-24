@@ -89,6 +89,17 @@ msgdata,hsmd_setup_channel,channel_type,channel_type,
 # No value returned.
 msgtype,hsmd_setup_channel_reply,131
 
+# Sent to derive the next funding pubkey (for splicing)
+msgtype,hsmd_next_funding_pubkey,34
+msgdata,hsmd_next_funding_pubkey,peerid,node_id,
+msgdata,hsmd_next_funding_pubkey,dbid,u64,
+msgdata,hsmd_next_funding_pubkey,funding_txid,bitcoin_txid,
+msgdata,hsmd_next_funding_pubkey,funding_txout,u32,
+
+# Returns the next funding pubkey for a splice
+msgtype,hsmd_next_funding_pubkey_reply,134
+msgdata,hsmd_next_funding_pubkey_reply,next_funding_pubkey,pubkey,
+
 # Return signature for a funding tx.
 #include <common/utxo.h>
 

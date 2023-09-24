@@ -119,6 +119,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_SIGN_INVOICE:
 	case WIRE_HSMD_SIGN_COMMITMENT_TX:
 	case WIRE_HSMD_GET_CHANNEL_BASEPOINTS:
+	case WIRE_HSMD_NEXT_FUNDING_PUBKEY:
 	case WIRE_HSMD_DEV_MEMLEAK:
 	case WIRE_HSMD_SIGN_MESSAGE:
 	case WIRE_HSMD_GET_OUTPUT_SCRIPTPUBKEY:
@@ -158,6 +159,7 @@ bool hsmd_check_client_capabilities(struct hsmd_client *client,
 	case WIRE_HSMD_GET_PER_COMMITMENT_POINT_REPLY:
 	case WIRE_HSMD_CHECK_FUTURE_SECRET_REPLY:
 	case WIRE_HSMD_GET_CHANNEL_BASEPOINTS_REPLY:
+	case WIRE_HSMD_NEXT_FUNDING_PUBKEY_REPLY:
 	case WIRE_HSMD_DEV_MEMLEAK_REPLY:
 	case WIRE_HSMD_SIGN_MESSAGE_REPLY:
 	case WIRE_HSMD_GET_OUTPUT_SCRIPTPUBKEY_REPLY:
@@ -375,6 +377,27 @@ static u8 *handle_setup_channel(struct hsmd_client *c, const u8 *msg_in)
 	assert(!mem_is_zero(&funding_txid, sizeof(funding_txid)));
 	assert(local_to_self_delay > 0);
 	assert(remote_to_self_delay > 0);
+
+	return towire_hsmd_setup_channel_reply(NULL);
+}
+
+/* ~Return the funding pubkey for the next splice */
+static u8 *handle_next_funding_pubkey(struct hsmd_client *c, const u8 *msg_in)
+{
+	struct node_id peer_id;
+	u64 dbid;
+	struct bitcoin_txid funding_txid;
+	u32 funding_txout;
+	struct secret seed;
+	struct pubkey funding_pubkey;
+
+	if (!fromwire_hsmd_next_funding_pubkey(msg_in, &peer_id, &dbid,
+					       &funding_txid, &funding_txout))
+		return hsmd_status_malformed_request(c, msg_in);
+
+	// TODO actually rotate the funding pubkey
+	get_channel_seed(&peer_id, dbid, &seed);
+	derive_basepoints(&seed, &funding_pubkey, NULL, NULL, NULL);
 
 	return towire_hsmd_setup_channel_reply(NULL);
 }
@@ -1906,6 +1929,8 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 		return handle_new_channel(client, msg);
 	case WIRE_HSMD_SETUP_CHANNEL:
 		return handle_setup_channel(client, msg);
+	case WIRE_HSMD_NEXT_FUNDING_PUBKEY:
+		return handle_next_funding_pubkey(client, msg);
 	case WIRE_HSMD_GET_OUTPUT_SCRIPTPUBKEY:
 		return handle_get_output_scriptpubkey(client, msg);
 	case WIRE_HSMD_CHECK_FUTURE_SECRET:
@@ -1983,6 +2008,7 @@ u8 *hsmd_handle_client_message(const tal_t *ctx, struct hsmd_client *client,
 	case WIRE_HSMD_CLIENT_HSMFD_REPLY:
 	case WIRE_HSMD_NEW_CHANNEL_REPLY:
 	case WIRE_HSMD_SETUP_CHANNEL_REPLY:
+	case WIRE_HSMD_NEXT_FUNDING_PUBKEY_REPLY:
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
