@@ -18,6 +18,7 @@
  * v4 with splicing: 06f21012936f825913af289fa81af1512c9ada1cb97c611698975a8fd287edbb
  * v4 with capabilities called permissions: 7c5bf8ec7cf30302740db85260a9d1ac2c5b0323a2376c28df6b611831f91655
  * v4 with renaming of channel_ready to setup_channel: 60b92a0930b631cc77df564cb9235e6cb220f4337a2bb00e5153145e0bf8c80e
+ * v4 with buried outpoint check: 2b5fb9982a97b4655454e07e729ca15228e2402efbf619e2a33dc73f59c36890
  */
 #define HSM_MIN_VERSION 3
 #define HSM_MAX_VERSION 4
