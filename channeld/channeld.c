@@ -2918,6 +2918,26 @@ static size_t calc_weight(enum tx_role role, const struct wally_psbt *psbt)
 	return weight;
 }
 
+/* Get the non-initiator (acceptor) amount after the splice */
+static struct amount_msat splice_acceptor_balance(struct peer *peer,
+						  enum tx_role our_role)
+{
+	struct amount_msat acceptor_value;
+
+	/* Start with the acceptor's balance before the splice */
+	acceptor_value =
+		peer->channel->view->owed[our_role == TX_INITIATOR ? REMOTE : LOCAL];
+
+	/* Adjust by the acceptor's relative splice amount (signed) */
+	if (!amount_msat_add_sat_s64(&acceptor_value, acceptor_value,
+				     peer->splicing->accepter_relative))
+		peer_failed_warn(
+			peer->pps, &peer->channel_id,
+			"Unable to add accepter's relative splice to prior balance.");
+
+	return acceptor_value;
+}
+
 /* Returns the total channel funding output amount if all checks pass.
  * Otherwise, exits via peer_failed_warn. DTODO: Change to `tx_abort`. */
 static struct amount_sat check_balances(struct peer *peer,
@@ -3450,6 +3470,39 @@ static struct inflight *inflights_new(struct peer *peer)
 	return inf;
 }
 
+static void update_hsmd_with_splice(struct peer *peer,
+				    struct inflight *inflight,
+				    const struct amount_msat push_val)
+{
+	u8 *msg;
+
+	/* local_upfront_shutdown_script, local_upfront_shutdown_wallet_index,
+	 * remote_upfront_shutdown_script aren't allowed to change, so we
+	 * don't need to gather them */
+	msg = towire_hsmd_setup_channel(
+		NULL,
+		peer->channel->opener == LOCAL,
+		inflight->amnt,
+		push_val,
+		&inflight->outpoint.txid,
+		inflight->outpoint.n,
+		peer->channel->config[LOCAL].to_self_delay,
+		/*local_upfront_shutdown_script*/ NULL,
+		/*local_upfront_shutdown_wallet_index*/ NULL,
+		&peer->channel->basepoints[REMOTE],
+		&peer->channel->funding_pubkey[REMOTE],
+		peer->channel->config[REMOTE].to_self_delay,
+		/*remote_upfront_shutdown_script*/ NULL,
+		peer->channel->type);
+
+	wire_sync_write(HSM_FD, take(msg));
+	msg = wire_sync_read(tmpctx, HSM_FD);
+	if (!fromwire_hsmd_setup_channel_reply(msg))
+		status_failed(STATUS_FAIL_HSM_IO, "Bad ready_channel_reply %s",
+			      tal_hex(tmpctx, msg));
+}
+
+
 /* ACCEPTER side of the splice. Here we handle all the accepter's steps for the
  * splice. Since the channel must be in STFU mode we block the daemon here until
  * the splice is finished or aborted. */
@@ -3585,6 +3638,10 @@ static void splice_accepter(struct peer *peer, const u8 *inmsg)
 	new_inflight->splice_amnt = peer->splicing->accepter_relative;
 	new_inflight->last_tx = NULL;
 	new_inflight->i_am_initiator = false;
+
+	update_hsmd_with_splice(peer,
+				new_inflight,
+				splice_acceptor_balance(peer, TX_ACCEPTER));
 
 	update_view_from_inflights(peer);
 
@@ -3819,6 +3876,10 @@ static void splice_initiator_user_finalized(struct peer *peer)
 	new_inflight->splice_amnt = peer->splicing->opener_relative;
 	new_inflight->last_tx = NULL;
 	new_inflight->i_am_initiator = true;
+
+	update_hsmd_with_splice(peer,
+				new_inflight,
+				splice_acceptor_balance(peer, TX_INITIATOR));
 
 	update_view_from_inflights(peer);
 
