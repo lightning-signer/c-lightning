@@ -734,6 +734,8 @@ static struct command_result *param_input_numbers(struct command *cmd,
 	return NULL;
 }
 
+#include<stdio.h>
+
 static struct command_result *json_signpsbt(struct command *cmd,
 					    const char *buffer,
 					    const jsmntok_t *obj UNNEEDED,
@@ -801,6 +803,7 @@ static struct command_result *json_signpsbt(struct command *cmd,
 				    "HSM gave bad sign_withdrawal_reply %s",
 				    tal_hex(tmpctx, msg));
 
+	fprintf(stderr, "json_signpsbt: psbt_set_version %d\n", psbt_version);
 	if (!psbt_set_version(signed_psbt, psbt_version)) {
 		return command_fail(cmd, LIGHTNINGD,
 				    "Signed PSBT unable to have version set: %s",

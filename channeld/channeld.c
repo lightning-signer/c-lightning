@@ -681,6 +681,44 @@ static bool channel_announcement_negotiate(struct peer *peer)
 	return sent_announcement;
 }
 
+static void lock_signer_outpoint(const struct bitcoin_outpoint *outpoint) {
+	const u8 *msg;
+	bool is_buried = false;
+
+	do {
+		/* Make sure the hsmd agrees that this outpoint is
+		 * sufficiently buried. */
+		msg = towire_hsmd_check_outpoint(NULL, &outpoint->txid, outpoint->n);
+		msg = hsm_req(tmpctx, take(msg));
+		if (!fromwire_hsmd_check_outpoint_reply(msg, &is_buried))
+			status_failed(STATUS_FAIL_HSM_IO,
+				      "Bad hsmd_check_outpoint_reply: %s",
+				      tal_hex(tmpctx, msg));
+
+		/* the signer should have a shorter buried height requirement so
+		 * it almost always will be ready ahead of us.*/
+		if (!is_buried) {
+			sleep(10);
+		}
+	} while (!is_buried);
+
+	/* tell the signer that we are now locked */
+	msg = towire_hsmd_lock_outpoint(NULL, &outpoint->txid, outpoint->n);
+	msg = hsm_req(tmpctx, take(msg));
+	if (!fromwire_hsmd_lock_outpoint_reply(msg))
+		status_failed(STATUS_FAIL_HSM_IO,
+			      "Bad hsmd_lock_outpoint_reply: %s",
+			      tal_hex(tmpctx, msg));
+}
+
+/* Call this method when channel_ready status are changed. */
+static void check_mutual_channel_ready(const struct peer *peer)
+{
+	if (peer->channel_ready[LOCAL] && peer->channel_ready[REMOTE]) {
+		lock_signer_outpoint(&peer->channel->funding);
+	}
+}
+
 /* Call this method when splice_locked status are changed. If both sides have
  * splice_locked'ed than this function consumes the `splice_locked_ready` values
  * and considers the channel funding to be switched to the splice tx. */
@@ -750,6 +788,9 @@ static void check_mutual_splice_locked(struct peer *peer)
 
 	status_debug("mutual splice_locked, channel updated to: %s",
 		     type_to_string(tmpctx, struct channel, peer->channel));
+
+	/* ensure the signer is locking at the same time */
+	lock_signer_outpoint(&inflight->outpoint);
 
 	msg = towire_channeld_got_splice_locked(NULL, inflight->amnt,
 						inflight->splice_amnt,
@@ -831,6 +872,7 @@ static void handle_peer_channel_ready(struct peer *peer, const u8 *msg)
 
 	peer->tx_sigs_allowed = false;
 	peer->channel_ready[REMOTE] = true;
+	check_mutual_channel_ready(peer);
 	if (tlvs->short_channel_id != NULL) {
 		status_debug(
 		    "Peer told us that they'll use alias=%s for this channel",
@@ -2918,6 +2960,26 @@ static size_t calc_weight(enum tx_role role, const struct wally_psbt *psbt)
 	return weight;
 }
 
+/* Get the non-initiator (acceptor) amount after the splice */
+static struct amount_msat splice_acceptor_balance(struct peer *peer,
+						  enum tx_role our_role)
+{
+	struct amount_msat acceptor_value;
+
+	/* Start with the acceptor's balance before the splice */
+	acceptor_value =
+		peer->channel->view->owed[our_role == TX_INITIATOR ? REMOTE : LOCAL];
+
+	/* Adjust by the acceptor's relative splice amount (signed) */
+	if (!amount_msat_add_sat_s64(&acceptor_value, acceptor_value,
+				     peer->splicing->accepter_relative))
+		peer_failed_warn(
+			peer->pps, &peer->channel_id,
+			"Unable to add accepter's relative splice to prior balance.");
+
+	return acceptor_value;
+}
+
 /* Returns the total channel funding output amount if all checks pass.
  * Otherwise, exits via peer_failed_warn. DTODO: Change to `tx_abort`. */
 static struct amount_sat check_balances(struct peer *peer,
@@ -3450,6 +3512,39 @@ static struct inflight *inflights_new(struct peer *peer)
 	return inf;
 }
 
+static void update_hsmd_with_splice(struct peer *peer,
+				    struct inflight *inflight,
+				    const struct amount_msat push_val)
+{
+	u8 *msg;
+
+	/* local_upfront_shutdown_script, local_upfront_shutdown_wallet_index,
+	 * remote_upfront_shutdown_script aren't allowed to change, so we
+	 * don't need to gather them */
+	msg = towire_hsmd_setup_channel(
+		NULL,
+		peer->channel->opener == LOCAL,
+		inflight->amnt,
+		push_val,
+		&inflight->outpoint.txid,
+		inflight->outpoint.n,
+		peer->channel->config[LOCAL].to_self_delay,
+		/*local_upfront_shutdown_script*/ NULL,
+		/*local_upfront_shutdown_wallet_index*/ NULL,
+		&peer->channel->basepoints[REMOTE],
+		&peer->channel->funding_pubkey[REMOTE],
+		peer->channel->config[REMOTE].to_self_delay,
+		/*remote_upfront_shutdown_script*/ NULL,
+		peer->channel->type);
+
+	wire_sync_write(HSM_FD, take(msg));
+	msg = wire_sync_read(tmpctx, HSM_FD);
+	if (!fromwire_hsmd_setup_channel_reply(msg))
+		status_failed(STATUS_FAIL_HSM_IO, "Bad ready_channel_reply %s",
+			      tal_hex(tmpctx, msg));
+}
+
+
 /* ACCEPTER side of the splice. Here we handle all the accepter's steps for the
  * splice. Since the channel must be in STFU mode we block the daemon here until
  * the splice is finished or aborted. */
@@ -3585,6 +3680,10 @@ static void splice_accepter(struct peer *peer, const u8 *inmsg)
 	new_inflight->splice_amnt = peer->splicing->accepter_relative;
 	new_inflight->last_tx = NULL;
 	new_inflight->i_am_initiator = false;
+
+	update_hsmd_with_splice(peer,
+				new_inflight,
+				splice_acceptor_balance(peer, TX_ACCEPTER));
 
 	update_view_from_inflights(peer);
 
@@ -3819,6 +3918,10 @@ static void splice_initiator_user_finalized(struct peer *peer)
 	new_inflight->splice_amnt = peer->splicing->opener_relative;
 	new_inflight->last_tx = NULL;
 	new_inflight->i_am_initiator = true;
+
+	update_hsmd_with_splice(peer,
+				new_inflight,
+				splice_acceptor_balance(peer, TX_INITIATOR));
 
 	update_view_from_inflights(peer);
 
@@ -5191,6 +5294,7 @@ static void handle_funding_depth(struct peer *peer, const u8 *msg)
 			peer_write(peer->pps, take(msg));
 
 			peer->channel_ready[LOCAL] = true;
+			check_mutual_channel_ready(peer);
 		}
 		else if(splicing && !peer->splice_state->locked_ready[LOCAL]) {
 			assert(scid);

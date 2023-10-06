@@ -5,22 +5,30 @@ import unittest
 import time
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('EXPERIMENTAL_SPLICING') != '1', "splicing not supported yet")
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
-@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "splicing not supported by VLS yet (VLS #325)")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 def test_splice(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, fundamount=1000000, wait_for_announce=True, opts={'experimental-splicing': None})
 
     chan_id = l1.get_channel_id(l2)
 
+    print("EXPLORE-SPLICING: initial channel setup")
+
     # add extra sats to pay fee
+    print("EXPLORE-SPLICING: adding extra to pay fee")
     funds_result = l1.rpc.fundpsbt("109000sat", "slow", 166, excess_as_change=True)
 
+    print("EXPLORE-SPLICING: initing splice")
     result = l1.rpc.splice_init(chan_id, 100000, funds_result['psbt'])
+    print("EXPLORE-SPLICING: updating splice")
     result = l1.rpc.splice_update(chan_id, result['psbt'])
+    print("EXPLORE-SPLICING: signpsbt")
     result = l1.rpc.signpsbt(result['psbt'])
+    print("EXPLORE-SPLICING: signing splice")
     result = l1.rpc.splice_signed(chan_id, result['signed_psbt'])
+    print("EXPLORE-SPLICING: splice signed")
 
     l2.daemon.wait_for_log(r'CHANNELD_NORMAL to CHANNELD_AWAITING_SPLICE')
     l1.daemon.wait_for_log(r'CHANNELD_NORMAL to CHANNELD_AWAITING_SPLICE')

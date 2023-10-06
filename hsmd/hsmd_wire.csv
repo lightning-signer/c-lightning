@@ -69,25 +69,52 @@ msgdata,hsmd_get_channel_basepoints_reply,funding_pubkey,pubkey,
 
 #include <common/channel_type.h>
 # Provide channel parameters.
-msgtype,hsmd_ready_channel,31
-msgdata,hsmd_ready_channel,is_outbound,bool,
-msgdata,hsmd_ready_channel,channel_value,amount_sat,
-msgdata,hsmd_ready_channel,push_value,amount_msat,
-msgdata,hsmd_ready_channel,funding_txid,bitcoin_txid,
-msgdata,hsmd_ready_channel,funding_txout,u16,
-msgdata,hsmd_ready_channel,local_to_self_delay,u16,
-msgdata,hsmd_ready_channel,local_shutdown_script_len,u16,
-msgdata,hsmd_ready_channel,local_shutdown_script,u8,local_shutdown_script_len
-msgdata,hsmd_ready_channel,local_shutdown_wallet_index,?u32,
-msgdata,hsmd_ready_channel,remote_basepoints,basepoints,
-msgdata,hsmd_ready_channel,remote_funding_pubkey,pubkey,
-msgdata,hsmd_ready_channel,remote_to_self_delay,u16,
-msgdata,hsmd_ready_channel,remote_shutdown_script_len,u16,
-msgdata,hsmd_ready_channel,remote_shutdown_script,u8,remote_shutdown_script_len
-msgdata,hsmd_ready_channel,channel_type,channel_type,
+msgtype,hsmd_setup_channel,31
+msgdata,hsmd_setup_channel,is_outbound,bool,
+msgdata,hsmd_setup_channel,channel_value,amount_sat,
+msgdata,hsmd_setup_channel,push_value,amount_msat,
+msgdata,hsmd_setup_channel,funding_txid,bitcoin_txid,
+msgdata,hsmd_setup_channel,funding_txout,u16,
+msgdata,hsmd_setup_channel,local_to_self_delay,u16,
+msgdata,hsmd_setup_channel,local_shutdown_script_len,u16,
+msgdata,hsmd_setup_channel,local_shutdown_script,u8,local_shutdown_script_len
+msgdata,hsmd_setup_channel,local_shutdown_wallet_index,?u32,
+msgdata,hsmd_setup_channel,remote_basepoints,basepoints,
+msgdata,hsmd_setup_channel,remote_funding_pubkey,pubkey,
+msgdata,hsmd_setup_channel,remote_to_self_delay,u16,
+msgdata,hsmd_setup_channel,remote_shutdown_script_len,u16,
+msgdata,hsmd_setup_channel,remote_shutdown_script,u8,remote_shutdown_script_len
+msgdata,hsmd_setup_channel,channel_type,channel_type,
 
 # No value returned.
-msgtype,hsmd_ready_channel_reply,131
+msgtype,hsmd_setup_channel_reply,131
+
+# Sent to derive the next funding pubkey (for splicing)
+msgtype,hsmd_next_funding_pubkey,34
+msgdata,hsmd_next_funding_pubkey,peerid,node_id,
+msgdata,hsmd_next_funding_pubkey,dbid,u64,
+msgdata,hsmd_next_funding_pubkey,funding_txid,bitcoin_txid,
+msgdata,hsmd_next_funding_pubkey,funding_txout,u32,
+
+# Returns the next funding pubkey for a splice
+msgtype,hsmd_next_funding_pubkey_reply,134
+msgdata,hsmd_next_funding_pubkey_reply,next_funding_pubkey,pubkey,
+
+# check if the signer agrees that a funding candidate outpoint is buried
+msgtype,hsmd_check_outpoint,32
+msgdata,hsmd_check_outpoint,funding_txid,bitcoin_txid,
+msgdata,hsmd_check_outpoint,funding_txout,u16,
+
+msgtype,hsmd_check_outpoint_reply,132
+msgdata,hsmd_check_outpoint_reply,is_buried,bool,
+
+# change the funding/splice state to locked
+msgtype,hsmd_lock_outpoint,37
+msgdata,hsmd_lock_outpoint,funding_txid,bitcoin_txid,
+msgdata,hsmd_lock_outpoint,funding_txout,u16,
+
+# No value returned.
+msgtype,hsmd_lock_outpoint_reply,137
 
 # Return signature for a funding tx.
 #include <common/utxo.h>

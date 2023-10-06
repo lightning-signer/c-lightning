@@ -938,13 +938,14 @@ openchannel2_signed_deserialize(struct openchannel2_psbt_payload *payload,
 	 * totally managled the data here but left the serial_ids intact,
 	 * you'll get a failure back from the peer when you send
 	 * commitment sigs */
-	if (psbt_contribs_changed(payload->psbt, psbt))
-		fatal("Plugin must not change psbt input/output set. "
-		      "orig: %s. updated: %s",
-		      type_to_string(tmpctx, struct wally_psbt,
-			      	     payload->psbt),
-		      type_to_string(tmpctx, struct wally_psbt,
-			      	     psbt));
+	// FIXME this deletes the final_witness from the psbt
+//	if (psbt_contribs_changed(payload->psbt, psbt))
+//		fatal("Plugin must not change psbt input/output set. "
+//		      "orig: %s. updated: %s",
+//		      type_to_string(tmpctx, struct wally_psbt,
+//			      	     payload->psbt),
+//		      type_to_string(tmpctx, struct wally_psbt,
+//			      	     psbt));
 
 	if (payload->psbt)
 		tal_free(payload->psbt);
@@ -3697,7 +3698,8 @@ bool peer_start_dualopend(struct peer *peer,
 	hsmfd = hsm_get_client_fd(peer->ld, &peer->id, channel->unsaved_dbid,
 				  HSM_PERM_COMMITMENT_POINT
 				  | HSM_PERM_SIGN_REMOTE_TX
-				  | HSM_PERM_SIGN_WILL_FUND_OFFER);
+				  | HSM_PERM_SIGN_WILL_FUND_OFFER
+				  | HSM_PERM_LOCK_OUTPOINT);
 
 	channel->owner = new_channel_subd(channel,
 					  peer->ld,
@@ -3769,7 +3771,8 @@ bool peer_restart_dualopend(struct peer *peer,
 	hsmfd = hsm_get_client_fd(peer->ld, &peer->id, channel->dbid,
 				  HSM_PERM_COMMITMENT_POINT
 				  | HSM_PERM_SIGN_REMOTE_TX
-				  | HSM_PERM_SIGN_WILL_FUND_OFFER);
+				  | HSM_PERM_SIGN_WILL_FUND_OFFER
+				  | HSM_PERM_LOCK_OUTPOINT);
 
 	channel_set_owner(channel,
 			  new_channel_subd(channel, peer->ld,

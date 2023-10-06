@@ -379,33 +379,54 @@ u64 psbt_new_output_serial(struct wally_psbt *psbt, enum tx_role role)
 	return serial_id;
 }
 
+#include <stdio.h>
+#include <common/type_to_string.h>
+
 bool psbt_has_required_fields(struct wally_psbt *psbt)
 {
+	psbt_set_version(psbt, 0);
+	fprintf(stderr, "wally_psbt: %s\n", type_to_string(tmpctx, struct wally_psbt, psbt));
+	psbt_set_version(psbt, 2);
+
 	u64 serial_id;
 	for (size_t i = 0; i < psbt->num_inputs; i++) {
 		const struct wally_map_item *redeem_script;
 		struct wally_psbt_input *input = &psbt->inputs[i];
 
-		if (!psbt_get_serial_id(&input->unknowns, &serial_id))
+		if (!psbt_get_serial_id(&input->unknowns, &serial_id)) {
+			fprintf(stderr, "in[%ld]: missing serial id\n", i);
 			return false;
+		}
 
 		/* Required because we send the full tx over the wire now */
-		if (!input->utxo)
+		/* Only insist on PSBT_IN_NON_WITNESS_UTXO (.utxo) if
+		 * PSBT_IN_WITNESS_UTXO (.witness_utxo) is not present
+		 * because PSBT_IN_NON_WITNESS_UTXO uses a lot of
+		 * memory */
+		if (!input->witness_utxo && !input->utxo) {
+			fprintf(stderr, "in[%ld]: missing both utxo\n", i);
 			return false;
+		}
 
-		/* If is P2SH, redeemscript must be present */
-		assert(psbt->inputs[i].index < input->utxo->num_outputs);
-		const u8 *outscript =
-			wally_tx_output_get_script(tmpctx,
-				&input->utxo->outputs[psbt->inputs[i].index]);
-		redeem_script = wally_map_get_integer(&psbt->inputs[i].psbt_fields, /* PSBT_IN_REDEEM_SCRIPT */ 0x04);
-		if (is_p2sh(outscript, NULL) && (!redeem_script || redeem_script->value_len == 0))
-			return false;
+		if (input->utxo) {
+			/* If is P2SH, redeemscript must be present */
+			assert(psbt->inputs[i].index < input->utxo->num_outputs);
+			const u8 *outscript =
+				wally_tx_output_get_script(tmpctx,
+							   &input->utxo->outputs[psbt->inputs[i].index]);
+			redeem_script = wally_map_get_integer(&psbt->inputs[i].psbt_fields, /* PSBT_IN_REDEEM_SCRIPT */ 0x04);
+			if (is_p2sh(outscript, NULL) && (!redeem_script || redeem_script->value_len == 0)) {
+				fprintf(stderr, "in[%ld]: missing redeemscript\n", i);
+				return false;
+			}
+		}
 	}
 
 	for (size_t i = 0; i < psbt->num_outputs; i++) {
-		if (!psbt_get_serial_id(&psbt->outputs[i].unknowns, &serial_id))
+		if (!psbt_get_serial_id(&psbt->outputs[i].unknowns, &serial_id)) {
+			fprintf(stderr, "out[%ld]: missing serial id\n", i);
 			return false;
+		}
 	}
 
 	return true;
