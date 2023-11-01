@@ -3749,6 +3749,7 @@ def test_setconfig(node_factory, bitcoind):
         assert len(lines) == 3
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support this command")
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "deletes database, which is assumed sqlite3")
 def test_recover_command(node_factory, bitcoind):
     l1, l2 = node_factory.get_nodes(2)
