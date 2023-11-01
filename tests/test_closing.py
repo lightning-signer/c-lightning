@@ -3951,6 +3951,7 @@ def test_peer_anchor_push(node_factory, bitcoind, executor, chainparams):
     amt = 100_000_000
     sticky_inv = l3.rpc.invoice(amt, 'sticky', 'sticky')
     route = l1.rpc.getroute(l3.info['id'], amt, 1)['route']
+    l1.rpc.preapproveinvoice(bolt11=sticky_inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, sticky_inv['payment_hash'], payment_secret=sticky_inv['payment_secret'])
     l3.daemon.wait_for_log('dev_disconnect: -WIRE_UPDATE_FULFILL_HTLC')
 
