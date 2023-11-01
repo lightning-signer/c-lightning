@@ -711,6 +711,7 @@ def test_repay(node_factory):
         'delay': 5,
         'channel': first_scid(l1, l2)
     }
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay([routestep], inv['payment_hash'], payment_secret=inv['payment_secret'])
     l1.daemon.wait_for_log("Sending 200000000msat over 1 hops to deliver 200000000msat")
     l1.rpc.waitsendpay(inv['payment_hash'])['payment_preimage']
@@ -739,6 +740,7 @@ def test_wait_sendpay(node_factory, executor):
         'delay': 5,
         'channel': first_scid(l1, l2)
     }
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay([routestep], inv['payment_hash'], payment_secret=inv['payment_secret'])
     assert wait_created.result(TIMEOUT) == {'subsystem': 'sendpays',
                                             'created': 1,
