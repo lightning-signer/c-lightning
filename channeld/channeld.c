@@ -90,7 +90,8 @@ struct peer {
 	struct pubkey remote_per_commit;
 
 	/* Remotes's last per-commitment point: we keep this to check
-	 * revoke_and_ack's `per_commitment_secret` is correct. */
+	 * revoke_and_ack's `per_commitment_secret` is correct and for
+	 * splices. */
 	struct pubkey old_remote_per_commit;
 
 	/* Their sig for current commit. */
@@ -1322,6 +1323,7 @@ static struct bitcoin_signature *calc_commitsigs(const tal_t *ctx,
 						  const u8 *funding_wscript,
 						  const struct htlc **htlc_map,
 						  u64 commit_index,
+						  const struct pubkey *remote_per_commit,
 						  struct bitcoin_signature *commit_sig)
 {
 	struct simple_htlc **htlcs;
@@ -1333,7 +1335,7 @@ static struct bitcoin_signature *calc_commitsigs(const tal_t *ctx,
 	htlcs = collect_htlcs(tmpctx, htlc_map);
 	msg = towire_hsmd_sign_remote_commitment_tx(NULL, txs[0],
 						   &peer->channel->funding_pubkey[REMOTE],
-						   &peer->remote_per_commit,
+						   remote_per_commit,
 						    channel_has(peer->channel,
 								OPT_STATIC_REMOTEKEY),
 						    commit_index,
@@ -1357,7 +1359,7 @@ static struct bitcoin_signature *calc_commitsigs(const tal_t *ctx,
 	dump_htlcs(peer->channel, "Sending commit_sig");
 
 	if (!derive_simple_key(&peer->channel->basepoints[LOCAL].htlc,
-			       &peer->remote_per_commit,
+			       remote_per_commit,
 			       &local_htlckey))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 			      "Deriving local_htlckey");
@@ -1377,7 +1379,7 @@ static struct bitcoin_signature *calc_commitsigs(const tal_t *ctx,
 		wscript = bitcoin_tx_output_get_witscript(tmpctx, txs[0],
 							  txs[i+1]->wtx->inputs[0].index);
 		msg = towire_hsmd_sign_remote_htlc_tx(NULL, txs[i + 1], wscript,
-						      &peer->remote_per_commit,
+						      remote_per_commit,
 						      channel_has_anchors(peer->channel));
 
 		msg = hsm_req(tmpctx, take(msg));
@@ -1518,6 +1520,7 @@ static u8 *send_commit_part(const tal_t *ctx,
 			    s64 splice_amnt,
 			    s64 remote_splice_amnt,
 			    u64 remote_index,
+			    const struct pubkey *remote_per_commit,
 			    struct local_anchor_info **anchor)
 {
 	u8 *msg;
@@ -1546,12 +1549,12 @@ static u8 *send_commit_part(const tal_t *ctx,
 
 	txs = channel_txs(tmpctx, funding, funding_sats, &htlc_map,
 			  direct_outputs, &funding_wscript,
-			  peer->channel, &peer->remote_per_commit,
+			  peer->channel, remote_per_commit,
 			  remote_index, REMOTE,
 			  splice_amnt, remote_splice_amnt, &local_anchor_outnum);
 	htlc_sigs =
 	    calc_commitsigs(tmpctx, peer, txs, funding_wscript, htlc_map,
-			    remote_index, &commit_sig);
+			    remote_index, remote_per_commit, &commit_sig);
 
 	if (direct_outputs[LOCAL] != NULL) {
 		pbase = penalty_base_new(tmpctx, remote_index,
@@ -1729,7 +1732,7 @@ static void send_commit(struct peer *peer)
 	msgs[0] = send_commit_part(msgs, peer, &peer->channel->funding,
 				   peer->channel->funding_sats, changed_htlcs,
 				   true, 0, 0, peer->next_index[REMOTE],
-				   &local_anchor);
+				   &peer->remote_per_commit, &local_anchor);
 	if (local_anchor)
 		tal_arr_expand(&anchors_info, *local_anchor);
 
@@ -1756,6 +1759,7 @@ static void send_commit(struct peer *peer)
 						peer->splice_state->inflights[i]->splice_amnt,
 						remote_splice_amnt,
 						peer->next_index[REMOTE],
+						&peer->remote_per_commit,
 						&local_anchor));
 		if (local_anchor)
 			tal_arr_expand(&anchors_info, *local_anchor);
@@ -1988,6 +1992,7 @@ static struct commitsig_info *handle_peer_commit_sig(struct peer *peer,
 						     s64 splice_amnt,
 						     s64 remote_splice_amnt,
 						     u64 local_index,
+						     const struct pubkey *local_per_commit,
 						     bool allow_empty_commit)
 {
 	struct commitsig_info *result;
@@ -2091,7 +2096,7 @@ static struct commitsig_info *handle_peer_commit_sig(struct peer *peer,
 
 	txs = channel_txs(tmpctx, &outpoint, funding_sats, &htlc_map,
 			  NULL, &funding_wscript, peer->channel,
-			  &peer->next_local_per_commit,
+			  local_per_commit,
 			  local_index, LOCAL, splice_amnt,
 			  remote_splice_amnt, &remote_anchor_outnum);
 
@@ -2103,7 +2108,7 @@ static struct commitsig_info *handle_peer_commit_sig(struct peer *peer,
 			      "Unable to set signature internally");
 
 	if (!derive_simple_key(&peer->channel->basepoints[REMOTE].htlc,
-			       &peer->next_local_per_commit, &remote_htlckey))
+			       local_per_commit, &remote_htlckey))
 		status_failed(STATUS_FAIL_INTERNAL_ERROR,
 			      "Deriving remote_htlckey");
 	status_debug("Derived key %s from basepoint %s, point %s",
@@ -2111,7 +2116,7 @@ static struct commitsig_info *handle_peer_commit_sig(struct peer *peer,
 		     type_to_string(tmpctx, struct pubkey,
 				    &peer->channel->basepoints[REMOTE].htlc),
 		     type_to_string(tmpctx, struct pubkey,
-				    &peer->next_local_per_commit));
+				    local_per_commit));
 	/* BOLT #2:
 	 *
 	 * A receiving node:
@@ -2140,9 +2145,11 @@ static struct commitsig_info *handle_peer_commit_sig(struct peer *peer,
 				 channel_feerate(peer->channel, LOCAL),
 				 type_to_string(tmpctx, struct channel_id,
 				 		&active_id),
-				 type_to_string(tmpctx, struct channel_id,
-				 		(cs_tlv ? cs_tlv->splice_info
-				 		       : NULL)),
+				 cs_tlv && cs_tlv->splice_info
+				 	? type_to_string(tmpctx,
+				 		       struct channel_id,
+				 		       cs_tlv->splice_info)
+				 	: "N/A",
 				 peer->splice_state->await_commitment_succcess ? "yes"
 				 					: "no",
 				 tal_count(peer->splice_state->inflights));
@@ -2256,7 +2263,7 @@ static struct commitsig_info *handle_peer_commit_sig(struct peer *peer,
 		result = handle_peer_commit_sig(peer, splice_msg, i + 1,
 						changed_htlcs, sub_splice_amnt,
 						funding_diff - sub_splice_amnt,
-						local_index,
+						local_index, local_per_commit,
 						allow_empty_commit);
 		old_secret = result->old_secret;
 		tal_arr_expand(&commitsigs, result->commitsig);
@@ -2872,6 +2879,7 @@ static struct commitsig *interactive_send_commitments(struct peer *peer,
 {
 	struct commitsig_info *result;
 	const u8 *msg;
+	struct pubkey my_current_per_commitment_point;
 	struct inflight *inflight = peer->splice_state->inflights[inflight_index];
 	s64 funding_diff = sats_diff(inflight->amnt,
 				     peer->channel->funding_sats);
@@ -2897,6 +2905,7 @@ static struct commitsig *interactive_send_commitments(struct peer *peer,
 						       inflight->splice_amnt,
 						       remote_splice_amnt,
 						       next_index_remote - 1,
+						       &peer->old_remote_per_commit,
 						       &local_anchor));
 	}
 
@@ -2912,14 +2921,19 @@ static struct commitsig *interactive_send_commitments(struct peer *peer,
 			*msg_received = msg;
 
 		/* Funding counts as 0th commit so we do inflight_index + 1 */
-		if (fromwire_peektype(msg) == WIRE_COMMITMENT_SIGNED)
+		if (fromwire_peektype(msg) == WIRE_COMMITMENT_SIGNED) {
+			get_per_commitment_point(next_index_local - 1,
+						 &my_current_per_commitment_point, NULL);
+
 			result = handle_peer_commit_sig(peer, msg,
 							inflight_index + 1,
 							NULL,
 							inflight->splice_amnt,
 							remote_splice_amnt,
 							next_index_local - 1,
+							&my_current_per_commitment_point,
 							true);
+		}
 	}
 
 	if (!do_i_sign_first(peer, psbt, our_role, inflight->force_sign_first)
@@ -2936,6 +2950,7 @@ static struct commitsig *interactive_send_commitments(struct peer *peer,
 						       inflight->splice_amnt,
 						       remote_splice_amnt,
 						       next_index_remote - 1,
+						       &peer->old_remote_per_commit,
 						       &local_anchor));
 	}
 
@@ -4456,7 +4471,8 @@ static void peer_in(struct peer *peer, const u8 *msg)
 		return;
 	case WIRE_COMMITMENT_SIGNED:
 		handle_peer_commit_sig(peer, msg, 0, NULL, 0, 0,
-				       peer->next_index[LOCAL], false);
+				       peer->next_index[LOCAL],
+				       &peer->next_local_per_commit, false);
 		return;
 	case WIRE_UPDATE_FEE:
 		handle_peer_feechange(peer, msg);
@@ -4686,6 +4702,7 @@ static void resend_commitment(struct peer *peer, struct changed_htlc *last)
 	msgs[0] = send_commit_part(msgs, peer, &peer->channel->funding,
 				   peer->channel->funding_sats, NULL,
 				   false, 0, 0, peer->next_index[REMOTE] - 1,
+				   &peer->remote_per_commit,
 				   &local_anchor);
 
 	/* Loop over current inflights
@@ -4711,6 +4728,7 @@ static void resend_commitment(struct peer *peer, struct changed_htlc *last)
 						peer->splice_state->inflights[i]->splice_amnt,
 						remote_splice_amnt,
 						peer->next_index[REMOTE] - 1,
+						&peer->remote_per_commit,
 						&local_anchor));
 	}
 
