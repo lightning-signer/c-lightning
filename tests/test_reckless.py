@@ -6,7 +6,7 @@ import pytest
 import os
 import shutil
 import time
-
+import unittest
 
 @pytest.fixture(autouse=True)
 def canned_github_server(directory):
@@ -175,6 +175,7 @@ def test_local_dir_install(node_factory):
     assert os.path.exists(plugin_path)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "no canned github server in gitlab CI")
 def test_disable_enable(node_factory):
     """test search, git clone, and installation to folder."""
     n = get_reckless_node(node_factory)
