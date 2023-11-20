@@ -172,6 +172,7 @@ def test_v2_open_sigs_reconnect_2(node_factory, bitcoind):
     l2.daemon.wait_for_log(r'to CHANNELD_NORMAL')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_v2_open_sigs_reconnect_1(node_factory, bitcoind):
@@ -334,6 +335,7 @@ def test_v2_open_sigs_restart_while_dead(node_factory, bitcoind):
     l1.daemon.wait_for_log(r'to CHANNELD_NORMAL')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_v2_rbf_single(node_factory, bitcoind, chainparams):
@@ -515,6 +517,7 @@ def test_v2_rbf_abort_retry(node_factory, bitcoind, chainparams):
     assert not l2.daemon.is_in_log('WIRE_CHANNEL_REESTABLISH')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_v2_rbf_abort_channel_opens(node_factory, bitcoind, chainparams):
@@ -670,6 +673,7 @@ def test_v2_rbf_liquidity_ad(node_factory, bitcoind, chainparams):
     l1.daemon.wait_for_log('State changed from CLOSINGD_SIGEXCHANGE to CLOSINGD_COMPLETE')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_v2_rbf_multi(node_factory, bitcoind, chainparams):
@@ -860,6 +864,7 @@ def test_rbf_reconnect_ack(node_factory, bitcoind, chainparams):
     l1.rpc.openchannel_bump(chan_id, chan_amount, initpsbt['psbt'])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_rbf_reconnect_tx_construct(node_factory, bitcoind, chainparams):
@@ -981,6 +986,7 @@ def test_rbf_reconnect_tx_construct(node_factory, bitcoind, chainparams):
     l2.daemon.wait_for_log(r'to CHANNELD_NORMAL')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_rbf_reconnect_tx_sigs(node_factory, bitcoind, chainparams):
@@ -1062,6 +1068,7 @@ def test_rbf_reconnect_tx_sigs(node_factory, bitcoind, chainparams):
     assert l1_funding_txid == l2_funding_txid
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_rbf_to_chain_before_commit(node_factory, bitcoind, chainparams):
@@ -1163,6 +1170,7 @@ def test_rbf_no_overlap(node_factory, bitcoind, chainparams):
         l1.rpc.openchannel_update(chan_id, bump['psbt'])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_rbf_fails_to_broadcast(node_factory, bitcoind, chainparams):
@@ -1244,6 +1252,7 @@ def test_rbf_fails_to_broadcast(node_factory, bitcoind, chainparams):
     assert last_txs['tx']
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_rbf_broadcast_close_inflights(node_factory, bitcoind, chainparams):
@@ -1319,6 +1328,7 @@ def test_rbf_broadcast_close_inflights(node_factory, bitcoind, chainparams):
     assert inflights[1]['scratch_txid'] not in bitcoind.rpc.getrawmempool()
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_rbf_non_last_mined(node_factory, bitcoind, chainparams):
@@ -1419,6 +1429,7 @@ def test_rbf_non_last_mined(node_factory, bitcoind, chainparams):
     l1.daemon.wait_for_log(r'to ONCHAIN')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_funder_options(node_factory, bitcoind):
@@ -1485,6 +1496,8 @@ def test_funder_options(node_factory, bitcoind):
     assert chan_info['funding']['local_funds_msat'] == Millisatoshi('1000000000msat')
 
 
+# policy-onchain-no-fund-inbound validate_onchain_tx: can't sign for inbound channel: dual-funding not supported yet
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 def test_funder_contribution_limits(node_factory, bitcoind):
     opts = {'experimental-dual-fund': None,
@@ -2325,6 +2338,7 @@ def test_openchannel_no_confirmed_inputs_opener(node_factory, bitcoind):
     wait_for(lambda: l2.rpc.listpeerchannels()['channels'] == [])
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @pytest.mark.openchannel('v2')
 def test_openchannel_no_unconfirmed_inputs_accepter(node_factory, bitcoind):
     """ If the accepter flags 'require-confirmed-inputs' for an open,
