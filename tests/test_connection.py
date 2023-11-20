@@ -584,6 +584,7 @@ def test_disconnect_fundee(node_factory):
     assert len(l2.rpc.listpeers()) == 1
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_disconnect_fundee_v2(node_factory):
@@ -660,6 +661,7 @@ def test_disconnect_half_signed_v2(node_factory):
     assert len(l1.rpc.listpeerchannels(l2.info['id'])['channels']) == 1
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
 def test_reconnect_signed(node_factory):
@@ -1212,7 +1214,8 @@ def test_v2_open(node_factory, bitcoind, chainparams):
     result = l1.rpc.waitsendpay(p['payment_hash'])
     assert(result['status'] == 'complete')
 
-
+# policy failed: policy-onchain-no-channel-push validate_onchain_tx: channel push not allowed: dual-funding not supported yet
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @pytest.mark.openchannel('v1')
 def test_funding_push(node_factory, bitcoind, chainparams):
     """ Try to push peer some sats """
@@ -1836,6 +1839,7 @@ def test_multifunding_v1_v2_mixed(node_factory, bitcoind):
         l1.rpc.pay(inv)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_multifunding_v2_exclusive(node_factory, bitcoind):
