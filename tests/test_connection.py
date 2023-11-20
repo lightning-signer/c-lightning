@@ -584,6 +584,7 @@ def test_disconnect_fundee(node_factory):
     assert len(l2.rpc.listpeers()) == 1
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_disconnect_fundee_v2(node_factory):
@@ -660,6 +661,7 @@ def test_disconnect_half_signed_v2(node_factory):
     assert len(l1.rpc.listpeerchannels(l2.info['id'])['channels']) == 1
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
 def test_reconnect_signed(node_factory):
@@ -844,6 +846,7 @@ def test_reconnect_sender_add1(node_factory):
         l1.daemon.wait_for_log('Already have funding locked in')
 
     # This will send commit, so will reconnect as required.
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
 
 
@@ -874,6 +877,7 @@ def test_reconnect_sender_add(node_factory):
     route = [{'amount_msat': amt, 'id': l2.info['id'], 'delay': 5, 'channel': first_scid(l1, l2)}]
 
     # This will send commit, so will reconnect as required.
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
     # Should have printed this for every reconnect.
     for i in range(0, len(disconnects)):
@@ -905,6 +909,7 @@ def test_reconnect_receiver_add(node_factory):
     assert only_one(l2.rpc.listinvoices('testpayment2')['invoices'])['status'] == 'unpaid'
 
     route = [{'amount_msat': amt, 'id': l2.info['id'], 'delay': 5, 'channel': first_scid(l1, l2)}]
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
     for i in range(len(disconnects)):
         l1.daemon.wait_for_log('Already have funding locked in')
@@ -934,6 +939,7 @@ def test_reconnect_receiver_fulfill(node_factory):
     assert only_one(l2.rpc.listinvoices('testpayment2')['invoices'])['status'] == 'unpaid'
 
     route = [{'amount_msat': amt, 'id': l2.info['id'], 'delay': 5, 'channel': first_scid(l1, l2)}]
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
     for i in range(len(disconnects)):
         l1.daemon.wait_for_log('Already have funding locked in')
@@ -1209,6 +1215,7 @@ def test_v2_open(node_factory, bitcoind, chainparams):
     assert(result['status'] == 'complete')
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "channel push not allowed: dual-funding not supported yet")
 @pytest.mark.openchannel('v1')
 def test_funding_push(node_factory, bitcoind, chainparams):
     """ Try to push peer some sats """
@@ -1639,6 +1646,7 @@ def test_funding_v2_cancel_race(node_factory, bitcoind, executor):
 @pytest.mark.openchannel('v1')
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(TEST_NETWORK != 'regtest', "External wallet support doesn't work with elements yet.")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "remote_hsmd can't handle random external addresses (allowlist)") # FIXME - should work w/ auto-approve
 def test_funding_close_upfront(node_factory, bitcoind):
     opts = {'plugin': os.path.join(os.getcwd(), 'tests/plugins/openchannel_hook_accepter.py')}
 
@@ -1786,6 +1794,7 @@ def test_funding_external_wallet(node_factory, bitcoind):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v1')  # We manually turn on dual-funding for select nodes
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "commit c0cc285a causes: channel stub can only return point for commitment number zero")
 def test_multifunding_v1_v2_mixed(node_factory, bitcoind):
     '''
     Simple test for multifundchannel, using v1 + v2
@@ -1832,6 +1841,7 @@ def test_multifunding_v1_v2_mixed(node_factory, bitcoind):
         l1.rpc.pay(inv)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v2')
 def test_multifunding_v2_exclusive(node_factory, bitcoind):
@@ -2047,6 +2057,7 @@ def test_multifunding_wumbo(node_factory):
     l1.rpc.multifundchannel(destinations)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "flakes too frequently w/ VLS")
 @unittest.skipIf(TEST_NETWORK == 'liquid-regtest', "Fees on elements are different")
 @pytest.mark.openchannel('v1')  # v2 the weight calculation is off by 3
 @pytest.mark.parametrize("anchors", [False, True])
@@ -2440,6 +2451,7 @@ def test_update_fee(node_factory, bitcoind):
     l2.daemon.wait_for_log('onchaind complete, forgetting peer')
 
 
+@pytest.mark.developer
 def test_fee_limits(node_factory, bitcoind):
     l1, l2, l3, l4 = node_factory.get_nodes(4, opts=[{'dev-max-fee-multiplier': 5, 'may_reconnect': True,
                                                       'allow_warning': True},
@@ -3573,6 +3585,8 @@ def test_channel_features(node_factory, bitcoind, anchors):
     assert only_one(l2.rpc.listpeerchannels()['channels'])['features'] == chan['features']
 
 
+@pytest.mark.developer("need dev-force-features")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "remote_hsmd doesn't support non-option_static_remotekey") # FIXME - should work with VLS_PERMISSIVE
 def test_nonstatic_channel(node_factory, bitcoind):
     """Smoke test for a channel without option_static_remotekey"""
     l1, l2 = node_factory.line_graph(2,
@@ -3688,6 +3702,7 @@ def test_openchannel_init_alternate(node_factory, executor):
             print("nothing to do")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "upgrade not yet supported by VLS")
 def test_upgrade_statickey(node_factory, executor):
     """l1 doesn't have option_static_remotekey, l2 offers it."""
     l1, l2 = node_factory.line_graph(2, opts=[{'may_reconnect': True,
@@ -3718,6 +3733,7 @@ def test_upgrade_statickey(node_factory, executor):
     l2.daemon.wait_for_log(r"They sent desired_channel_type \[12\]")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "upgrade not yet supported by VLS")
 def test_upgrade_statickey_onchaind(node_factory, executor, bitcoind):
     """We test penalty before/after, and unilateral before/after"""
     l1, l2 = node_factory.line_graph(2, opts=[{'may_reconnect': True,
@@ -3852,6 +3868,7 @@ def test_upgrade_statickey_onchaind(node_factory, executor, bitcoind):
     wait_for(lambda: len(l2.rpc.listpeerchannels()['channels']) == 0)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "upgrade not yet supported by VLS")
 def test_upgrade_statickey_fail(node_factory, executor, bitcoind):
     """We reconnect at all points during retransmit, and we won't upgrade."""
     l1_disconnects = ['-WIRE_COMMITMENT_SIGNED',
@@ -4165,6 +4182,7 @@ def test_multichan(node_factory, executor, bitcoind):
 
     before = l2.rpc.listpeerchannels(l3.info['id'])['channels']
     inv1 = l3.rpc.invoice(100000000, "invoice", "invoice")
+    l1.rpc.preapproveinvoice(bolt11=inv1['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, inv1['payment_hash'], payment_secret=inv1['payment_secret'])
     l1.rpc.waitsendpay(inv1['payment_hash'])
 
@@ -4192,6 +4210,7 @@ def test_multichan(node_factory, executor, bitcoind):
     before = l2.rpc.listpeerchannels(l3.info['id'])['channels']
     route[1]['channel'] = scid23b
     inv2 = l3.rpc.invoice(100000000, "invoice2", "invoice2")
+    l1.rpc.preapproveinvoice(bolt11=inv2['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, inv2['payment_hash'], payment_secret=inv2['payment_secret'])
     l1.rpc.waitsendpay(inv2['payment_hash'])
     # Wait until HTLCs fully settled
@@ -4236,6 +4255,7 @@ def test_multichan(node_factory, executor, bitcoind):
     # We can actually pay by *closed* scid (at least until it's completely forgotten)
     route[1]['channel'] = scid23a
     inv3 = l3.rpc.invoice(100000000, "invoice3", "invoice3")
+    l1.rpc.preapproveinvoice(bolt11=inv3['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, inv3['payment_hash'], payment_secret=inv3['payment_secret'])
     l1.rpc.waitsendpay(inv3['payment_hash'])
 

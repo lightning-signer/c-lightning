@@ -334,6 +334,16 @@
             "complete": 1,
             "pending": 0
         },
+        "WaitIndexname": {
+            "created": 0,
+            "deleted": 2,
+            "updated": 1
+        },
+        "WaitSubsystem": {
+            "forwards": 1,
+            "invoices": 0,
+            "sendpays": 2
+        },
         "WaitanyinvoiceStatus": {
             "expired": 1,
             "paid": 0
@@ -696,6 +706,35 @@
             "Feerates.perkb": 2,
             "Feerates.perkw": 3,
             "Feerates.warning_missing_feerates": 1
+        },
+        "FetchinvoiceChanges": {
+            "FetchInvoice.changes.amount_msat": 5,
+            "FetchInvoice.changes.description": 2,
+            "FetchInvoice.changes.description_appended": 1,
+            "FetchInvoice.changes.vendor": 4,
+            "FetchInvoice.changes.vendor_removed": 3
+        },
+        "FetchinvoiceNext_period": {
+            "FetchInvoice.next_period.counter": 1,
+            "FetchInvoice.next_period.endtime": 3,
+            "FetchInvoice.next_period.paywindow_end": 5,
+            "FetchInvoice.next_period.paywindow_start": 4,
+            "FetchInvoice.next_period.starttime": 2
+        },
+        "FetchinvoiceRequest": {
+            "FetchInvoice.amount_msat": 2,
+            "FetchInvoice.offer": 1,
+            "FetchInvoice.payer_note": 8,
+            "FetchInvoice.quantity": 3,
+            "FetchInvoice.recurrence_counter": 4,
+            "FetchInvoice.recurrence_label": 6,
+            "FetchInvoice.recurrence_start": 5,
+            "FetchInvoice.timeout": 7
+        },
+        "FetchinvoiceResponse": {
+            "FetchInvoice.changes": 2,
+            "FetchInvoice.invoice": 1,
+            "FetchInvoice.next_period": 3
         },
         "FundchannelRequest": {
             "FundChannel.amount": 1,
@@ -1602,6 +1641,17 @@
             "UtxoPsbt.feerate_per_kw": 2,
             "UtxoPsbt.psbt": 1,
             "UtxoPsbt.reservations[]": 6
+        },
+        "WaitRequest": {
+            "Wait.indexname": 2,
+            "Wait.nextvalue": 3,
+            "Wait.subsystem": 1
+        },
+        "WaitResponse": {
+            "Wait.created": 2,
+            "Wait.deleted": 4,
+            "Wait.subsystem": 1,
+            "Wait.updated": 3
         },
         "WaitanyinvoicePaid_outpoint": {
             "WaitAnyInvoice.paid_outpoint.outnum": 2,
@@ -2850,6 +2900,94 @@
             "deprecated": false
         },
         "Feerates.warning_missing_feerates": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice": {
+            "added": "pre-v0.10.1",
+            "deprecated": null
+        },
+        "FetchInvoice.amount_msat": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.changes": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.changes.amount_msat": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.changes.description": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.changes.description_appended": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.changes.vendor": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.changes.vendor_removed": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.invoice": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.next_period": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.next_period.counter": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.next_period.endtime": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.next_period.paywindow_end": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.next_period.paywindow_start": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.next_period.starttime": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.offer": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.payer_note": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.quantity": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.recurrence_counter": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.recurrence_label": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.recurrence_start": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "FetchInvoice.timeout": {
             "added": "pre-v0.10.1",
             "deprecated": false
         },
@@ -5610,6 +5748,34 @@
             "deprecated": false
         },
         "UtxoPsbt.utxos[]": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "Wait": {
+            "added": "v23.08",
+            "deprecated": null
+        },
+        "Wait.created": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "Wait.deleted": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "Wait.indexname": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "Wait.nextvalue": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "Wait.subsystem": {
+            "added": "pre-v0.10.1",
+            "deprecated": false
+        },
+        "Wait.updated": {
             "added": "pre-v0.10.1",
             "deprecated": false
         },

@@ -52,6 +52,7 @@ service Node {
 	rpc Decode(DecodeRequest) returns (DecodeResponse) {}
 	rpc Disconnect(DisconnectRequest) returns (DisconnectResponse) {}
 	rpc Feerates(FeeratesRequest) returns (FeeratesResponse) {}
+	rpc FetchInvoice(FetchinvoiceRequest) returns (FetchinvoiceResponse) {}
 	rpc FundChannel(FundchannelRequest) returns (FundchannelResponse) {}
 	rpc GetRoute(GetrouteRequest) returns (GetrouteResponse) {}
 	rpc ListForwards(ListforwardsRequest) returns (ListforwardsResponse) {}
@@ -63,6 +64,7 @@ service Node {
 	rpc SignInvoice(SigninvoiceRequest) returns (SigninvoiceResponse) {}
 	rpc SignMessage(SignmessageRequest) returns (SignmessageResponse) {}
 	rpc WaitBlockHeight(WaitblockheightRequest) returns (WaitblockheightResponse) {}
+	rpc Wait(WaitRequest) returns (WaitResponse) {}
 	rpc Stop(StopRequest) returns (StopResponse) {}
 	rpc PreApproveKeysend(PreapprovekeysendRequest) returns (PreapprovekeysendResponse) {}
 	rpc PreApproveInvoice(PreapproveinvoiceRequest) returns (PreapproveinvoiceResponse) {}
@@ -1566,6 +1568,39 @@ message FeeratesOnchain_fee_estimates {
 	uint64 htlc_success_satoshis = 5;
 }
 
+message FetchinvoiceRequest {
+	string offer = 1;
+	optional Amount amount_msat = 2;
+	optional uint64 quantity = 3;
+	optional uint64 recurrence_counter = 4;
+	optional double recurrence_start = 5;
+	optional string recurrence_label = 6;
+	optional double timeout = 7;
+	optional string payer_note = 8;
+}
+
+message FetchinvoiceResponse {
+	string invoice = 1;
+	FetchinvoiceChanges changes = 2;
+	optional FetchinvoiceNext_period next_period = 3;
+}
+
+message FetchinvoiceChanges {
+	optional string description_appended = 1;
+	optional string description = 2;
+	optional string vendor_removed = 3;
+	optional string vendor = 4;
+	optional Amount amount_msat = 5;
+}
+
+message FetchinvoiceNext_period {
+	uint64 counter = 1;
+	uint64 starttime = 2;
+	uint64 endtime = 3;
+	uint64 paywindow_start = 4;
+	uint64 paywindow_end = 5;
+}
+
 message FundchannelRequest {
 	bytes id = 9;
 	AmountOrAll amount = 1;
@@ -1803,6 +1838,37 @@ message WaitblockheightRequest {
 
 message WaitblockheightResponse {
 	uint32 blockheight = 1;
+}
+
+message WaitRequest {
+	// Wait.subsystem
+	enum WaitSubsystem {
+		INVOICES = 0;
+		FORWARDS = 1;
+		SENDPAYS = 2;
+	}
+	// Wait.indexname
+	enum WaitIndexname {
+		CREATED = 0;
+		UPDATED = 1;
+		DELETED = 2;
+	}
+	WaitSubsystem subsystem = 1;
+	WaitIndexname indexname = 2;
+	uint64 nextvalue = 3;
+}
+
+message WaitResponse {
+	// Wait.subsystem
+	enum WaitSubsystem {
+		INVOICES = 0;
+		FORWARDS = 1;
+		SENDPAYS = 2;
+	}
+	WaitSubsystem subsystem = 1;
+	optional uint64 created = 2;
+	optional uint64 updated = 3;
+	optional uint64 deleted = 4;
 }
 
 message StopRequest {

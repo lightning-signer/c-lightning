@@ -6,6 +6,7 @@ import random
 import time
 import json
 import subprocess
+import unittest
 
 
 def test_simple(node_factory):
@@ -72,6 +73,8 @@ def test_mpp(node_factory):
 
     send_amount = Millisatoshi('1200000sat')
     inv = l6.rpc.invoice(send_amount, 'test_renepay', 'description')['bolt11']
+    # FIXME - This shouldn't be necessary, renepay should automatically generate ... vls-hsmd:#6
+    l1.rpc.preapproveinvoice(bolt11=inv) # let the signer know this payment is coming
     details = l1.rpc.call('renepay', {'invstring': inv})
     assert details['status'] == 'complete'
     assert details['amount_msat'] == send_amount
@@ -215,6 +218,7 @@ def test_amounts(node_factory):
     assert invoice['amount_received_msat'] >= Millisatoshi(123456)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 def test_limits(node_factory):
     '''
     Topology:
@@ -312,7 +316,7 @@ def start_channels(connections):
         for n2 in nodes:
             wait_for(lambda: 'alias' in only_one(n.rpc.listnodes(n2.info['id'])['nodes']))
 
-
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 def test_hardmpp(node_factory):
     '''
     Topology:

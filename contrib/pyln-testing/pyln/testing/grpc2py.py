@@ -1268,6 +1268,32 @@ def feerates2py(m):
     })
 
 
+def fetchinvoice_changes2py(m):
+    return remove_default({
+        "description_appended": m.description_appended,  # PrimitiveField in generate_composite
+        "description": m.description,  # PrimitiveField in generate_composite
+        "vendor_removed": m.vendor_removed,  # PrimitiveField in generate_composite
+        "vendor": m.vendor,  # PrimitiveField in generate_composite
+        "amount_msat": amount2msat(m.amount_msat),  # PrimitiveField in generate_composite
+    })
+
+
+def fetchinvoice_next_period2py(m):
+    return remove_default({
+        "counter": m.counter,  # PrimitiveField in generate_composite
+        "starttime": m.starttime,  # PrimitiveField in generate_composite
+        "endtime": m.endtime,  # PrimitiveField in generate_composite
+        "paywindow_start": m.paywindow_start,  # PrimitiveField in generate_composite
+        "paywindow_end": m.paywindow_end,  # PrimitiveField in generate_composite
+    })
+
+
+def fetchinvoice2py(m):
+    return remove_default({
+        "invoice": m.invoice,  # PrimitiveField in generate_composite
+    })
+
+
 def fundchannel2py(m):
     return remove_default({
         "tx": hexlify(m.tx),  # PrimitiveField in generate_composite
@@ -1412,6 +1438,15 @@ def signmessage2py(m):
 def waitblockheight2py(m):
     return remove_default({
         "blockheight": m.blockheight,  # PrimitiveField in generate_composite
+    })
+
+
+def wait2py(m):
+    return remove_default({
+        "subsystem": str(m.subsystem),  # EnumField in generate_composite
+        "created": m.created,  # PrimitiveField in generate_composite
+        "updated": m.updated,  # PrimitiveField in generate_composite
+        "deleted": m.deleted,  # PrimitiveField in generate_composite
     })
 
 

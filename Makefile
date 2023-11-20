@@ -68,7 +68,7 @@ COMPAT_CFLAGS=-DCOMPAT_V052=1 -DCOMPAT_V060=1 -DCOMPAT_V061=1 -DCOMPAT_V062=1 -D
 endif
 
 # (method=thread to support xdist)
-PYTEST_OPTS := -v -p no:logging $(PYTEST_OPTS)
+PYTEST_OPTS := -v -p no:logging $(PYTEST_OPTS) $(PYTEST_MOREOPTS)
 MY_CHECK_PYTHONPATH=$${PYTHONPATH}$${PYTHONPATH:+:}$(shell pwd)/contrib/pyln-client:$(shell pwd)/contrib/pyln-testing:$(shell pwd)/contrib/pyln-proto/:$(shell pwd)/external/lnprototest:$(shell pwd)/contrib/pyln-spec/bolt1:$(shell pwd)/contrib/pyln-spec/bolt2:$(shell pwd)/contrib/pyln-spec/bolt4:$(shell pwd)/contrib/pyln-spec/bolt7
 # Collect generated python files to be excluded from lint checks
 PYTHON_GENERATED= \
@@ -718,7 +718,9 @@ clean: obsclean
 
 
 PYLNS=client proto testing
-# See doc/MAKING-RELEASES.md
+# See doc/contribute-to-core-lightning/contributor-workflow.md
+update-py-versions: update-pyln-versions update-clnrest-version update-poetry-lock
+
 update-pyln-versions: $(PYLNS:%=update-pyln-version-%)
 
 update-pyln-version-%:
@@ -729,6 +731,13 @@ pyln-release:  $(PYLNS:%=pyln-release-%)
 
 pyln-release-%:
 	cd contrib/pyln-$* && $(MAKE) prod-release
+
+update-clnrest-version:
+	@if [ -z "$(NEW_VERSION)" ]; then echo "Set NEW_VERSION!" >&2; exit 1; fi
+	cd plugins/clnrest && $(MAKE) upgrade-version
+
+update-poetry-lock:
+	poetry update clnrest pyln-client pyln-proto pyln-testing
 
 update-mocks: $(ALL_TEST_PROGRAMS:%=update-mocks/%.c)
 
