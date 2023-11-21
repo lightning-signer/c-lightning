@@ -245,6 +245,7 @@ def test_pay0(node_factory):
         l1.rpc.waitsendpay(rhash)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "feerate above maximum: 880782 > 151000")
 def test_pay_disconnect(node_factory, bitcoind):
     """If the remote node has disconnected, we fail payment, but can try again when it reconnects"""
     l1, l2 = node_factory.line_graph(2, opts={'dev-max-fee-multiplier': 5,
@@ -555,6 +556,7 @@ def test_pay_maxfee_shadow(node_factory):
         assert pay_status["amount_msat"] == Millisatoshi(amount)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "fails multiple policy checks")
 def test_sendpay(node_factory):
     l1, l2 = node_factory.line_graph(2, fundamount=10**6)
 
@@ -2619,6 +2621,7 @@ def test_setchannel_startup_opts(node_factory, bitcoind):
 
 
 @pytest.mark.parametrize("anchors", [False, True])
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 def test_channel_spendable(node_factory, bitcoind, anchors):
     """Test that spendable_msat is accurate"""
     sats = 10**6
@@ -2678,6 +2681,7 @@ def test_channel_spendable(node_factory, bitcoind, anchors):
     l2.rpc.waitsendpay(payment_hash, TIMEOUT)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 def test_channel_receivable(node_factory, bitcoind):
     """Test that receivable_msat is accurate"""
     sats = 10**6
@@ -2733,6 +2737,7 @@ def test_channel_receivable(node_factory, bitcoind):
     l2.rpc.waitsendpay(payment_hash, TIMEOUT)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 def test_channel_spendable_large(node_factory, bitcoind):
     """Test that spendable_msat is accurate for large channels"""
     # This is almost the max allowable spend.
@@ -2860,6 +2865,7 @@ def test_htlc_too_dusty_outgoing(node_factory, bitcoind, chainparams):
     assert res['status'] == 'pending'
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "feerate above maximum (escalates)")
 def test_htlc_too_dusty_incoming(node_factory, bitcoind):
     """ Try to hit the 'too much dust' limit, should fail the HTLC """
     l1, l2, l3 = node_factory.line_graph(3, opts=[{'may_reconnect': True,
@@ -2919,6 +2925,7 @@ def test_error_returns_blockheight(node_factory, bitcoind):
             == '400f{:016x}{:08x}'.format(100, bitcoind.rpc.getblockcount()))
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "inv_nosecret: The invoice is missing the mandatory payment secret")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Invoice is network specific")
 def test_pay_no_secret(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, wait_for_announce=True)
@@ -4201,6 +4208,7 @@ def test_mpp_interference_2(node_factory, bitcoind, executor):
 
 
 @pytest.mark.slow_test
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "remote_hsmd doesn't allow push of greater than 20k sat")
 def test_mpp_overload_payee(node_factory, bitcoind):
     """
     We had a bug where if the payer is unusually well-connected compared
@@ -4440,6 +4448,7 @@ def test_offer(node_factory, bitcoind):
                               'recurrence_base': '@1456740000'})
 
 
+#@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "Invalid bech32: invalid checksum")
 def test_offer_deprecated_api(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, opts={'allow-deprecated-apis': True})
 
@@ -4463,6 +4472,7 @@ def test_fetchinvoice_3hop(node_factory, bitcoind):
     l1.rpc.call('fetchinvoice', {'offer': offer1['bolt12']})
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "invoice not bolt12: InvalidSemantics(UnsupportedCurrency) and not bolt11: Bech32Error(InvalidChecksum)")
 def test_fetchinvoice(node_factory, bitcoind):
     # We remove the conversion plugin on l3, causing it to get upset.
     l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True,
@@ -4598,6 +4608,7 @@ def test_fetchinvoice(node_factory, bitcoind):
         l1.rpc.call('fetchinvoice', {'offer': offer1['bolt12'], 'timeout': 10})
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "invoice not bolt12: Decode(UnknownRequiredFeature) and not bolt11: Bech32Error(InvalidChecksum)")
 def test_fetchinvoice_recurrence(node_factory, bitcoind):
     """Test for our recurrence extension"""
     l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True)
@@ -4691,6 +4702,7 @@ def test_fetchinvoice_recurrence(node_factory, bitcoind):
                                      'recurrence_label': 'test paywindow'})
 
 
+#@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "invoice from offer: Invalid bech32: invalid checksum")
 def test_fetchinvoice_autoconnect(node_factory, bitcoind):
     """We should autoconnect if we need to, to route."""
 
@@ -4829,6 +4841,7 @@ def test_dev_rawrequest(node_factory):
     assert 'invoice' in ret
 
 
+#@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "sendinvoice: bolt12: Invalid bech32: invalid checksum")
 def test_sendinvoice(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, wait_for_announce=True)
 
@@ -5284,6 +5297,7 @@ def test_payerkey(node_factory):
         n.rpc.createinvoicerequest(encoded, False)['bolt12']
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_pay_multichannel_use_zeroconf(bitcoind, node_factory):
     """Check that we use the zeroconf direct channel to pay when we need to"""
     # 0. Setup normal channel, 200k sats.
