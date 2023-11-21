@@ -130,6 +130,7 @@ def test_invoice_weirdstring(node_factory):
     l1.rpc.delinvoice(weird_label, "unpaid")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "sign_invoice: already have a different invoice for same secret")
 def test_invoice_preimage(node_factory):
     """Test explicit invoice 'preimage'.
     """
