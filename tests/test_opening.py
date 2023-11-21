@@ -59,7 +59,6 @@ def test_queryrates(node_factory, bitcoind):
 
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
 @pytest.mark.openchannel('v1')  # Mixed v1 + v2, v2 manually turned on
-#@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "commit c0cc285a causes: channel stub can only return point for commitment number zero")
 def test_multifunding_v2_best_effort(node_factory, bitcoind):
     '''
     Check that best_effort flag works.
@@ -1504,7 +1503,6 @@ def test_funder_options(node_factory, bitcoind):
 # policy-onchain-no-fund-inbound validate_onchain_tx: can't sign for inbound channel: dual-funding not supported yet
 @unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', 'elementsd doesnt yet support PSBT features we need')
-#@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "dual-funding not supported yet") # FIXME - should work with VLS_PERMISSIVE
 def test_funder_contribution_limits(node_factory, bitcoind):
     opts = {'experimental-dual-fund': None,
             'feerates': (5000, 5000, 5000, 5000)}
@@ -1645,7 +1643,6 @@ def test_zeroconf_mindepth(bitcoind, node_factory):
     wait_for(lambda: only_one(l2.rpc.listpeerchannels()['channels'])['state'] == "CHANNELD_NORMAL")
 
 
-#@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_zeroconf_open(bitcoind, node_factory):
     """Let's open a zeroconf channel
 
