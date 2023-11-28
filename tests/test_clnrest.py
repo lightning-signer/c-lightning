@@ -252,7 +252,7 @@ def test_clnrest_large_response(node_factory):
 # to complain with the errors F811 like this "F811 redefinition of
 # unused 'message'".
 
-def notifications_received_via_websocket(l1, base_url, http_session):
+def notifications_received_via_websocket(l1, base_url, http_session, rpc_method='invoice', rpc_params=[100000, 'label', 'description']):
     """Return the list of notifications received by the websocket client.
 
     We try to connect to the websocket server running at `base_url`
@@ -271,8 +271,9 @@ def notifications_received_via_websocket(l1, base_url, http_session):
         notifications.append(data)
     sio.connect(base_url)
     time.sleep(2)
-    # trigger `invoice_creation` notification
-    l1.rpc.invoice(10000, "label", "description")
+    # trigger notification by calling method
+    rpc_call = getattr(l1.rpc, rpc_method)
+    rpc_call(*rpc_params)
     time.sleep(2)
     sio.disconnect()
     return notifications
@@ -372,6 +373,28 @@ def test_clnrest_websocket_rune_no_listnotifications(node_factory):
     http_session.headers.update({"rune": rune_no_clnrest_notifications})
     notifications = notifications_received_via_websocket(l1, base_url, http_session)
     assert len([n for n in notifications if n.find('invoice_creation') > 0]) == 0
+
+
+def test_clnrest_numeric_msat_notification(node_factory):
+    """Test that msat fields are integers in notifications also."""
+    # start a node with clnrest
+    rest_port = str(reserve())
+    base_url = 'http://127.0.0.1:' + rest_port
+    l1, l2 = node_factory.get_nodes(2, opts=[{}, {'clnrest-port': rest_port, 'clnrest-protocol': 'http'}])
+    node_factory.join_nodes([l1, l2], wait_for_announce=True)
+    http_session = http_session_with_retry()
+
+    # create an invoice on l2
+    inv = l2.rpc.invoice(5000000, 'test_invoice_payment_notification', 'test_invoice_payment_notification_description')
+
+    # create rune authorizing listclnrest-notifications method
+    rune_clnrest_notifications = l2.rpc.createrune(restrictions=[["method=listclnrest-notifications"]])['rune']
+    http_session.headers.update({"rune": rune_clnrest_notifications})
+    notifications = notifications_received_via_websocket(l1, base_url, http_session, 'pay', [inv['bolt11']])
+    filtered_notifications = [n for n in notifications if 'invoice_creation' in n]
+
+    assert isinstance(filtered_notifications[0]['invoice_creation']['msat'], int)
+    assert filtered_notifications[0]['invoice_creation']['msat'] == 5000000
 
 
 def test_clnrest_options(node_factory):
