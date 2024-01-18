@@ -21,5 +21,5 @@
  * v4 with buried outpoint check: f44fae666895cab0347b3de7c245267c71cc7de834827b83e286e86318c08aec
  */
 #define HSM_MIN_VERSION 3
-#define HSM_MAX_VERSION 4
+#define HSM_MAX_VERSION 5
 #endif /* LIGHTNING_COMMON_HSM_VERSION_H */
