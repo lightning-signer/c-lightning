@@ -169,13 +169,17 @@ def test_pay(node_factory):
     # Check payment of any-amount invoice.
     for i in range(5):
         label = "any{}".format(i)
-        inv2 = l2.rpc.invoice("any", label, 'description')['bolt11']
+        inv2x = l2.rpc.invoice("any", label, 'description')
+        rhash = inv2x['payment_hash']
+        inv2 = inv2x['bolt11']
         # Must provide an amount!
         with pytest.raises(RpcError):
             l1.rpc.call('renepay', {'invstring': inv2, 'dev_use_shadow': False})
 
+        amt = random.randint(1000, 999999)
+        l1.rpc.preapprovekeysend(l2.info['id'], rhash, amt)
         l1.rpc.call('renepay', {'invstring': inv2, 'dev_use_shadow': False,
-                    'amount_msat': random.randint(1000, 999999)})
+                                'amount_msat': amt})
 
     # Should see 6 completed payments
     assert len(l1.rpc.listsendpays()['payments']) == 6
@@ -402,6 +406,7 @@ def test_fee_allocation(node_factory):
                     (l1, l3, 1000000), (l3, l4, 2000000)])
 
     inv = l4.rpc.invoice("1500000sat", "inv", 'description')
+    l1.rpc.preapprovekeysend(l4.info['id'], inv['payment_hash'], 1500000000 + 75000000)
     l1.rpc.call('renepay', {'invstring': inv['bolt11'], 'maxfee': '75000sat'})
     l1.wait_for_htlcs()
     invoice = only_one(l4.rpc.listinvoices('inv')['invoices'])
@@ -431,6 +436,7 @@ def test_htlc_max(node_factory):
 
     inv = l6.rpc.invoice("1800000sat", "inv", 'description')
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.call('renepay', {'invstring': inv['bolt11']})
     l1.wait_for_htlcs()
     invoice = only_one(l6.rpc.listinvoices('inv')['invoices'])
