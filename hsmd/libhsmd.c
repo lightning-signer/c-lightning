@@ -2288,7 +2288,6 @@ u8 *hsmd_init(struct secret hsm_secret, const u64 hsmd_version,
 		    &secretstuff.hsm_secret, sizeof(secretstuff.hsm_secret),
 		    "derived secrets", strlen("derived secrets"));
 
-	u64 mutual_version = hsmd_version < 5 ? hsmd_version : 5;
 	/*~ Note: marshalling a bip32 tree only marshals the public side,
 	 * not the secrets!  So we're not actually handing them out here!
 	 *
@@ -2296,7 +2295,7 @@ u8 *hsmd_init(struct secret hsm_secret, const u64 hsmd_version,
 	 * incompatibility detection) with alternate implementations.
 	 */
 	return take(towire_hsmd_init_reply_v4(
-			    NULL, mutual_version,
+			    NULL, hsmd_version,
 			    /* Capabilities arg needs to be a tal array */
 			    tal_dup_arr(tmpctx, u32, capabilities,
 					ARRAY_SIZE(capabilities), 0),
