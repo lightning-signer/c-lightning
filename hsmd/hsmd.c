@@ -436,7 +436,7 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	struct secret *hsm_encryption_key;
 	struct bip32_key_version bip32_key_version;
 	u32 minversion, maxversion;
-	const u32 our_minversion = 2, our_maxversion = 3;
+	const u32 our_minversion = 4, our_maxversion = 5;
 
 	/* This must be lightningd. */
 	assert(is_lightningd(c));
@@ -489,7 +489,10 @@ static struct io_plan *init_hsm(struct io_conn *conn,
 	if (hsm_encryption_key)
 		discard_key(take(hsm_encryption_key));
 
-	return req_reply(conn, c, hsmd_init(hsm_secret, bip32_key_version));
+	/* Define the minimum common max version for the hsmd one */
+	u64 mutual_version = maxversion < our_maxversion ? maxversion : our_maxversion;
+	return req_reply(conn, c, hsmd_init(hsm_secret, mutual_version,
+					    bip32_key_version));
 }
 
 /*~ Since we process requests then service them in strict order, and because
@@ -701,7 +704,6 @@ static struct io_plan *handle_client(struct io_conn *conn, struct client *c)
 	case WIRE_HSMD_NODE_ANNOUNCEMENT_SIG_REPLY:
 	case WIRE_HSMD_SIGN_WITHDRAWAL_REPLY:
 	case WIRE_HSMD_SIGN_INVOICE_REPLY:
-	case WIRE_HSMD_INIT_REPLY_V2:
 	case WIRE_HSMD_INIT_REPLY_V4:
 	case WIRE_HSMD_DERIVE_SECRET_REPLY:
 	case WIRE_HSMSTATUS_CLIENT_BAD_REQUEST:

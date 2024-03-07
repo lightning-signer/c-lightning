@@ -130,6 +130,8 @@ def test_invoice_weirdstring(node_factory):
     l1.rpc.delinvoice(weird_label, "unpaid")
 
 
+# Can't be filtered with VLS_PERMISSIVE, re-using preimage corrupts internal data ...
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "already have a different invoice for same secret")
 def test_invoice_preimage(node_factory):
     """Test explicit invoice 'preimage'.
     """
@@ -958,6 +960,7 @@ def test_expiry_startup_crash(node_factory, bitcoind):
     l1.start()
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "no such channel")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "The DB migration is network specific due to the chain var.")
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "This test is based on a sqlite3 snapshot")
 def test_invoices_wait_db_migration(node_factory, bitcoind):

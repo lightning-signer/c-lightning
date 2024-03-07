@@ -61,7 +61,9 @@ def test_pay(node_factory):
         # Must provide an amount!
         with pytest.raises(RpcError):
             l1.rpc.pay(inv2)
-        l1.dev_pay(inv2, random.randint(1000, 999999), dev_use_shadow=False)
+        # WORKAROUND - reduce the possible amount to avoid HTLC creation which
+        # fails the VLS balance check because the prior invoice was 0 amount.
+        l1.dev_pay(inv2, random.randint(1000, 499999), dev_use_shadow=False)
 
     # Should see 6 completed payments
     assert len(l1.rpc.listsendpays()['payments']) == 6
@@ -245,6 +247,7 @@ def test_pay0(node_factory):
         l1.rpc.waitsendpay(rhash)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "feerate above maximum: 880782 > 151000")
 def test_pay_disconnect(node_factory, bitcoind):
     """If the remote node has disconnected, we fail payment, but can try again when it reconnects"""
     l1, l2 = node_factory.line_graph(2, opts={'dev-max-fee-multiplier': 5,
@@ -555,6 +558,7 @@ def test_pay_maxfee_shadow(node_factory):
         assert pay_status["amount_msat"] == Millisatoshi(amount)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "fails multiple policy checks")
 def test_sendpay(node_factory):
     l1, l2 = node_factory.line_graph(2, fundamount=10**6)
 
@@ -577,6 +581,7 @@ def test_sendpay(node_factory):
     with pytest.raises(RpcError):
         rs = copy.deepcopy(routestep)
         rs['amount_msat'] = rs['amount_msat'] - 1
+        l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
         l1.rpc.sendpay([rs], rhash, payment_secret=inv['payment_secret'])
         l1.rpc.waitsendpay(rhash)
     assert invoice_unpaid(l2, 'testpayment2')
@@ -585,6 +590,7 @@ def test_sendpay(node_factory):
     with pytest.raises(RpcError):
         rs = copy.deepcopy(routestep)
         rs['amount_msat'] = rs['amount_msat'] * 2 + 1
+        l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
         l1.rpc.sendpay([rs], rhash, payment_secret=inv['payment_secret'])
         l1.rpc.waitsendpay(rhash)
     assert invoice_unpaid(l2, 'testpayment2')
@@ -593,6 +599,7 @@ def test_sendpay(node_factory):
     with pytest.raises(RpcError):
         rs = copy.deepcopy(routestep)
         rs['delay'] = rs['delay'] - 2
+        l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
         l1.rpc.sendpay([rs], rhash, payment_secret=inv['payment_secret'])
         l1.rpc.waitsendpay(rhash)
     assert invoice_unpaid(l2, 'testpayment2')
@@ -602,17 +609,20 @@ def test_sendpay(node_factory):
     with pytest.raises(RpcError):
         rs = copy.deepcopy(routestep)
         rs['id'] = '00000000000000000000000000000000'
+        l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
         l1.rpc.sendpay([rs], rhash, payment_secret=inv['payment_secret'])
     assert invoice_unpaid(l2, 'testpayment2')
     l1.rpc.check_request_schemas = True
 
     # Bad payment_secret
+    l1.rpc.preapprovekeysend(l2.info['id'], rhash, routestep['amount_msat'])
     l1.rpc.sendpay([routestep], rhash, payment_secret="00" * 32)
     with pytest.raises(RpcError):
         l1.rpc.waitsendpay(rhash)
     assert invoice_unpaid(l2, 'testpayment2')
 
     # Missing payment_secret
+    l1.rpc.preapprovekeysend(l2.info['id'], rhash, routestep['amount_msat'])
     l1.rpc.sendpay([routestep], rhash)
     with pytest.raises(RpcError):
         l1.rpc.waitsendpay(rhash)
@@ -628,6 +638,7 @@ def test_sendpay(node_factory):
 
     # This works.
     before = int(time.time())
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     details = l1.rpc.sendpay([routestep], rhash, payment_secret=inv['payment_secret'])
     after = int(time.time())
     preimage = l1.rpc.waitsendpay(rhash)['payment_preimage']
@@ -670,6 +681,7 @@ def test_sendpay(node_factory):
     rhash = inv['payment_hash']
     assert only_one(l2.rpc.listinvoices('testpayment3')['invoices'])['status'] == 'unpaid'
     routestep = {'amount_msat': amt * 2, 'id': l2.info['id'], 'delay': 5, 'channel': first_scid(l1, l2)}
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay([routestep], rhash, payment_secret=inv['payment_secret'])
     preimage3 = l1.rpc.waitsendpay(rhash)['payment_preimage']
     assert only_one(l2.rpc.listinvoices('testpayment3')['invoices'])['status'] == 'paid'
@@ -705,6 +717,7 @@ def test_repay(node_factory):
         'delay': 5,
         'channel': first_scid(l1, l2)
     }
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay([routestep], inv['payment_hash'], payment_secret=inv['payment_secret'])
     l1.daemon.wait_for_log("Sending 200000000msat over 1 hops to deliver 200000000msat")
     l1.rpc.waitsendpay(inv['payment_hash'])['payment_preimage']
@@ -733,6 +746,7 @@ def test_wait_sendpay(node_factory, executor):
         'delay': 5,
         'channel': first_scid(l1, l2)
     }
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay([routestep], inv['payment_hash'], payment_secret=inv['payment_secret'])
     assert wait_created.result(TIMEOUT) == {'subsystem': 'sendpays',
                                             'created': 1,
@@ -1160,6 +1174,7 @@ def test_forward(node_factory, bitcoind):
     # Unknown other peer
     route = copy.deepcopy(baseroute)
     route[1]['id'] = '031a8dc444e41bb989653a4501e11175a488a57439b0c4947704fd6e3de5dca607'
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
     with pytest.raises(RpcError):
         l1.rpc.waitsendpay(rhash)
@@ -1305,6 +1320,7 @@ def test_forward_different_fees_and_cltv(node_factory, bitcoind):
     assert only_one(l3.rpc.listinvoices('test_forward_different_fees_and_cltv')['invoices'])['status'] == 'unpaid'
 
     # This should work.
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
     l1.rpc.waitsendpay(rhash)
 
@@ -1373,6 +1389,7 @@ def test_forward_pad_fees_and_cltv(node_factory, bitcoind):
     # This should work.
     inv = l3.rpc.invoice(4999999, 'test_forward_pad_fees_and_cltv', 'desc')
     rhash = inv['payment_hash']
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, rhash, payment_secret=inv['payment_secret'])
     l1.rpc.waitsendpay(rhash)
     assert only_one(l3.rpc.listinvoices('test_forward_pad_fees_and_cltv')['invoices'])['status'] == 'paid'
@@ -1563,6 +1580,7 @@ def test_forward_local_failed_stats(node_factory, bitcoind, executor):
 
     l2.rpc.close(c23, 1)
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     with pytest.raises(RpcError):
         l1.rpc.sendpay(route, payment_hash, payment_secret=inv['payment_secret'])
         l1.rpc.waitsendpay(payment_hash)
@@ -1588,6 +1606,7 @@ def test_forward_local_failed_stats(node_factory, bitcoind, executor):
               'delay': 6,
               'channel': c24}]
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     with pytest.raises(RpcError):
         l1.rpc.sendpay(route, payment_hash, payment_secret=inv['payment_secret'])
         l1.rpc.waitsendpay(payment_hash)
@@ -1614,6 +1633,7 @@ def test_forward_local_failed_stats(node_factory, bitcoind, executor):
               'delay': 6,
               'channel': c25}]
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     with pytest.raises(RpcError):
         l1.rpc.sendpay(route, payment_hash, payment_secret=inv['payment_secret'])
         l1.rpc.waitsendpay(payment_hash)
@@ -1637,6 +1657,7 @@ def test_forward_local_failed_stats(node_factory, bitcoind, executor):
     # Replace id with a different pubkey, so onion encoded badly at l2 hop.
     route[1]['id'] = mangled_nodeid
 
+    l6.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     with pytest.raises(RpcError):
         l6.rpc.sendpay(route, payment_hash, payment_secret=inv['payment_secret'])
         l6.rpc.waitsendpay(payment_hash)
@@ -1664,6 +1685,7 @@ def test_forward_local_failed_stats(node_factory, bitcoind, executor):
               'delay': 5,
               'channel': c24}]
 
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     executor.submit(l1.rpc.sendpay, route, payment_hash, payment_secret=inv['payment_secret'])
 
     l4.daemon.wait_for_log('permfail')
@@ -1719,6 +1741,7 @@ def test_htlcs_cltv_only_difference(node_factory, bitcoind):
 
     # L2 tries to pay
     r = l2.rpc.getroute(l4.info['id'], 10**8, 1)["route"]
+    l2.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l2.rpc.sendpay(r, h, payment_secret=inv['payment_secret'])
 
     # Now increment CLTV
@@ -1727,6 +1750,7 @@ def test_htlcs_cltv_only_difference(node_factory, bitcoind):
 
     # L1 tries to pay
     r = l1.rpc.getroute(l4.info['id'], 10**8, 1)["route"]
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(r, h, payment_secret=inv['payment_secret'])
 
     # Now increment CLTV
@@ -1735,6 +1759,7 @@ def test_htlcs_cltv_only_difference(node_factory, bitcoind):
 
     # L3 tries to pay
     r = l3.rpc.getroute(l4.info['id'], 10**8, 1)["route"]
+    l3.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l3.rpc.sendpay(r, h, payment_secret=inv['payment_secret'])
 
     # Give them time to go through.
@@ -1800,6 +1825,7 @@ def test_pay_retry(node_factory, bitcoind, executor, chainparams):
             'delay': 10,
             'channel': scid
         }
+        opener.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
         opener.rpc.sendpay([routestep], inv['payment_hash'], payment_secret=inv['payment_secret'])
         opener.rpc.waitsendpay(inv['payment_hash'])
 
@@ -2298,6 +2324,7 @@ def test_setchannel_routing(node_factory, bitcoind):
     assert decoded['routes'] == [[{'pubkey': l2.info['id'], 'short_channel_id': scid, 'fee_base_msat': 1337, 'fee_proportional_millionths': 137, 'cltv_expiry_delta': 6}]]
 
     # This will fail.
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route_bad, inv['payment_hash'], payment_secret=inv['payment_secret'])
     with pytest.raises(RpcError, match='WIRE_TEMPORARY_CHANNEL_FAILURE'):
         l1.rpc.waitsendpay(inv['payment_hash'])
@@ -2507,6 +2534,7 @@ def test_setchannel_startup_opts(node_factory, bitcoind):
     assert result[1]['htlc_maximum_msat'] == Millisatoshi(5)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 def test_channel_spendable(node_factory, bitcoind):
     """Test that spendable_msat is accurate"""
     sats = 10**6
@@ -2527,6 +2555,7 @@ def test_channel_spendable(node_factory, bitcoind):
 
     # Exact amount should succeed.
     route = l1.rpc.getroute(l2.info['id'], amount, riskfactor=1, fuzzpercent=0)['route']
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, payment_hash, payment_secret=inv['payment_secret'])
 
     # Amount should drop to 0 once HTLC is sent; we have time, thanks to
@@ -2552,6 +2581,7 @@ def test_channel_spendable(node_factory, bitcoind):
 
     # Exact amount should succeed.
     route = l2.rpc.getroute(l1.info['id'], amount, riskfactor=1, fuzzpercent=0)['route']
+    l2.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l2.rpc.sendpay(route, payment_hash, payment_secret=inv['payment_secret'])
 
     # Amount should drop to 0 once HTLC is sent; we have time, thanks to
@@ -2561,6 +2591,7 @@ def test_channel_spendable(node_factory, bitcoind):
     l2.rpc.waitsendpay(payment_hash, TIMEOUT)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 def test_channel_receivable(node_factory, bitcoind):
     """Test that receivable_msat is accurate"""
     sats = 10**6
@@ -2616,6 +2647,7 @@ def test_channel_receivable(node_factory, bitcoind):
     l2.rpc.waitsendpay(payment_hash, TIMEOUT)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "invoice with any amount")
 def test_channel_spendable_large(node_factory, bitcoind):
     """Test that spendable_msat is accurate for large channels"""
     # This is almost the max allowable spend.
@@ -2710,6 +2742,7 @@ def test_htlc_too_dusty_outgoing(node_factory, bitcoind, chainparams):
     route = l1.rpc.getroute(l2.info['id'], non_dust_htlc_val_sat * 1000, 1)['route']
     for i in range(0, 3):
         inv = l2.rpc.invoice((non_dust_htlc_val_sat * 1000), str(i + 100), str(i + 100))
+        l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
         l1.rpc.sendpay(route, inv['payment_hash'], payment_secret=inv['payment_secret'])
         l2.daemon.wait_for_log(r'their htlc .* dev_ignore_htlcs')
         res = only_one(l1.rpc.listsendpays(payment_hash=inv['payment_hash'])['payments'])
@@ -2719,6 +2752,7 @@ def test_htlc_too_dusty_outgoing(node_factory, bitcoind, chainparams):
     route = l1.rpc.getroute(l2.info['id'], htlc_val_msat, 1)['route']
     for i in range(0, num_dusty_htlcs):
         inv = l2.rpc.invoice(htlc_val_msat, str(i), str(i))
+        l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
         l1.rpc.sendpay(route, inv['payment_hash'], payment_secret=inv['payment_secret'])
         l2.daemon.wait_for_log(r'their htlc .* dev_ignore_htlcs')
         res = only_one(l1.rpc.listsendpays(payment_hash=inv['payment_hash'])['payments'])
@@ -2726,6 +2760,7 @@ def test_htlc_too_dusty_outgoing(node_factory, bitcoind, chainparams):
 
     # one more should tip it over, and return a payment failure
     inv = l2.rpc.invoice(htlc_val_msat, str(num_dusty_htlcs), str(num_dusty_htlcs))
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, inv['payment_hash'], payment_secret=inv['payment_secret'])
     l1.daemon.wait_for_log('CHANNEL_ERR_DUST_FAILURE')
     wait_for(lambda: only_one(l1.rpc.listsendpays(payment_hash=inv['payment_hash'])['payments'])['status'] == 'failed')
@@ -2733,12 +2768,14 @@ def test_htlc_too_dusty_outgoing(node_factory, bitcoind, chainparams):
     # but we can still add a non dust htlc
     route = l1.rpc.getroute(l2.info['id'], non_dust_htlc_val_sat * 1000, 1)['route']
     inv = l2.rpc.invoice((10000 * 1000), str(120), str(120))
+    l1.rpc.preapproveinvoice(bolt11=inv['bolt11']) # let the signer know this payment is coming
     l1.rpc.sendpay(route, inv['payment_hash'], payment_secret=inv['payment_secret'])
     l2.daemon.wait_for_log(r'their htlc .* dev_ignore_htlcs')
     res = only_one(l1.rpc.listsendpays(payment_hash=inv['payment_hash'])['payments'])
     assert res['status'] == 'pending'
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "feerate above maximum (escalates)")
 def test_htlc_too_dusty_incoming(node_factory, bitcoind):
     """ Try to hit the 'too much dust' limit, should fail the HTLC """
     l1, l2, l3 = node_factory.line_graph(3, opts=[{'may_reconnect': True,
@@ -2798,6 +2835,7 @@ def test_error_returns_blockheight(node_factory, bitcoind):
             == '400f{:016x}{:08x}'.format(100, bitcoind.rpc.getblockcount()))
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "inv_nosecret: The invoice is missing the mandatory payment secret")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "Invoice is network specific")
 def test_pay_no_secret(node_factory, bitcoind):
     l1, l2 = node_factory.line_graph(2, wait_for_announce=True)
@@ -4171,6 +4209,7 @@ def test_mpp_interference_2(node_factory, bitcoind, executor):
 
 
 @pytest.mark.slow_test
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "remote_hsmd doesn't allow push of greater than 20k sat")
 def test_mpp_overload_payee(node_factory, bitcoind):
     """
     We had a bug where if the payer is unusually well-connected compared
@@ -4449,6 +4488,7 @@ def test_fetchinvoice_3hop(node_factory, bitcoind):
     l1.rpc.call('fetchinvoice', {'offer': offer1['bolt12']})
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "invoice not bolt12: InvalidSemantics(UnsupportedCurrency) and not bolt11: Bech32Error(InvalidChecksum)")
 def test_fetchinvoice(node_factory, bitcoind):
     # We remove the conversion plugin on l3, causing it to get upset.
     l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True,
@@ -4574,6 +4614,7 @@ def test_fetchinvoice(node_factory, bitcoind):
         l1.rpc.call('fetchinvoice', {'offer': offer1['bolt12'], 'timeout': 10})
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "invoice not bolt12: Decode(UnknownRequiredFeature) and not bolt11: Bech32Error(InvalidChecksum)")
 def test_fetchinvoice_recurrence(node_factory, bitcoind):
     """Test for our recurrence extension"""
     l1, l2, l3 = node_factory.line_graph(3, wait_for_announce=True,
@@ -5159,6 +5200,7 @@ def test_payerkey(node_factory):
         assert n.rpc.decode(b12)['invreq_payer_id'] == k
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "tried commitment when funding is not buried ")
 def test_pay_multichannel_use_zeroconf(bitcoind, node_factory):
     """Check that we use the zeroconf direct channel to pay when we need to"""
     # 0. Setup normal channel, 200k sats.

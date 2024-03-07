@@ -343,6 +343,7 @@ def test_bookkeeping_rbf_withdraw(node_factory, bitcoind):
     assert len(fees) == 1
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "hsmd_sign_option_will_fund_offer not supported")
 @pytest.mark.openchannel('v2')
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "turns off bookkeeper at start")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "network fees hardcoded")
@@ -418,6 +419,7 @@ def test_bookkeeping_missed_chans_leases(node_factory, bitcoind):
 
 @unittest.skipIf(os.getenv('TEST_DB_PROVIDER', 'sqlite3') != 'sqlite3', "turns off bookkeeper at start")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "network fees hardcoded")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_PERMISSIVE') != '1', "remote_hsmd doesn't allow push of non-trivial amount")
 @pytest.mark.openchannel('v1', 'Uses push-msat')
 def test_bookkeeping_missed_chans_pushed(node_factory, bitcoind):
     """
@@ -540,6 +542,7 @@ def test_bookkeeping_inspect_multifundchannel(node_factory, bitcoind):
     assert bkpr_total_fee_msat == int(getblock_fee_btc * 100000000000)
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd') and os.getenv('VLS_SKIP_SPLICE_TESTS') == '1', "test expected to fail before VLS dual-funding / splicing support")
 @unittest.skipIf(TEST_NETWORK != 'regtest', "network fees hardcoded")
 @pytest.mark.openchannel('v2')
 def test_bookkeeping_inspect_mfc_dual_funded(node_factory, bitcoind):

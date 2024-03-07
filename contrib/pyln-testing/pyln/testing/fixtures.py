@@ -1,6 +1,6 @@
 from concurrent import futures
 from pyln.testing.db import SqliteDbProvider, PostgresDbProvider
-from pyln.testing.utils import NodeFactory, BitcoinD, ElementsD, env, LightningNode, TEST_DEBUG, TEST_NETWORK
+from pyln.testing.utils import NodeFactory, BitcoinD, ElementsD, env, LightningNode, TEST_DEBUG, TEST_NETWORK, LssD
 from pyln.client import Millisatoshi
 from typing import Dict
 
@@ -31,6 +31,9 @@ def test_base_dir():
     print("Running tests in {}".format(directory))
 
     yield directory
+
+    if bool(int(os.getenv('TEST_KEEPDIR', '0'))):
+        return
 
     # Now check if any test directory is left because the corresponding test
     # failed. If there are no such tests we can clean up the root test
@@ -93,7 +96,7 @@ def directory(request, test_base_dir, test_name):
     outcome = 'passed' if rep_call is None else rep_call.outcome
     failed = not outcome or request.node.has_errors or outcome != 'passed'
 
-    if not failed:
+    if not failed and not bool(int(os.getenv('TEST_KEEPDIR', '0'))):
         try:
             shutil.rmtree(directory)
         except OSError:
@@ -163,6 +166,25 @@ def bitcoind(directory, teardown_checks):
     except Exception:
         bitcoind.proc.kill()
     bitcoind.proc.wait()
+
+
+@pytest.fixture
+def lssd(directory, teardown_checks):
+    lssd = LssD(directory)
+
+    try:
+        lssd.start()
+    except Exception:
+        lssd.stop()
+        raise
+
+    yield lssd
+
+    try:
+        lssd.stop()
+    except Exception:
+        lssd.proc.kill()
+    lssd.proc.wait()
 
 
 class TeardownErrors(object):
@@ -447,11 +469,12 @@ def jsonschemas():
 
 
 @pytest.fixture
-def node_factory(request, directory, test_name, bitcoind, executor, db_provider, teardown_checks, node_cls, jsonschemas):
+def node_factory(request, directory, test_name, bitcoind, lssd, executor, db_provider, teardown_checks, node_cls, jsonschemas):
     nf = NodeFactory(
         request,
         test_name,
         bitcoind,
+        lssd,
         executor,
         directory=directory,
         db_provider=db_provider,
