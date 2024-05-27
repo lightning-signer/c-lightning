@@ -4493,6 +4493,7 @@ def test_important_plugin_shutdown(node_factory):
 
 
 @unittest.skipIf(VALGRIND, "It does not play well with prompt and key derivation.")
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "exposesecret doesn't support external hsm modules, also check VLS#551")
 def test_exposesecret(node_factory):
     l1, l2 = node_factory.get_nodes(2, opts=[{'exposesecret-passphrase': "test_exposesecret"}, {}])
 
