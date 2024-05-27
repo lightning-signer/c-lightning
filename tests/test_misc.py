@@ -2959,11 +2959,15 @@ def test_emergencyrecoverpenaltytxn(node_factory, bitcoind):
     stubs = l1.rpc.emergencyrecover()["stubs"]
     assert l1.daemon.is_in_log('channel {} already exists!'.format(_['channel_id']))
 
-    l2.rpc.pay(l1.rpc.invoice(25000000, 'lbl1', 'desc1')['bolt11'])
+    invoice_desc1 = l1.rpc.invoice(25000000, 'lbl1', 'desc1')
+    l2.rpc.preapproveinvoice(bolt11=invoice_desc1["bolt11"])
+    l2.rpc.pay(invoice_desc1['bolt11'])
 
     tx = l2.rpc.dev_sign_last_tx(l1.info['id'])['tx']
 
-    l2.rpc.pay(l1.rpc.invoice(25000000, 'lbl2', 'desc2')['bolt11'])
+    invoice_desc2 = l1.rpc.invoice(25000000, 'lbl2', 'desc2')
+    l2.rpc.preapproveinvoice(bolt11=invoice_desc2["bolt11"])
+    l2.rpc.pay(invoice_desc2['bolt11'])
 
     l1.stop()
 
