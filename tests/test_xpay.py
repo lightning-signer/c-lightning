@@ -510,6 +510,7 @@ def test_xpay_takeover_null_parms(node_factory, executor):
     l1.daemon.wait_for_log(r"Not redirecting pay \(missing bolt11 parameter\)")
 
 
+@unittest.skipIf(os.getenv('SUBDAEMON').startswith('hsmd:remote_hsmd'), "needs VLS support VLS#497")
 def test_xpay_preapprove(node_factory):
     l1, l2 = node_factory.line_graph(2, opts={'dev-hsmd-fail-preapprove': None})
 
