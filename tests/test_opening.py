@@ -2,7 +2,7 @@ from fixtures import *  # noqa: F401,F403
 from fixtures import TEST_NETWORK
 from pyln.client import RpcError, Millisatoshi
 from utils import (
-    only_one, wait_for, sync_blockheight, first_channel_id, calc_lease_fee, check_coin_moves, anchor_expected, EXPERIMENTAL_FEATURES
+    only_one, wait_for, sync_blockheight, first_channel_id, calc_lease_fee, check_coin_moves, anchor_expected, EXPERIMENTAL_FEATURES, FUNDING_CONFIRMS
 )
 
 from pathlib import Path
@@ -1713,7 +1713,7 @@ def test_scid_alias_private(node_factory, bitcoind):
     l2.fundwallet(5000000)
     l2.rpc.fundchannel(l3.info['id'], 'all', announce=False)
 
-    bitcoind.generate_block(1, wait_for_mempool=1)
+    bitcoind.generate_block(FUNDING_CONFIRMS, wait_for_mempool=1)
     wait_for(lambda: only_one(l2.rpc.listpeerchannels(l3.info['id'])['channels'])['state'] == 'CHANNELD_NORMAL')
 
     chan = only_one(l2.rpc.listpeerchannels(l3.info['id'])['channels'])
@@ -1851,7 +1851,7 @@ def test_zeroreserve(node_factory, bitcoind):
     l1.rpc.fundchannel(l2.info['id'], 10**6, reserve='0sat')
     l2.rpc.fundchannel(l3.info['id'], 10**6)
     l3.rpc.fundchannel(l1.info['id'], 10**6, reserve='321sat')
-    bitcoind.generate_block(1, wait_for_mempool=3)
+    bitcoind.generate_block(FUNDING_CONFIRMS, wait_for_mempool=3)
     wait_for(lambda: l1.channel_state(l2) == 'CHANNELD_NORMAL')
     wait_for(lambda: l2.channel_state(l3) == 'CHANNELD_NORMAL')
     wait_for(lambda: l3.channel_state(l1) == 'CHANNELD_NORMAL')

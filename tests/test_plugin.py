@@ -9,7 +9,7 @@ from utils import (
     DEPRECATED_APIS, expected_peer_features, expected_node_features,
     expected_channel_features, account_balance,
     check_coin_moves, first_channel_id, EXPERIMENTAL_DUAL_FUND,
-    mine_funding_to_announce
+    mine_funding_to_announce, FUNDING_CONFIRMS
 )
 
 import ast
@@ -980,7 +980,7 @@ def test_channel_state_changed_unilateral(node_factory, bitcoind):
     assert(event1['message'] == "channeld: received ERROR error channel {}: Forcibly closed by `close` command timeout".format(cid))
 
     # settle the channel closure
-    bitcoind.generate_block(100)
+    bitcoind.generate_block(101 - FUNDING_CONFIRMS)
 
     event2 = wait_for_event(l2)
     assert(event2['old_state'] == "AWAITING_UNILATERAL")

@@ -5,7 +5,7 @@ from db import Sqlite3Db
 from fixtures import TEST_NETWORK
 from utils import (
     sync_blockheight, wait_for, only_one, first_channel_id, TIMEOUT,
-    anchor_expected
+    anchor_expected, FUNDING_CONFIRMS
 )
 
 from pathlib import Path
@@ -501,7 +501,7 @@ def test_bookkeeping_missed_chans_pay_after(node_factory, bitcoind):
     l1.fundwallet(200000000)
     l1.rpc.connect(l2.info['id'], 'localhost', l2.port)
     txid = l1.rpc.fundchannel(l2.info['id'], open_amt)['txid']
-    bitcoind.generate_block(1, wait_for_mempool=[txid])
+    bitcoind.generate_block(FUNDING_CONFIRMS, wait_for_mempool=[txid])
     wait_for(lambda: l1.channel_state(l2) == 'CHANNELD_NORMAL')
     scid = l1.get_channel_scid(l2)
     l1.wait_channel_active(scid)
