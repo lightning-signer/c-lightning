@@ -619,7 +619,7 @@ class ElementsD(BitcoinD):
 
 
 class ValidatingLightningSignerD(TailableProc):
-    def __init__(self, vlsd_dir, vlsd_port, vlsd_rpc_port, node_id, network):
+    def __init__(self, vlsd_dir, vlsd_port, vlsd_rpc_port, lssd_port, node_id, network):
         TailableProc.__init__(self, vlsd_dir, verbose=True)
         self.executable = env("REMOTE_SIGNER_CMD", 'vlsd2')
         os.environ['ALLOWLIST'] = env(
@@ -631,6 +631,7 @@ class ValidatingLightningSignerD(TailableProc):
             '--connect=http://localhost:{}'.format(vlsd_port),
             '--rpc-server-port={}'.format(vlsd_rpc_port),
             '--integration-test',
+            f"--lss=http://localhost:{lssd_port}"
         ]
         self.prefix = 'vlsd2-%d' % (node_id)
         self.vlsd_port = vlsd_port
@@ -780,7 +781,6 @@ class LightningD(TailableProc):
 
     def start(self, stdin=None, wait_for_initialized=True, stderr_redir=False):
         try:
-            self.env['VLS_LSS'] = f"http://localhost:{self.lssd_port}"
             self.env['RUST_LOG'] = 'debug'
             # Some of the remote hsmd proxies need a bitcoind RPC connection
             self.env['BITCOIND_RPC_URL'] = 'http://{}:{}@localhost:{}'.format(
@@ -809,7 +809,7 @@ class LightningD(TailableProc):
             if self.use_vlsd:
                 # Start the remote signer first
                 self.vlsd = ValidatingLightningSignerD(
-                    self.vlsd_dir, self.vlsd_port, self.vlsd_rpc_server_port, self.node_id, self.opts['network'])
+                    self.vlsd_dir, self.vlsd_port, self.vlsd_rpc_server_port, self.lssd_port, self.node_id, self.opts['network'])
                 self.vlsd.start(
                     stdin, stdout_redir=True, stderr_redir=True,
                     wait_for_initialized=wait_for_initialized)
