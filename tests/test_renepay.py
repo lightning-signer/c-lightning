@@ -809,6 +809,7 @@ def test_hardmpp2(node_factory, bitcoind):
     # to l2 not accepting to forward any amount above 200k with error:
     # CHANNEL_ERR_CHANNEL_CAPACITY_EXCEEDED, still investigating
     inv = l3.rpc.invoice("800000sat", "inv", "description")
+    l1.rpc.preapproveinvoice(bolt11=inv["bolt11"]) # let the signer know this payment is coming
     l1.rpc.call("renepay", {"invstring": inv["bolt11"]})
     l1.wait_for_htlcs()
     receipt = only_one(l3.rpc.listinvoices("inv")["invoices"])
