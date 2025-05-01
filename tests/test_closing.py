@@ -4168,8 +4168,9 @@ def test_anchorspend_using_to_remote(node_factory, bitcoind, anchors):
 
     # Spends anchor.
     # HSMd notes that it has to sign a unilateral close output:
-    l2.daemon.wait_for_logs(['Anchorspend for local commit tx',
-                             'hsmd: Unilateral close output, deriving secrets'])
+    l2.daemon.wait_for_logs(['Anchorspend for local commit tx'])
+    ## VLS doesn't emit this log line:
+    ##                       'hsmd: Unilateral close output, deriving secrets'])
 
     bitcoind.generate_block(1, wait_for_mempool=2)
 
