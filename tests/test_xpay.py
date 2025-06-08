@@ -645,10 +645,12 @@ def test_xpay_no_mpp(node_factory, chainparams):
                                           f"currency={chainparams['bip173_prefix']}",
                                           f"p={no_mpp['payment_hash']}",
                                           f"s={no_mpp['payment_secret']}",
-                                          f"d=Paying l3 without mpp",
-                                          f"amount={AMOUNT}"]).decode('utf-8').strip()
+                                          "9=4000", # Include payment_secret (bit 14) but not basic_mpp (bit 16)
+                                          "d=Paying l3 without mpp",
+                                          f"amount={AMOUNT}"], stderr=sys.stderr).decode('utf-8').strip()
 
     # This should not mpp!
+    l1.rpc.preapproveinvoice(bolt11=b11_no_mpp) # let the signer know this payment is coming
     ret = l1.rpc.xpay(b11_no_mpp)
     assert ret['failed_parts'] == 0
     assert ret['successful_parts'] == 1
